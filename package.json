@@ -137,6 +137,18 @@
           "items": { "type": "string" },
           "description": "DuckDB extensions to auto-install and load"
         },
+        "quackwrangler.engine.default": {
+          "type": "string",
+          "default": "duckdb",
+          "enum": ["duckdb", "polars"],
+          "description": "Default query engine (duckdb or polars)"
+        },
+        "quackwrangler.engine.defaultExportEngine": {
+          "type": "string",
+          "default": "duckdb",
+          "enum": ["duckdb", "polars"],
+          "description": "Default engine for code export"
+        },
         "quackwrangler.fileViewer.parquet": {
           "type": "boolean",
           "default": true,

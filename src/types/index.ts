@@ -1,3 +1,5 @@
+export type EngineType = 'duckdb' | 'polars';
+
 export interface ColumnInfo {
   name: string;
   type: string;
@@ -32,6 +34,8 @@ export interface DataWranglerConfig {
   autoLoadExtensions: boolean;
   maxRowsPreview: number;
   exportFormat: 'parquet' | 'csv' | 'json';
+  engine: EngineType;
+  defaultExportEngine: EngineType;
 }
 
 export type WebviewMessage =
@@ -45,7 +49,8 @@ export type WebviewMessage =
   | { type: 'redo' }
   | { type: 'reset' }
   | { type: 'pageChange'; offset: number; limit: number }
-  | { type: 'saveConfig'; config: Partial<DataWranglerConfig> };
+  | { type: 'saveConfig'; config: Partial<DataWranglerConfig> }
+  | { type: 'switchEngine'; engine: EngineType };
 
 export type ExtensionMessage =
   | { type: 'fileLoaded'; schema: TableSchema; preview: QueryResult }
