@@ -1,24 +1,19 @@
 import React from 'react';
-import type { ViewTab } from '../types';
+
+type EngineType = 'duckdb' | 'polars';
 
 interface HeaderProps {
   fileName: string;
   rowCount: number;
   columnCount: number;
   isLoading: boolean;
-  activeTab: ViewTab;
-  onTabChange: (tab: ViewTab) => void;
+  engine: EngineType;
+  onEngineChange: (engine: EngineType) => void;
   onRefresh: () => void;
 }
 
-const TABS: Array<{ id: ViewTab; label: string }> = [
-  { id: 'data', label: 'Data View' },
-  { id: 'transform', label: 'Transform' },
-  { id: 'export', label: 'Export' },
-];
-
 export const Header: React.FC<HeaderProps> = React.memo(
-  ({ fileName, rowCount, columnCount, isLoading, activeTab, onTabChange, onRefresh }) => {
+  ({ fileName, rowCount, columnCount, isLoading, engine, onEngineChange, onRefresh }) => {
     return (
       <header className="header">
         <div className="header-top">
@@ -34,6 +29,24 @@ export const Header: React.FC<HeaderProps> = React.memo(
             )}
           </div>
           <div className="header-actions">
+            <div className="engine-selector">
+              <button
+                className={`engine-btn ${engine === 'duckdb' ? 'active' : ''}`}
+                onClick={() => onEngineChange('duckdb')}
+                title="Use DuckDB engine"
+              >
+                <span className="engine-icon">🦆</span>
+                <span className="engine-label">DuckDB</span>
+              </button>
+              <button
+                className={`engine-btn ${engine === 'polars' ? 'active' : ''}`}
+                onClick={() => onEngineChange('polars')}
+                title="Use Polars engine"
+              >
+                <span className="engine-icon">⚡</span>
+                <span className="engine-label">Polars</span>
+              </button>
+            </div>
             {isLoading && <div className="loading-spinner" aria-label="Loading" />}
             <button
               className="refresh-btn"
@@ -53,17 +66,6 @@ export const Header: React.FC<HeaderProps> = React.memo(
             </button>
           </div>
         </div>
-        <nav className="header-tabs">
-          {TABS.map((tab) => (
-            <button
-              key={tab.id}
-              className={`tab-btn ${activeTab === tab.id ? 'active' : ''}`}
-              onClick={() => onTabChange(tab.id)}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </nav>
       </header>
     );
   }
