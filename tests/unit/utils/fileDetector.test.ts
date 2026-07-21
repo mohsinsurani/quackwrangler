@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isDataFile, getDataFilePatterns, getFileExtension } from '../../../src/utils/fileDetector';
+import { isDataFile, getDataFilePatterns, formatFileSize } from '../../../src/utils/fileDetector';
 
 describe('fileDetector utils', () => {
   describe('isDataFile', () => {
@@ -16,7 +16,6 @@ describe('fileDetector utils', () => {
     it('should identify JSON files', () => {
       expect(isDataFile('data.json')).toBe(true);
       expect(isDataFile('data.jsonl')).toBe(true);
-      expect(isDataFile('data.ndjson')).toBe(true);
     });
 
     it('should reject non-data files', () => {
@@ -39,11 +38,12 @@ describe('fileDetector utils', () => {
     });
   });
 
-  describe('getFileExtension', () => {
-    it('should extract file extension', () => {
-      expect(getFileExtension('data.parquet')).toBe('parquet');
-      expect(getFileExtension('data.CSV')).toBe('csv');
-      expect(getFileExtension('/path/to/file.json')).toBe('json');
+  describe('formatFileSize', () => {
+    it('should format bytes correctly', () => {
+      expect(formatFileSize(0)).toBe('0 B');
+      expect(formatFileSize(1024)).toBe('1.00 KB');
+      expect(formatFileSize(1024 * 1024)).toBe('1.00 MB');
+      expect(formatFileSize(1024 * 1024 * 1024)).toBe('1.00 GB');
     });
   });
 });

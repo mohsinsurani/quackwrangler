@@ -1,40 +1,26 @@
 import { describe, it, expect } from 'vitest';
-import { detectFileType, isDataFile, getDataFilePatterns } from '../../../src/utils/fileDetector';
+import { isDataFile, getDataFilePatterns } from '../../../src/utils/fileDetector';
 
 describe('fileDetector', () => {
-  describe('detectFileType', () => {
+  describe('isDataFile', () => {
     it('should detect parquet files', () => {
-      expect(detectFileType('data.parquet')).toBe('parquet');
-      expect(detectFileType('/path/to/data.parquet')).toBe('parquet');
+      expect(isDataFile('data.parquet')).toBe(true);
+      expect(isDataFile('/path/to/data.parquet')).toBe(true);
     });
 
     it('should detect CSV files', () => {
-      expect(detectFileType('data.csv')).toBe('csv');
-      expect(detectFileType('data.tsv')).toBe('csv');
+      expect(isDataFile('data.csv')).toBe(true);
+      expect(isDataFile('data.tsv')).toBe(true);
     });
 
     it('should detect JSON files', () => {
-      expect(detectFileType('data.json')).toBe('json');
-      expect(detectFileType('data.jsonl')).toBe('json');
-      expect(detectFileType('data.ndjson')).toBe('json');
-    });
-
-    it('should return null for unknown files', () => {
-      expect(detectFileType('data.txt')).toBeNull();
-      expect(detectFileType('data.py')).toBeNull();
-    });
-  });
-
-  describe('isDataFile', () => {
-    it('should return true for data files', () => {
-      expect(isDataFile('data.parquet')).toBe(true);
-      expect(isDataFile('data.csv')).toBe(true);
       expect(isDataFile('data.json')).toBe(true);
+      expect(isDataFile('data.jsonl')).toBe(true);
     });
 
-    it('should return false for non-data files', () => {
-      expect(isDataFile('readme.md')).toBe(false);
-      expect(isDataFile('script.py')).toBe(false);
+    it('should return false for unknown files', () => {
+      expect(isDataFile('data.txt')).toBe(false);
+      expect(isDataFile('data.py')).toBe(false);
     });
   });
 

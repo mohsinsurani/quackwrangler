@@ -1,6 +1,5 @@
 import { build, context } from 'esbuild';
-import { copyFileSync, mkdirSync, existsSync } from 'fs';
-import { join } from 'path';
+import { mkdirSync, existsSync } from 'fs';
 
 const production = process.argv.includes('--production');
 const watch = process.argv.includes('--watch');
@@ -19,7 +18,7 @@ const webviewConfig = {
     '.css': 'css',
   },
   define: {
-    'process.env.NODE_ENV': production ? '"production"',
+    'process.env.NODE_ENV': production ? '"production"' : '"development"',
   },
 };
 
@@ -32,9 +31,21 @@ const extensionConfig = {
   platform: 'node',
   minify: production,
   sourcemap: !production,
-  external: ['vscode'],
+  external: [
+    'vscode',
+    '@duckdb/node-api',
+    '@duckdb/node-bindings',
+    '@duckdb/node-bindings-darwin-arm64',
+    '@duckdb/node-bindings-darwin-x64',
+    '@duckdb/node-bindings-linux-x64',
+    '@duckdb/node-bindings-linux-x64-musl',
+    '@duckdb/node-bindings-linux-arm64',
+    '@duckdb/node-bindings-linux-arm64-musl',
+    '@duckdb/node-bindings-win32-x64',
+    '@duckdb/node-bindings-win32-arm64',
+  ],
   define: {
-    'process.env.NODE_ENV': production ? '"production"',
+    'process.env.NODE_ENV': production ? '"production"' : '"development"',
   },
 };
 

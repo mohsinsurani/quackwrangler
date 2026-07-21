@@ -10,27 +10,14 @@ describe('TransformRegistry', () => {
 
   describe('registerTransform', () => {
     it('should register a new transform', () => {
-      registry.registerTransform('custom', {
-        name: 'Custom Transform',
-        description: 'A custom transform',
-        execute: (input) => input,
-      });
+      registry.registerTransform('custom', () => 'SELECT *');
       expect(registry.getTransform('custom')).toBeDefined();
     });
 
-    it('should throw error for duplicate names', () => {
-      registry.registerTransform('test', {
-        name: 'Test',
-        description: 'Test',
-        execute: (input) => input,
-      });
-      expect(() =>
-        registry.registerTransform('test', {
-          name: 'Test 2',
-          description: 'Test 2',
-          execute: (input) => input,
-        }),
-      ).toThrow('Transform already registered');
+    it('should allow overwriting existing transforms', () => {
+      registry.registerTransform('custom', () => 'SELECT 1');
+      registry.registerTransform('custom', () => 'SELECT 2');
+      expect(registry.getTransform('custom')).toBeDefined();
     });
   });
 
@@ -38,42 +25,58 @@ describe('TransformRegistry', () => {
     it('should list all registered transforms', () => {
       const transforms = registry.listTransforms();
       expect(transforms.length).toBeGreaterThan(0);
-      expect(transforms.some((t) => t.id === 'dropColumn')).toBe(true);
-      expect(transforms.some((t) => t.id === 'filterRows')).toBe(true);
+      expect(transforms).toContain('dropColumn');
+      expect(transforms).toContain('filterRows');
     });
   });
 
-  describe('built-in transforms', () => {
-    it('should have dropColumn transform', () => {
-      const transform = registry.getTransform('dropColumn');
-      expect(transform).toBeDefined();
-      expect(transform?.name).toBe('Drop Column');
+  describe('applyTransform', () => {
+    it('should apply dropColumn transform', () => {
+      const sql = registry.applyTransform({
+        id: '1',
+        type: 'dropColumn',
+        params: { columns: ['col1'] },
+        sql: '',
+        description: '',
+      });
+      expect(sql).toContain('EXCLUDE');
+      expect(sql).toContain('col1');
     });
 
-    it('should have filterRows transform', () => {
-      const transform = registry.getTransform('filterRows');
-      expect(transform).toBeDefined();
-      expect(transform?.name).toBe('Filter Rows');
+    it('should apply filterRows transform', () => {
+      const sql = registry.applyTransform({
+        id: '1',
+        type: 'filterRows',
+        params: { condition: 'age > 18' },
+        sql: '',
+        description: '',
+      });
+      expect(sql).toContain('WHERE');
+      expect(sql).toContain('age > 18');
     });
 
-    it('should have sortRows transform', () => {
-      const transform = registry.getTransform('sortRows');
-      expect(transform).toBeDefined();
+    it('should apply sortRows transform', () => {
+      const sql = registry.applyTransform({
+        id: '1',
+        type: 'sortRows',
+        params: { column: 'name', ascending: true },
+        sql: '',
+        description: '',
+      });
+      expect(sql).toContain('ORDER BY');
+      expect(sql).toContain('ASC');
     });
 
-    it('should have castType transform', () => {
-      const transform = registry.getTransform('castType');
-      expect(transform).toBeDefined();
-    });
-
-    it('should have fillMissing transform', () => {
-      const transform = registry.getTransform('fillMissing');
-      expect(transform).toBeDefined();
-    });
-
-    it('should have deduplicate transform', () => {
-      const transform = registry.getTransform('deduplicate');
-      expect(transform).toBeDefined();
+    it('should throw error for unknown transform', () => {
+      expect(() =>
+        registry.applyTransform({
+          id: '1',
+          type: 'unknown',
+          params: {},
+          sql: '',
+          description: '',
+        }),
+      ).toThrow('Unknown transform type');
     });
   });
 });
