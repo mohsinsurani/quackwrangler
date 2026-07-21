@@ -1,0 +1,213 @@
+{
+  "name": "quackwrangler",
+  "displayName": "QuackWrangler",
+  "description": "Fast data wrangling for Parquet, CSV, and JSON files powered by DuckDB",
+  "version": "0.1.0",
+  "publisher": "quackwrangler",
+  "license": "MIT",
+  "icon": "media/icon.png",
+  "categories": [
+    "Data Science",
+    "Visualization"
+  ],
+  "keywords": [
+    "parquet",
+    "duckdb",
+    "data wrangler",
+    "csv",
+    "data exploration",
+    "data cleaning",
+    "analytics"
+  ],
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "main": "./dist/extension.js",
+  "browser": "./dist/webview/index.html",
+  "activationEvents": [
+    "onLanguage:sql",
+    "workspaceContains:**/*.parquet",
+    "workspaceContains:**/*.csv",
+    "workspaceContains:**/*.json"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "quackwrangler.openDataWrangler",
+        "title": "QuackWrangler: Open Data Wrangler",
+        "icon": "$(table)"
+      },
+      {
+        "command": "quackwrangler.openFile",
+        "title": "Open in QuackWrangler",
+        "icon": "$(open-preview)"
+      },
+      {
+        "command": "quackwrangler.executeQuery",
+        "title": "QuackWrangler: Execute Query",
+        "icon": "$(play)"
+      },
+      {
+        "command": "quackwrangler.exportData",
+        "title": "QuackWrangler: Export Data",
+        "icon": "$(export)"
+      },
+      {
+        "command": "quackwrangler.summarizeFile",
+        "title": "QuackWrangler: Summarize File",
+        "icon": "$(graph)"
+      },
+      {
+        "command": "quackwrangler.showSchema",
+        "title": "QuackWrangler: Show Schema",
+        "icon": "$(list-flat)"
+      },
+      {
+        "command": "quackwrangler.refreshData",
+        "title": "QuackWrangler: Refresh Data",
+        "icon": "$(refresh)"
+      }
+    ],
+    "menus": {
+      "editor/title": [
+        {
+          "command": "quackwrangler.openDataWrangler",
+          "when": "resourceExtname == .parquet || resourceExtname == .csv || resourceExtname == .json",
+          "group": "navigation"
+        }
+      ],
+      "explorer/context": [
+        {
+          "command": "quackwrangler.openFile",
+          "when": "resourceExtname == .parquet || resourceExtname == .csv || resourceExtname == .json || resourceExtname == .tsv || resourceExtname == .jsonl",
+          "group": "1_datawrangler"
+        },
+        {
+          "command": "quackwrangler.summarizeFile",
+          "when": "resourceExtname == .parquet || resourceExtname == .csv || resourceExtname == .json",
+          "group": "1_datawrangler"
+        },
+        {
+          "command": "quackwrangler.showSchema",
+          "when": "resourceExtname == .parquet || resourceExtname == .csv || resourceExtname == .json",
+          "group": "1_datawrangler"
+        }
+      ]
+    },
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "quackwrangler",
+          "title": "QuackWrangler",
+          "icon": "$(table)"
+        }
+      ]
+    },
+    "views": {
+      "quackwrangler": [
+        {
+          "type": "webview",
+          "id": "quackwrangler.dataView",
+          "name": "Data Wrangler"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "QuackWrangler",
+      "properties": {
+        "quackwrangler.duckdb.memoryLimit": {
+          "type": "string",
+          "default": "1GB",
+          "description": "Maximum memory DuckDB can use before spilling to disk"
+        },
+        "quackwrangler.duckdb.tempDirectory": {
+          "type": "string",
+          "default": "",
+          "description": "Directory for DuckDB temp/spill files (empty = OS temp)"
+        },
+        "quackwrangler.duckdb.maxTempDirectorySize": {
+          "type": "string",
+          "default": "15GB",
+          "description": "Maximum disk space for DuckDB temp files"
+        },
+        "quackwrangler.duckdb.autoLoadExtensions": {
+          "type": "array",
+          "default": ["parquet", "json"],
+          "items": { "type": "string" },
+          "description": "DuckDB extensions to auto-install and load"
+        },
+        "quackwrangler.fileViewer.parquet": {
+          "type": "boolean",
+          "default": true,
+          "description": "Auto-open .parquet files with QuackWrangler"
+        },
+        "quackwrangler.fileViewer.csv": {
+          "type": "boolean",
+          "default": true,
+          "description": "Auto-open .csv files with QuackWrangler"
+        },
+        "quackwrangler.fileViewer.json": {
+          "type": "boolean",
+          "default": false,
+          "description": "Auto-open .json files with QuackWrangler"
+        },
+        "quackwrangler.display.pageSize": {
+          "type": "number",
+          "default": 100,
+          "minimum": 10,
+          "maximum": 10000,
+          "description": "Number of rows to fetch per page"
+        },
+        "quackwrangler.display.maxRows": {
+          "type": "number",
+          "default": 10000,
+          "minimum": 100,
+          "maximum": 1000000,
+          "description": "Maximum rows to display in the data grid"
+        }
+      }
+    },
+    "keybindings": [
+      {
+        "command": "quackwrangler.executeQuery",
+        "key": "cmd+enter",
+        "when": "editorTextFocus && editorLangId == sql"
+      },
+      {
+        "command": "quackwrangler.executeQuery",
+        "key": "ctrl+enter",
+        "when": "editorTextFocus && editorLangId == sql"
+      }
+    ]
+  },
+  "scripts": {
+    "compile": "node esbuild.js",
+    "watch": "node esbuild.js --watch",
+    "build:webview": "cd webview-ui && npm run build",
+    "package": "vsce package",
+    "lint": "eslint src --ext ts",
+    "lint:fix": "eslint src --ext ts --fix",
+    "format": "prettier --write \"src/**/*.ts\" \"webview-ui/src/**/*.tsx\"",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "build": "npm run compile && npm run build:webview"
+  },
+  "dependencies": {
+    "@duckdb/node-api": "^1.2.0",
+    "@vscode/webview-ui-toolkit": "^1.4.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/vscode": "^1.85.0",
+    "@typescript-eslint/eslint-plugin": "^7.0.0",
+    "@typescript-eslint/parser": "^7.0.0",
+    "esbuild": "^0.20.0",
+    "eslint": "^8.56.0",
+    "eslint-plugin-import": "^2.29.0",
+    "prettier": "^3.2.0",
+    "typescript": "^5.3.0",
+    "vitest": "^1.2.0",
+    "@vitest/coverage-v8": "^1.2.0"
+  }
+}
