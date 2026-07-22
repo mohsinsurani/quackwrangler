@@ -16,6 +16,10 @@ eslint.config.mjs
 .prettierrc
 vitest.config.ts
 coverage/**
+.venv/**
+.ruff_cache/**
+*.egg-info/**
+.python-version
 .github/**
 docs/**
 CONTRIBUTING.md

@@ -95,6 +95,9 @@ jobs:
       - name: Install webview dependencies
         run: cd webview-ui && npm ci
 
+      - name: Install VS Code extension manager
+        run: npm install --global @vscode/vsce@3.9.2
+
       - name: Build
         run: npm run build
 

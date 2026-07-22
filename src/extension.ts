@@ -32,7 +32,7 @@ class QuackWranglerActionsProvider implements vscode.TreeDataProvider<vscode.Tre
     sampleItem.command = {
       command: 'quackwrangler.openFile',
       title: 'Open sample CSV',
-      arguments: [vscode.Uri.joinPath(this.extensionUri, 'tests', 'fixtures', 'sample.csv')],
+      arguments: [vscode.Uri.joinPath(this.extensionUri, 'media', 'sample.csv')],
     };
 
     return [openFileItem, sampleItem];

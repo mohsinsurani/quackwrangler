@@ -1,0 +1,6 @@
+id,name,amount,category,active
+1,Alice,120,A,true
+2,Bob,75,B,false
+3,Charlie,240,A,true
+4,Diana,,C,true
+5,Eve,180,B,false

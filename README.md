@@ -41,7 +41,7 @@ cd quackwrangler
 npm ci
 npm --prefix webview-ui ci
 npm run package
-code --install-extension quackwrangler-0.1.0.vsix
+code --install-extension quackwrangler-<version>.vsix
 ```
 
 Alternatively, run **Extensions: Install from VSIX...** from the VS Code Command Palette and select the generated file.
