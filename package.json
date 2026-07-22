@@ -220,16 +220,16 @@
     "@vscode/webview-ui-toolkit": "^1.4.0"
   },
   "devDependencies": {
-    "@types/node": "^22.0.0",
+    "@types/node": "^26.1.1",
     "@types/vscode": "^1.85.0",
     "@typescript-eslint/eslint-plugin": "^8.0.0",
     "@typescript-eslint/parser": "^8.0.0",
-    "esbuild": "^0.24.0",
-    "eslint": "^9.0.0",
+    "esbuild": "^0.28.1",
+    "eslint": "^10.7.0",
     "eslint-plugin-import": "^2.31.0",
     "prettier": "^3.4.0",
-    "typescript": "^5.7.0",
-    "vitest": "^2.0.0",
-    "@vitest/coverage-v8": "^2.0.0"
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.10",
+    "@vitest/coverage-v8": "^4.1.10"
   }
 }
