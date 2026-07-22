@@ -16,6 +16,9 @@ describe('fileDetector', () => {
     it('should detect JSON files', () => {
       expect(isDataFile('data.json')).toBe(true);
       expect(isDataFile('data.jsonl')).toBe(true);
+      expect(isDataFile('data.ndjson')).toBe(true);
+      expect(isDataFile('data.xlsx')).toBe(true);
+      expect(isDataFile('data.ods')).toBe(true);
     });
 
     it('should return false for unknown files', () => {
@@ -30,6 +33,9 @@ describe('fileDetector', () => {
       expect(patterns).toContain('**/*.parquet');
       expect(patterns).toContain('**/*.csv');
       expect(patterns).toContain('**/*.json');
+      expect(patterns).toContain('**/*.ndjson');
+      expect(patterns).toContain('**/*.xlsx');
+      expect(patterns).toContain('**/*.ods');
     });
   });
 });

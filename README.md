@@ -1,157 +1,177 @@
 # QuackWrangler
 
-[![Build Status](https://github.com/quackwrangler/quackwrangler/actions/workflows/ci.yml/badge.svg)](https://github.com/quackwrangler/quackwrangler/actions)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![VS Code](https://img.shields.io/badge/VS%20Code-1.85.0%2B-blue.svg)](https://code.visualstudio.com/)
-[![Version](https://img.shields.io/badge/version-0.1.0-green.svg)](https://marketplace.visualstudio.com/items?itemName=quackwrangler.quackwrangler)
+[![CI](https://github.com/mohsinsurani/quackwrangler/actions/workflows/ci.yml/badge.svg)](https://github.com/mohsinsurani/quackwrangler/actions/workflows/ci.yml)
+[![MIT License](https://img.shields.io/badge/license-MIT-yellow.svg)](LICENSE)
+[![VS Code 1.85+](https://img.shields.io/badge/VS%20Code-1.85%2B-blue.svg)](https://code.visualstudio.com/)
 
-> **Fast data wrangling for Parquet, CSV, and JSON files powered by DuckDB**
+Fast, visual data exploration and transformation inside VS Code, powered by DuckDB. QuackWrangler opens data files directly, profiles their columns, applies reproducible transformations, runs custom SQL, and exports the result without requiring Python, Polars, or Jupyter.
 
-QuackWrangler is a VS Code extension that provides a visual interface for exploring, cleaning, and transforming tabular data files. Built on [DuckDB](https://duckdb.org/) for blazing-fast performance, it handles files of any size without loading them into memory.
+> QuackWrangler is an independent open-source project inspired by the visual workflow of data-wrangling tools. It is not affiliated with or endorsed by Microsoft.
 
-## Features
+## What works in Version 1
 
-- **Lightning Fast** - Query Parquet files directly without materialization
-- **Visual Data Grid** - Interactive table with virtualized scrolling (100k+ rows)
-- **Column Statistics** - Min/max/mean, null counts, unique values, distributions
-- **One-Click Transforms** - Drop, rename, filter, sort, cast, fill missing values
-- **Code Generation** - Export cleaning steps as DuckDB SQL or Python code
-- **Multi-Format Support** - Parquet, CSV, TSV, JSON, JSONL files
-- **Memory Efficient** - Automatic disk spilling for large datasets
+- DuckDB-native execution with automatic disk spilling
+- Virtualized grid with synchronized headers and consistent column sizing
+- Column profiles: type, valid/null/unique counts, ranges, and distributions
+- Nested JSON inspection for structs, lists, maps, and JSON values
+- Parquet, CSV, TSV, JSON, JSONL/NDJSON, XLSX, and ODS viewing
+- Filters, sorting, deduplication, column rename/drop/add/cast, null filling, and grouping/aggregation
+- Custom read-only DuckDB SQL with results shown in the grid
+- Full transformed-data export to Parquet, CSV, or JSON
+- Reproducible DuckDB SQL and optional Polars Python code generation
+- Undo and redo for the transformation pipeline
 
-## Quick Start
+Polars execution is intentionally deferred to Version 2. The generated Polars tab is code output only and does not add a Python runtime dependency to the extension.
 
-### Installation
+## Install
+
+### From the VS Code Marketplace
+
+After the first public release, open Extensions in VS Code, search for **QuackWrangler**, and select **Install**. The command-line equivalent is:
 
 ```bash
 code --install-extension quackwrangler.quackwrangler
 ```
 
-### Usage
+### From a local VSIX
 
-1. **Open a data file** - Right-click any `.parquet`, `.csv`, or `.json` file → "Open in QuackWrangler"
+```bash
+git clone https://github.com/mohsinsurani/quackwrangler.git
+cd quackwrangler
+npm ci
+npm --prefix webview-ui ci
+npm run package
+code --install-extension quackwrangler-0.1.0.vsix
+```
 
-2. **Explore your data** - View column statistics, sort, filter, and search
+Alternatively, run **Extensions: Install from VSIX...** from the VS Code Command Palette and select the generated file.
 
-3. **Apply transforms** - Use the transform panel to clean your data
+## Use QuackWrangler
 
-4. **Export code** - Generate reproducible SQL or Python code
+1. Open a folder containing a supported data file.
+2. Right-click the file in Explorer and choose **Open in QuackWrangler**.
+3. Inspect column profiles and values in the synchronized data grid.
+4. Select an operation in the left panel, enter its parameters, and apply it.
+5. Use **Custom Query** to run a read-only `SELECT`, `WITH`, `DESCRIBE`, `SHOW`, `EXPLAIN`, or `PRAGMA` statement.
+6. Export the complete transformed dataset or copy the generated SQL.
 
-## Available Transforms
+Custom queries run against `current_data`:
 
-| Transform | Description | SQL Generated |
-|-----------|-------------|---------------|
-| Drop Column | Remove unwanted columns | `SELECT * EXCLUDE(col)` |
-| Rename Column | Rename columns | `SELECT col AS new_name` |
-| Filter Rows | Filter by conditions | `WHERE col op value` |
-| Sort Rows | Sort by columns | `ORDER BY col ASC/DESC` |
-| Cast Type | Change column types | `CAST(col AS type)` |
-| Fill Missing | Replace null values | `COALESCE(col, value)` |
-| Deduplicate | Remove duplicate rows | `SELECT DISTINCT *` |
-| One-Hot Encode | Create dummy variables | `CASE WHEN col = val THEN 1 ELSE 0` |
-| Normalize | Scale numeric columns | `(col - min) / (max - min)` |
-| Split Column | Split by delimiter | `split_part(col, delim, idx)` |
-| Merge Columns | Combine columns | `col1 || col2` |
+```sql
+SELECT country, COUNT(*) AS matches
+FROM current_data
+WHERE year >= 2000
+GROUP BY country
+ORDER BY matches DESC;
+```
 
-## Configuration
+Mutation statements are rejected because the query box is an exploration surface, not an unrestricted database console.
 
-Configure QuackWrangler in VS Code settings (`Cmd+,`):
+## Filters and transforms
+
+Filters support equality and inequality, `>`, `>=`, `<`, `<=`, contains, does not contain, starts with, ends with, `IN`, `NOT IN`, null checks, and range checks. Values are safely converted for numeric, boolean, date/time, and text columns.
+
+Other operations include:
+
+| Category | Operations |
+| --- | --- |
+| Clean | Remove duplicates, fill nulls, cast type |
+| Columns | Add, rename, and drop columns |
+| Arrange | Sort ascending or descending |
+| Summarize | Group and aggregate with compatible functions |
+| Export | Parquet, CSV, and JSON |
+
+QuackWrangler only offers numeric aggregations such as average for compatible scalar columns. Nested JSON values remain inspectable without being sent to invalid DuckDB aggregate functions.
+
+## Supported file formats
+
+| Format | Extensions | Notes |
+| --- | --- | --- |
+| Parquet | `.parquet` | Native DuckDB reader |
+| Delimited text | `.csv`, `.tsv` | Automatic schema and delimiter detection |
+| JSON | `.json`, `.jsonl`, `.ndjson` | Arrays, records, and nested values supported |
+| Excel | `.xlsx` | Uses DuckDB's spreadsheet support |
+| OpenDocument | `.ods` | Uses DuckDB's spreadsheet support |
+
+Spreadsheet support can require DuckDB to download an extension the first time it is used. Legacy `.xls` files are not currently supported.
+
+## Settings
+
+Open VS Code Settings and search for `QuackWrangler`, or configure values directly:
 
 ```json
 {
   "quackwrangler.duckdb.memoryLimit": "1GB",
-  "quackwrangler.duckdb.tempDirectory": "/tmp/duckdb",
-  "quackwrangler.fileViewer.parquet": true,
-  "quackwrangler.fileViewer.csv": true,
-  "quackwrangler.display.pageSize": 100
+  "quackwrangler.duckdb.tempDirectory": "",
+  "quackwrangler.duckdb.maxTempDirectorySize": "15GB",
+  "quackwrangler.display.pageSize": 100,
+  "quackwrangler.display.maxRows": 10000
 }
 ```
 
-## Keyboard Shortcuts
+## Develop locally
 
-| Action | macOS | Windows/Linux |
-|--------|-------|---------------|
-| Execute Query | `Cmd+Enter` | `Ctrl+Enter` |
-| Open Data Wrangler | `Cmd+Shift+P` | `Ctrl+Shift+P` |
-
-## Architecture
-
-```
-┌─────────────────────────────────────────────────────────┐
-│                    VS Code Extension                     │
-├─────────────────────────────────────────────────────────┤
-│                                                          │
-│  ┌──────────────┐    ┌──────────────┐    ┌────────────┐ │
-│  │   Commands   │    │   Webview    │    │   DuckDB   │ │
-│  │   Handler    │◄──►│   Provider   │◄──►│  Engine    │ │
-│  └──────────────┘    └──────────────┘    └────────────┘ │
-│         │                   │                   │        │
-│         ▼                   ▼                   ▼        │
-│  ┌──────────────┐    ┌──────────────┐    ┌────────────┐ │
-│  │   File       │    │    React     │    │  Parquet   │ │
-│  │   Detector   │    │    UI Grid   │    │  Loader    │ │
-│  └──────────────┘    └──────────────┘    └────────────┘ │
-│                                                          │
-└─────────────────────────────────────────────────────────┘
-```
-
-## Development
-
-### Prerequisites
-
-- Node.js 18+
-- npm 9+
-- VS Code 1.85.0+
-
-### Setup
+Requirements: Node.js 18 or newer, npm 9 or newer, and VS Code 1.85 or newer.
 
 ```bash
-git clone https://github.com/quackwrangler/quackwrangler.git
+git clone https://github.com/mohsinsurani/quackwrangler.git
 cd quackwrangler
-npm install
-cd webview-ui && npm install && cd ..
+npm ci
+npm --prefix webview-ui ci
+code .
 ```
 
-### Build
+In VS Code, open **Run and Debug**, select **Run QuackWrangler Extension**, and press `F5`. A new **Extension Development Host** window opens. Open a folder with data in that window and use **Open in QuackWrangler** from the file context menu.
+
+Useful commands:
 
 ```bash
-# Build everything
-npm run build
-
-# Watch mode
-npm run watch
+npm run build          # type-check and build the extension and webview
+npm test               # unit and integration tests
+npm run test:coverage  # coverage report
+npm run lint           # static checks
+npm run watch          # rebuild the extension while developing
+npm run package        # production build and VSIX package
 ```
 
-### Test
+Python is optional and only needed when contributing to the planned sidecar. Its reproducible environment is recorded in `pyproject.toml` and `uv.lock`:
 
 ```bash
-# Run tests
-npm test
-
-# Coverage
-npm run test:coverage
+uv sync --frozen --extra arrow --extra dev
 ```
 
-### Package
+## Publish on the VS Code Marketplace
 
-```bash
-npm run package
-```
+The VS Code Marketplace hosts and distributes the extension; GitHub hosts its source code and releases.
+
+1. Create a Marketplace publisher at the [Visual Studio Marketplace publisher portal](https://marketplace.visualstudio.com/manage/publishers/).
+2. Ensure the publisher ID exactly matches `publisher` in `package.json`. This repository currently uses `quackwrangler`; change it before the first release if that ID is unavailable.
+3. Create an Azure DevOps personal access token with the Marketplace **Manage** scope. Never commit the token.
+4. Authenticate, validate, and package:
+
+   ```bash
+   npx vsce login quackwrangler
+   npm test
+   npm run build
+   npm run package
+   ```
+
+5. Install and smoke-test the resulting VSIX locally.
+6. Increment the semantic version, then publish:
+
+   ```bash
+   npm version patch
+   npm run publish:marketplace
+   ```
+
+You can also upload the VSIX manually from the publisher portal. See the official [Publishing Extensions](https://code.visualstudio.com/api/working-with-extensions/publishing-extension) and [Install from VSIX](https://code.visualstudio.com/docs/configure/extensions/extension-marketplace#_install-from-a-vsix) documentation.
+
+For automated releases, store the token as a protected GitHub Actions secret such as `VSCE_PAT`; do not put it in source, workflow text, or documentation examples.
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+See [CONTRIBUTING.md](CONTRIBUTING.md). Bug reports and pull requests are welcome at [github.com/mohsinsurani/quackwrangler](https://github.com/mohsinsurani/quackwrangler).
 
 ## License
 
-MIT License - see [LICENSE](LICENSE)
-
-## Acknowledgments
-
-- [DuckDB](https://duckdb.org/) - The world's fastest analytical database
-- [VS Code](https://code.visualstudio.com/) - The best code editor
-- [Data Wrangler](https://github.com/microsoft/vscode-data-wrangler) - Microsoft's inspiring original
-
----
-
-Built with quack by the QuackWrangler community
+Copyright (c) 2026 QuackWrangler Contributors. Released under the [MIT License](LICENSE), which permits private and commercial use, modification, distribution, and sublicensing subject to preserving the license notice.

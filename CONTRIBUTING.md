@@ -7,6 +7,8 @@ Thank you for your interest in contributing to QuackWrangler! This guide will he
 - Node.js 18 or higher
 - npm 9 or higher
 - VS Code 1.85.0 or higher
+- Python 3.10 or higher when changing the optional Polars sidecar
+- [uv](https://docs.astral.sh/uv/) recommended for Python dependency management
 - Git
 
 ## Development Setup
@@ -14,15 +16,15 @@ Thank you for your interest in contributing to QuackWrangler! This guide will he
 1. **Fork and clone the repository**
 
 ```bash
-git clone https://github.com/your-username/quackwrangler.git
+git clone https://github.com/mohsinsurani/quackwrangler.git
 cd quackwrangler
 ```
 
 2. **Install dependencies**
 
 ```bash
-npm install
-cd webview-ui && npm install && cd ..
+npm ci
+npm --prefix webview-ui ci
 ```
 
 3. **Open in VS Code**
@@ -41,6 +43,13 @@ npm run build
 
 Press `F5` in VS Code to launch the Extension Development Host.
 
+Python is not required for Version 1. When changing the optional Version 2
+sidecar, install its recorded environment with:
+
+```bash
+uv sync --frozen --extra arrow --extra dev
+```
+
 ## Development Workflow
 
 ### Making Changes
@@ -54,8 +63,10 @@ Press `F5` in VS Code to launch the Extension Development Host.
 
 3. Build and test:
    ```bash
-   npm run build
-   npm test
+    npm run build
+    npm test
+    uv run ruff check src/sidecar
+    uv run ruff format --check src/sidecar
    ```
 
 4. Commit your changes:
@@ -74,6 +85,8 @@ Press `F5` in VS Code to launch the Extension Development Host.
 - Follow Prettier formatting (single quotes, trailing commas)
 - Use ESLint for code quality
 - Write meaningful commit messages
+- Record Python runtime and optional dependencies in `pyproject.toml`; do not add ad-hoc requirements files
+- Keep Python changes compatible with the `requires-python` range in `pyproject.toml`
 
 ### Testing
 

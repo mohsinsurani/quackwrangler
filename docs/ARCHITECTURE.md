@@ -1,5 +1,7 @@
 # Architecture
 
+> Version 1 executes transformations exclusively with DuckDB. Polars Python remains a code-generation target; native Polars sidecar execution is deferred to Version 2. Sidecar sections below describe the planned Version 2 architecture.
+
 ## System Overview
 
 QuackWrangler follows a **3-layer architecture** inspired by Data Wrangler, with clear separation between the UI, extension host, and query engines.
@@ -9,7 +11,7 @@ QuackWrangler follows a **3-layer architecture** inspired by Data Wrangler, with
 │                    VS Code Webview UI                           │
 │                                                                 │
 │  ┌──────────────┐  ┌──────────────────┐  ┌───────────────────┐ │
-│  │  Operations  │  │  Perspective     │  │  Code Preview     │ │
+│  │  Operations  │  │  Virtual Grid    │  │  Code Preview     │ │
 │  │  Panel       │  │  Data Grid       │  │  (SQL/Python)     │ │
 │  │              │  │                  │  │                   │ │
 │  │  • Filter    │  │  • Sort/Filter   │  │  • DuckDB SQL     │ │
@@ -18,7 +20,7 @@ QuackWrangler follows a **3-layer architecture** inspired by Data Wrangler, with
 │  └──────────────┘  └──────────────────┘  └───────────────────┘ │
 │                                                                 │
 └──────────────────────────────┬──────────────────────────────────┘
-                               │ PostMessage (JSON + Arrow IPC)
+                               │ PostMessage (bounded JSON pages)
 ┌──────────────────────────────▼──────────────────────────────────┐
 │                  VS Code Extension Host                         │
 │                  (TypeScript / Node.js)                         │
@@ -39,7 +41,7 @@ QuackWrangler follows a **3-layer architecture** inspired by Data Wrangler, with
 │  │                        │  │                                │ │
 │  │  • In-process engine   │  │  • Subprocess via spawn()      │ │
 │  │  • SQL queries         │  │  • JSON stdin/stdout protocol  │ │
-│  │  • Parquet/CSV/JSON    │  │  • Arrow IPC data transfer     │ │
+│  │  • Parquet/CSV/JSON    │  │  • Bounded JSON page transfer  │ │
 │  │  • Automatic spilling  │  │  • Auto-detect Python env      │ │
 │  └────────────────────────┘  └────────────────────────────────┘ │
 │                                                                 │
@@ -61,7 +63,7 @@ User right-clicks file → File Detector → Extension detects engine availabili
                                           ↓
                               Schema + Preview Data
                                           ↓
-                              Webview ← Perspective Grid loads Arrow data
+                              Webview ← virtualized grid loads one bounded page
 ```
 
 ### 2. Transform Flow
@@ -79,9 +81,9 @@ User selects operation in Left Panel
                          │                                  │
                          └────────────────┬─────────────────┘
                                           ↓
-                              Updated Data (Arrow IPC)
+                              Updated paginated data
                                           ↓
-                              Perspective Grid updates
+                              Virtualized grid updates
                               Code Preview shows generated code
 ```
 
@@ -108,12 +110,12 @@ User clicks Export → Code Preview shows full code
 - **Active transforms**: Shown as removable chips
 - **Undo/Redo**: Full history support
 
-#### Perspective Data Grid (Center)
+#### Virtualized Data Grid (Center)
 - **High-performance rendering**: Handles millions of rows
 - **Built-in operations**: Sort, filter, group by, aggregate
 - **Column statistics**: Type, null count, unique values, distributions
 - **Theme support**: Auto-detects VS Code dark/light mode
-- **Export**: Arrow IPC, JSON, CSV
+- **Export**: Parquet, JSON, and CSV
 
 #### Code Preview (Bottom)
 - **Real-time code generation**: DuckDB SQL or Polars Python
@@ -152,7 +154,7 @@ User clicks Export → Code Preview shows full code
 #### Polars Sidecar (`src/sidecar/`)
 - **Subprocess**: Python process spawned by extension
 - **JSON protocol**: stdin/stdout communication
-- **Arrow IPC**: Zero-copy data transfer
+- **Bounded pages**: JSON transfer is capped by the configured page size
 - **Auto-detection**: Finds Python + polars automatically
 
 ## Message Protocol
@@ -215,9 +217,11 @@ User clicks Export → Code Preview shows full code
 
 ## Performance Optimizations
 
-### 1. Perspective Data Grid
-- **Zero-copy Arrow IPC**: Data transferred as Arrow buffers
-- **WASM rendering**: Grid runs in browser thread
+The current transport deliberately uses small JSON pages. Arrow IPC should be added only if extension-host/webview serialization is shown to dominate a profile; with 100-row pages it would add a large browser dependency without improving query execution.
+
+### 1. Virtualized Data Grid
+- **Bounded transfer**: The extension sends one page (100 rows by default)
+- **Virtual rendering**: Only visible rows are mounted in the webview
 - **Lazy loading**: Only visible rows rendered
 - **Columnar format**: Matches Parquet/Arrow layout
 
@@ -228,7 +232,7 @@ User clicks Export → Code Preview shows full code
 - **Automatic spilling**: Handles datasets larger than RAM
 
 ### 3. Polars Sidecar
-- **Arrow IPC transfer**: Zero-copy between Python and TypeScript
+- **Structured replay**: The sidecar rebuilds state from the immutable source and transform history
 - **Lazy evaluation**: Polars optimizes query plans
 - **SIMD operations**: Vectorized column operations
 - **Memory mapping**: Large files accessed without full load
@@ -247,8 +251,8 @@ User clicks Export → Code Preview shows full code
 
 - **Sandboxed webview**: No direct file system access
 - **Subprocess isolation**: Polars runs in separate process
-- **SQL injection prevention**: Parameterized queries
-- **Input validation**: All user inputs sanitized
+- **Identifier/value validation**: Structured transforms quote identifiers and validate cast types
+- **Advanced filter expressions**: Filter text is intentionally DuckDB SQL and executes with the user's local extension privileges
 - **No secrets in code**: Generated code is safe to share
 
 ## Testing Strategy

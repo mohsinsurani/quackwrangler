@@ -16,6 +16,13 @@ describe('fileDetector utils', () => {
     it('should identify JSON files', () => {
       expect(isDataFile('data.json')).toBe(true);
       expect(isDataFile('data.jsonl')).toBe(true);
+      expect(isDataFile('data.ndjson')).toBe(true);
+    });
+
+    it('should identify spreadsheet files supported by DuckDB', () => {
+      expect(isDataFile('data.xlsx')).toBe(true);
+      expect(isDataFile('data.ods')).toBe(true);
+      expect(isDataFile('legacy.xls')).toBe(false);
     });
 
     it('should reject non-data files', () => {
@@ -35,6 +42,8 @@ describe('fileDetector utils', () => {
     it('should include parquet pattern', () => {
       const patterns = getDataFilePatterns();
       expect(patterns.some((p) => p.includes('parquet'))).toBe(true);
+      expect(patterns).toContain('**/*.xlsx');
+      expect(patterns).toContain('**/*.ods');
     });
   });
 

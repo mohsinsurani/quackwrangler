@@ -1,0 +1,67 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "quackwrangler-sidecar"
+version = "0.1.0"
+description = "Optional Polars execution sidecar for the QuackWrangler VS Code extension"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [
+  { name = "QuackWrangler Contributors" },
+]
+keywords = ["duckdb", "polars", "vscode", "data-wrangling", "parquet"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Environment :: Plugins",
+  "Intended Audience :: Developers",
+  "Intended Audience :: Science/Research",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Scientific/Engineering :: Information Analysis",
+]
+dependencies = [
+  "polars>=1.0,<2",
+]
+
+[project.optional-dependencies]
+arrow = [
+  "pyarrow>=17",
+]
+excel = [
+  "fastexcel>=0.12",
+]
+dev = [
+  "ruff>=0.9",
+]
+
+[project.urls]
+Homepage = "https://github.com/quackwrangler/quackwrangler"
+Documentation = "https://github.com/quackwrangler/quackwrangler#readme"
+Issues = "https://github.com/quackwrangler/quackwrangler/issues"
+Source = "https://github.com/quackwrangler/quackwrangler"
+
+# This distribution manages dependencies for the extension-owned sidecar script;
+# the script itself is copied into the VSIX by esbuild.js.
+[tool.setuptools]
+packages = []
+
+[tool.ruff]
+target-version = "py310"
+line-length = 100
+extend-exclude = ["dist", "node_modules", "webview-ui/node_modules"]
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I", "UP"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "lf"

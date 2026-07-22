@@ -17,7 +17,43 @@ interface DataGridProps {
 }
 
 const ROW_HEIGHT = 32;
+const HEADER_HEIGHT = 52;
 const BUFFER_SIZE = 10;
+
+function jsonReplacer() {
+  const seen = new WeakSet<object>();
+  return (_key: string, nested: unknown): unknown => {
+    if (typeof nested === 'bigint') return nested.toString();
+    if (nested instanceof Map) return Object.fromEntries(nested);
+    if (nested && typeof nested === 'object') {
+      if (seen.has(nested)) return '[Circular]';
+      seen.add(nested);
+    }
+    return nested;
+  };
+}
+
+export function formatCellDetails(value: unknown): string {
+  if (value === null || value === undefined) return 'null';
+  if (typeof value !== 'object') return String(value);
+  try {
+    return JSON.stringify(value, jsonReplacer(), 2);
+  } catch {
+    return String(value);
+  }
+}
+
+export function formatCellValue(value: unknown): string {
+  if (value === null || value === undefined) return 'null';
+  if (typeof value !== 'object') return String(value);
+  try {
+    const json = JSON.stringify(value, jsonReplacer());
+    const prefix = Array.isArray(value) ? `${value.length} item${value.length === 1 ? '' : 's'} · ` : '';
+    return `${prefix}${json}`;
+  } catch {
+    return String(value);
+  }
+}
 
 export const DataGrid: React.FC<DataGridProps> = ({
   columns,
@@ -32,6 +68,7 @@ export const DataGrid: React.FC<DataGridProps> = ({
   const containerRef = useRef<HTMLDivElement>(null);
   const [scrollTop, setScrollTop] = useState(0);
   const [containerHeight, setContainerHeight] = useState(600);
+  const [inspectedCell, setInspectedCell] = useState<{ row: number; column: string; value: unknown } | null>(null);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -47,7 +84,8 @@ export const DataGrid: React.FC<DataGridProps> = ({
   }, []);
 
   const visibleRange = useMemo(() => {
-    const startIndex = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - BUFFER_SIZE);
+    const bodyScrollTop = Math.max(0, scrollTop - HEADER_HEIGHT);
+    const startIndex = Math.max(0, Math.floor(bodyScrollTop / ROW_HEIGHT) - BUFFER_SIZE);
     const visibleCount = Math.ceil(containerHeight / ROW_HEIGHT) + 2 * BUFFER_SIZE;
     const endIndex = Math.min(rows.length, startIndex + visibleCount);
     return { startIndex, endIndex };
@@ -65,6 +103,7 @@ export const DataGrid: React.FC<DataGridProps> = ({
 
   const formatValue = useCallback((value: any, type: string): string => {
     if (value === null || value === undefined) return 'null';
+    if (typeof value === 'object') return formatCellValue(value);
     if (type === 'DOUBLE' || type === 'FLOAT') {
       return typeof value === 'number' ? value.toFixed(2) : String(value);
     }
@@ -97,8 +136,8 @@ export const DataGrid: React.FC<DataGridProps> = ({
   }, []);
 
   return (
-    <div className="data-grid-container" ref={containerRef}>
-      <div className="data-grid-header">
+    <div className="data-grid-container">
+      <div className="data-grid-scroll" ref={containerRef} onScroll={handleScroll}>
         <div className="data-grid-row header-row">
           <div className="data-grid-cell row-number">#</div>
           {columns.map((col) => (
@@ -115,13 +154,7 @@ export const DataGrid: React.FC<DataGridProps> = ({
             </div>
           ))}
         </div>
-      </div>
-      <div
-        className="data-grid-body"
-        onScroll={handleScroll}
-        style={{ height: `calc(100% - ${ROW_HEIGHT}px)` }}
-      >
-        <div style={{ height: totalHeight, position: 'relative' }}>
+        <div className="data-grid-body" style={{ height: totalHeight }}>
           <div
             style={{
               position: 'absolute',
@@ -147,6 +180,9 @@ export const DataGrid: React.FC<DataGridProps> = ({
                       }`}
                       onClick={(e) => {
                         e.stopPropagation();
+                        if (cell !== null && typeof cell === 'object') {
+                          setInspectedCell({ row: rowIndex, column: columns[colIndex]?.name ?? `Column ${colIndex + 1}`, value: cell });
+                        }
                         onCellClick?.(rowIndex, colIndex, cell);
                       }}
                       title={formatValue(cell, columns[colIndex]?.type || '')}
@@ -164,6 +200,21 @@ export const DataGrid: React.FC<DataGridProps> = ({
         <span className="row-count">{rows.length.toLocaleString()} rows</span>
         <span className="col-count">{columns.length} columns</span>
       </div>
+      {inspectedCell && (
+        <div className="cell-inspector-backdrop" role="presentation" onClick={() => setInspectedCell(null)}>
+          <section className="cell-inspector" role="dialog" aria-modal="true" aria-label={`Inspect ${inspectedCell.column}`} onClick={event => event.stopPropagation()}>
+            <header>
+              <div><strong>{inspectedCell.column}</strong><span>Row {inspectedCell.row + 1} · nested value</span></div>
+              <button type="button" onClick={() => setInspectedCell(null)} aria-label="Close cell inspector">×</button>
+            </header>
+            <pre>{formatCellDetails(inspectedCell.value)}</pre>
+            <footer>
+              <button type="button" onClick={() => navigator.clipboard.writeText(formatCellDetails(inspectedCell.value))}>Copy JSON</button>
+              <button type="button" className="primary-button" onClick={() => setInspectedCell(null)}>Close</button>
+            </footer>
+          </section>
+        </div>
+      )}
     </div>
   );
 };

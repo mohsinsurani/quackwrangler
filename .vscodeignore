@@ -4,6 +4,8 @@ src/**
 tests/**
 webview-ui/**
 node_modules/**
+!node_modules/@duckdb/**
+!node_modules/detect-libc/**
 .gitignore
 .git/**
 *.map
@@ -19,3 +21,5 @@ docs/**
 CONTRIBUTING.md
 AGENTS.md
 ARCHITECTURE.md
+pyproject.toml
+uv.lock

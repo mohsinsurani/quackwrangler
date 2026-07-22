@@ -1,15 +1,26 @@
-import eslint from '@eslint/js';
-import tseslint from 'typescript-eslint';
+import tseslint from '@typescript-eslint/eslint-plugin';
+import tsParser from '@typescript-eslint/parser';
 import importPlugin from 'eslint-plugin-import';
 
-export default tseslint.config(
-  eslint.configs.recommended,
-  ...tseslint.configs.recommended,
+export default [
   {
+    ignores: ['dist/**', 'node_modules/**', 'webview-ui/**', 'coverage/**'],
+  },
+  {
+    files: ['src/**/*.ts'],
+    languageOptions: {
+      parser: tsParser,
+      parserOptions: {
+        ecmaVersion: 'latest',
+        sourceType: 'module',
+      },
+    },
     plugins: {
+      '@typescript-eslint': tseslint,
       import: importPlugin,
     },
     rules: {
+      ...tseslint.configs.recommended.rules,
       '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
       '@typescript-eslint/explicit-function-return-type': 'warn',
       '@typescript-eslint/no-explicit-any': 'warn',
@@ -23,7 +34,4 @@ export default tseslint.config(
       ],
     },
   },
-  {
-    ignores: ['dist/**', 'node_modules/**', 'webview-ui/**', 'coverage/**'],
-  },
-);
+];

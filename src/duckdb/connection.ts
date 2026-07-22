@@ -1,6 +1,7 @@
-import * as vscode from 'vscode';
 import { DuckDBInstance } from '@duckdb/node-api';
-import { QueryResult, DataWranglerConfig } from '../types';
+import * as vscode from 'vscode';
+
+import { QueryResult, DataWranglerConfig } from '../types/index.js';
 
 let outputChannel: vscode.OutputChannel;
 
@@ -32,26 +33,29 @@ export class DuckDBConnection {
       if (this.config.memoryLimit) {
         const conn = await this.instance.connect();
         await conn.run(`SET memory_limit='${this.config.memoryLimit}'`);
-        await conn.close();
+        conn.closeSync();
         log(`Memory limit set to ${this.config.memoryLimit}`);
       }
 
       if (this.config.tempDirectory) {
         const conn = await this.instance.connect();
         await conn.run(`SET temp_directory='${this.config.tempDirectory}'`);
-        await conn.close();
+        conn.closeSync();
         log(`Temp directory set to ${this.config.tempDirectory}`);
       }
 
-      if (this.config.autoLoadExtensions) {
+      const configuredExtensions = Array.isArray(this.config.autoLoadExtensions)
+        ? this.config.autoLoadExtensions
+        : this.config.autoLoadExtensions ? ['httpfs'] : [];
+      if (configuredExtensions.includes('httpfs')) {
         const conn = await this.instance.connect();
         try {
-          await conn.run("INSTALL httpfs; LOAD httpfs;");
+          await conn.run('LOAD httpfs');
           log('Loaded httpfs extension');
         } catch {
-          log('httpfs extension not available, skipping');
+          log('httpfs extension is not installed; local files remain available');
         }
-        await conn.close();
+        conn.closeSync();
       }
 
       log('DuckDB instance created successfully');
@@ -72,20 +76,20 @@ export class DuckDBConnection {
       const conn = await this.instance.connect();
       try {
         const result = await conn.run(sql);
-        const rows = await result.toArray();
-        const columns = result.columnNames;
+        const rows = await result.getRowsJson();
+        const columns = result.columnNames();
         const duration = Date.now() - startTime;
 
         log(`Query completed in ${duration}ms, returned ${rows.length} rows`);
 
         return {
           columns,
-          rows: rows.map(row => columns.map(col => row[col])),
+          rows,
           rowCount: rows.length,
           duration,
         };
       } finally {
-        await conn.close();
+        conn.closeSync();
       }
     } catch (error) {
       logError('Query execution failed', error);
@@ -105,15 +109,19 @@ export class DuckDBConnection {
       tableName = `read_parquet('${filePath}')`;
     } else if (ext === 'csv' || ext === 'tsv') {
       tableName = `read_csv_auto('${filePath}')`;
-    } else if (ext === 'json' || ext === 'jsonl') {
+    } else if (ext === 'json' || ext === 'jsonl' || ext === 'ndjson') {
       tableName = `read_json_auto('${filePath}')`;
+    } else if (ext === 'xlsx') {
+      tableName = `read_xlsx('${filePath}')`;
+    } else if (ext === 'ods') {
+      tableName = `ST_Read('${filePath}')`;
     } else {
       throw new Error(`Unsupported file type: ${ext}`);
     }
 
     const result = await this.query(`DESCRIBE SELECT * FROM ${tableName}`);
-    const columns = result.rows.map(row => row[0] as string);
-    const types = result.rows.map(row => row[1] as string);
+    const columns = result.rows.map((row: unknown[]) => row[0] as string);
+    const types = result.rows.map((row: unknown[]) => row[1] as string);
 
     return { columns, types };
   }

@@ -7,6 +7,34 @@ on:
     branches: [main]
 
 jobs:
+  python-sidecar:
+    name: Python sidecar
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install uv
+        run: python -m pip install uv
+
+      - name: Install locked sidecar environment
+        run: uv sync --frozen --extra arrow --extra dev
+
+      - name: Lint Python
+        run: uv run ruff check src/sidecar
+
+      - name: Check Python formatting
+        run: uv run ruff format --check src/sidecar
+
+      - name: Validate sidecar syntax
+        run: uv run python -m py_compile src/sidecar/polars-bridge.py
+
   build:
     runs-on: ubuntu-latest
 

@@ -4,6 +4,7 @@ export interface ColumnInfo {
   name: string;
   displayName: string;
   dataType: DataType;
+  type: string;
   nullable: boolean;
   nullCount: number;
   uniqueCount: number;
@@ -140,7 +141,8 @@ export interface SortState {
 
 export interface WebviewMessage {
   type: string;
-  payload: unknown;
+  payload?: unknown;
+  [key: string]: unknown;
 }
 
 export interface ExtensionMessage {

@@ -1,6 +1,6 @@
-import { TransformOperation } from '../types';
+import { TransformOperation } from '../types/index.js';
 
-type TransformFn = (params: Record<string, any>) => string;
+type TransformFn = (params: Record<string, unknown>) => string;
 
 export class TransformRegistry {
   private transforms: Map<string, TransformFn> = new Map();

@@ -1,12 +1,14 @@
 import * as vscode from 'vscode';
+
 import { DuckDBConnection } from '../duckdb/connection.js';
-import { PolarsProcess } from './polars-process.js';
 import {
   EngineType,
   QueryResult,
   TableSchema,
   DataWranglerConfig
 } from '../types/index.js';
+
+import { PolarsProcess } from './polars-process.js';
 
 export interface DataEngine {
   type: EngineType;

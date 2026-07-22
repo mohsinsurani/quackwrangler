@@ -1,5 +1,5 @@
 import { build, context } from 'esbuild';
-import { mkdirSync, existsSync } from 'fs';
+import { mkdirSync, existsSync, unlinkSync } from 'fs';
 
 const production = process.argv.includes('--production');
 const watch = process.argv.includes('--watch');
@@ -26,7 +26,7 @@ const extensionConfig = {
   entryPoints: ['src/extension.ts'],
   bundle: true,
   format: 'cjs',
-  outdir: 'dist',
+  outfile: 'dist/extension.cjs',
   target: 'node18',
   platform: 'node',
   minify: production,
@@ -84,6 +84,16 @@ async function buildExtension() {
 async function main() {
   if (!existsSync('dist')) {
     mkdirSync('dist', { recursive: true });
+  }
+
+  for (const staleBundle of [
+    'dist/extension.js',
+    'dist/extension.js.map',
+    'dist/sidecar/polars-bridge.py',
+  ]) {
+    if (existsSync(staleBundle)) {
+      unlinkSync(staleBundle);
+    }
   }
 
   if (watch) {

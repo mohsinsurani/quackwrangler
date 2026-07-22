@@ -1,7 +1,8 @@
 import * as path from 'path';
-import * as vscode from 'vscode';
-import { DuckDBConnection } from './connection';
-import { QueryResult } from '../types';
+
+import { QueryResult } from '../types/index.js';
+
+import { DuckDBConnection } from './connection.js';
 
 interface SelectOptions {
   columns?: string[];
@@ -9,6 +10,17 @@ interface SelectOptions {
   sorts?: { column: string; ascending: boolean }[];
   limit?: number;
   offset?: number;
+}
+
+export function normalizeReadOnlyQuery(sql: string): string {
+  const normalized = sql.trim().replace(/;\s*$/, '').trim();
+  if (!normalized) throw new Error('Enter a query to run');
+  if (normalized.includes(';')) throw new Error('Run one query at a time');
+  const withoutComments = normalized.replace(/^(?:\s*--[^\n]*(?:\n|$)|\s*\/\*[\s\S]*?\*\/\s*)+/, '').trimStart();
+  if (!/^(SELECT|WITH|VALUES)\b/i.test(withoutComments)) {
+    throw new Error('Custom queries are read-only. Start with SELECT, WITH, or VALUES.');
+  }
+  return normalized;
 }
 
 function getTableRef(filePath: string): string {
@@ -21,7 +33,12 @@ function getTableRef(filePath: string): string {
       return `read_csv_auto('${filePath.replace(/'/g, "''")}')`;
     case '.json':
     case '.jsonl':
+    case '.ndjson':
       return `read_json_auto('${filePath.replace(/'/g, "''")}')`;
+    case '.xlsx':
+      return `read_xlsx('${filePath.replace(/'/g, "''")}')`;
+    case '.ods':
+      return `ST_Read('${filePath.replace(/'/g, "''")}')`;
     default:
       throw new Error(`Unsupported file type: ${ext}`);
   }

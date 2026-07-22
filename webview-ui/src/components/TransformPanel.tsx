@@ -36,7 +36,7 @@ const TRANSFORM_TEMPLATES: TransformTemplate[] = [
 const CATEGORIES = ['Columns', 'Rows', 'Transform'];
 
 export const TransformPanel: React.FC<TransformPanelProps> = React.memo(
-  ({ columns, steps, onTransform, onPreview, onUndo, onRedo }) => {
+  ({ columns, steps, onTransform, onPreview: _onPreview, onUndo, onRedo }) => {
     const [selectedTemplate, setSelectedTemplate] = useState<TransformTemplate | null>(null);
     const [params, setParams] = useState<Record<string, unknown>>({});
     const [expandedStep, setExpandedStep] = useState<string | null>(null);

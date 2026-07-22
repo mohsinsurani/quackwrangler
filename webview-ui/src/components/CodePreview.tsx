@@ -1,16 +1,20 @@
-import React, { useCallback, useState, useEffect, useMemo } from 'react';
+import React, { useCallback, useState, useMemo } from 'react';
 import type { TransformStep, ColumnInfo } from '../types';
 
-type EngineType = 'duckdb' | 'polars';
-
 interface CodePreviewProps {
-  engine: EngineType;
   transformSteps: TransformStep[];
   columns: ColumnInfo[];
   tableName: string;
+  generatedCode?: { sql: string; duckdbPython: string; polarsPython: string };
 }
 
 type Language = 'sql' | 'python';
+
+function stringList(value: unknown, fallback?: unknown): string[] {
+  const source = value ?? fallback;
+  if (Array.isArray(source)) return source.filter((item): item is string => typeof item === 'string');
+  return typeof source === 'string' && source ? [source] : [];
+}
 
 interface HighlightToken {
   text: string;
@@ -185,7 +189,7 @@ function highlightPython(code: string): HighlightToken[] {
   return tokens;
 }
 
-function generateDuckDBSQL(columns: ColumnInfo[], steps: TransformStep[], tableName: string): string {
+function generateDuckDBSQL(_columns: ColumnInfo[], steps: TransformStep[], tableName: string): string {
   if (steps.length === 0) {
     return `SELECT *\nFROM ${tableName}\nLIMIT 1000;`;
   }
@@ -271,7 +275,7 @@ function generateDuckDBSQL(columns: ColumnInfo[], steps: TransformStep[], tableN
         break;
       }
       case 'deduplicate': {
-        const cols = (step.params.columns as string[]) || [];
+        const cols = stringList(step.params.columns, step.params.column);
         if (cols.length > 0) {
           const distinctCols = cols.map((c) => `"${c}"`).join(', ');
           sql += `-- Deduplicate on: ${cols.join(', ')}\n`;
@@ -282,8 +286,8 @@ function generateDuckDBSQL(columns: ColumnInfo[], steps: TransformStep[], tableN
         break;
       }
       case 'aggregate': {
-        const groupBy = (step.params.groupBy as string[]) || [];
-        const aggFuncs = (step.params.aggregations as string[]) || [];
+        const groupBy = stringList(step.params.groupBy);
+        const aggFuncs = stringList(step.params.aggregations);
         if (groupBy.length > 0 || aggFuncs.length > 0) {
           const groupCols = groupBy.map((c) => `"${c}"`).join(', ');
           const aggCols = aggFuncs.map((f) => f).join(',\n  ');
@@ -307,7 +311,7 @@ function generateDuckDBSQL(columns: ColumnInfo[], steps: TransformStep[], tableN
   return sql;
 }
 
-function generatePolarsPython(columns: ColumnInfo[], steps: TransformStep[], tableName: string): string {
+function generatePolarsPython(_columns: ColumnInfo[], steps: TransformStep[], tableName: string): string {
   let code = `import polars as pl\n\n`;
   code += `# Load data\n`;
   code += `df = pl.read_parquet("${tableName}.parquet")\n\n`;
@@ -376,7 +380,7 @@ function generatePolarsPython(columns: ColumnInfo[], steps: TransformStep[], tab
         break;
       }
       case 'deduplicate': {
-        const cols = (step.params.columns as string[]) || [];
+        const cols = stringList(step.params.columns, step.params.column);
         if (cols.length > 0) {
           code += `# Deduplicate on: ${cols.join(', ')}\n`;
           code += `df = df.unique(subset=[${cols.map((c) => `"${c}"`).join(', ')}])\n\n`;
@@ -384,8 +388,8 @@ function generatePolarsPython(columns: ColumnInfo[], steps: TransformStep[], tab
         break;
       }
       case 'aggregate': {
-        const groupBy = (step.params.groupBy as string[]) || [];
-        const aggFuncs = (step.params.aggregations as string[]) || [];
+        const groupBy = stringList(step.params.groupBy);
+        const aggFuncs = stringList(step.params.aggregations);
         if (groupBy.length > 0 || aggFuncs.length > 0) {
           code += `# Aggregate\n`;
           code += `df = df.group_by([${groupBy.map((c) => `"${c}"`).join(', ')}]).agg([\n`;
@@ -407,20 +411,19 @@ function generatePolarsPython(columns: ColumnInfo[], steps: TransformStep[], tab
 }
 
 export const CodePreview: React.FC<CodePreviewProps> = React.memo(
-  ({ engine, transformSteps, columns, tableName }) => {
+  ({ transformSteps, columns, tableName, generatedCode }) => {
     const [copied, setCopied] = useState(false);
-    const [language, setLanguage] = useState<Language>(engine === 'duckdb' ? 'sql' : 'python');
-
-    useEffect(() => {
-      setLanguage(engine === 'duckdb' ? 'sql' : 'python');
-    }, [engine]);
+    const [language, setLanguage] = useState<Language>('sql');
 
     const code = useMemo(() => {
+      if (generatedCode) {
+        return language === 'sql' ? generatedCode.sql : generatedCode.polarsPython;
+      }
       if (language === 'sql') {
         return generateDuckDBSQL(columns, transformSteps, tableName);
       }
       return generatePolarsPython(columns, transformSteps, tableName);
-    }, [language, columns, transformSteps, tableName]);
+    }, [language, columns, transformSteps, tableName, generatedCode]);
 
     const highlightedTokens = useMemo(() => {
       return language === 'sql' ? highlightSQL(code) : highlightPython(code);
@@ -450,7 +453,7 @@ export const CodePreview: React.FC<CodePreviewProps> = React.memo(
               className={`code-tab ${language === 'python' ? 'active' : ''}`}
               onClick={() => setLanguage('python')}
             >
-              Python (Polars)
+              Python export (Polars)
             </button>
           </div>
           <button

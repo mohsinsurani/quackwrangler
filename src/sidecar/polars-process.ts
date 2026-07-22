@@ -1,7 +1,10 @@
-import * as path from 'path';
 import { spawn, ChildProcess, execFile } from 'child_process';
+import * as path from 'path';
+
 import { OutputChannel } from 'vscode';
+
 import { QueryResult } from '../types/index.js';
+import { TransformOperation } from '../types/index.js';
 
 export interface PolarsQueryResult {
   success: boolean;
@@ -59,10 +62,22 @@ export class PolarsProcess {
   private ready = false;
   private queryTimeout: number;
   private pythonPath: string | null = null;
+  private preferredPythonPaths: string[] = [];
+  private outputBuffer = '';
+  private readyResolver: (() => void) | null = null;
 
-  constructor(outputChannel: OutputChannel, queryTimeoutMs = 30000) {
+  constructor(
+    outputChannel: OutputChannel,
+    queryTimeoutMs = 30000,
+    preferredPythonPath?: string | string[],
+  ) {
     this.outputChannel = outputChannel;
     this.queryTimeout = queryTimeoutMs;
+    this.preferredPythonPaths = Array.isArray(preferredPythonPath)
+      ? preferredPythonPath.filter(Boolean)
+      : preferredPythonPath
+        ? [preferredPythonPath]
+        : [];
   }
 
   private log(message: string): void {
@@ -80,14 +95,11 @@ export class PolarsProcess {
   async connect(): Promise<void> {
     this.pythonPath = await this.findPython();
     if (!this.pythonPath) {
-      throw new Error('Python not found. Install Python 3.8+ and ensure it is in your PATH.');
+      throw new Error(
+        'Polars is unavailable in the configured Python environments. From the QuackWrangler repository run `uv sync`, or set `quackwrangler.polars.pythonPath` to a Python executable containing Polars.',
+      );
     }
     this.log(`Found Python at: ${this.pythonPath}`);
-
-    const hasPolars = await this.validatePolars();
-    if (!hasPolars) {
-      throw new Error('polars is not installed. Install with: pip install polars');
-    }
     this.log('polars is available');
 
     await this.startProcess();
@@ -97,12 +109,12 @@ export class PolarsProcess {
    * Find a working Python installation.
    */
   private async findPython(): Promise<string | null> {
-    const candidates = ['python3', 'python'];
+    const candidates = [...new Set([...this.preferredPythonPaths, 'python3', 'python'])];
 
     for (const candidate of candidates) {
       try {
         const result = await this.execCommand(candidate, ['--version']);
-        if (result.includes('Python 3.')) {
+        if (result.includes('Python 3.') && await this.validatePolars(candidate)) {
           return candidate;
         }
       } catch {
@@ -130,13 +142,13 @@ export class PolarsProcess {
   /**
    * Validate that polars is importable by Python.
    */
-  private async validatePolars(): Promise<boolean> {
+  private async validatePolars(pythonPath: string): Promise<boolean> {
     try {
-      const result = await this.execCommand(this.pythonPath!, [
+      const result = await this.execCommand(pythonPath, [
         '-c',
         'import polars; print(polars.__version__)'
       ]);
-      this.log(`polars version: ${result.trim()}`);
+      this.log(`Polars ${result.trim()} available at: ${pythonPath}`);
       return true;
     } catch {
       return false;
@@ -170,12 +182,9 @@ export class PolarsProcess {
       this.rejectAllPending(error.message);
     });
 
-    this.process.stdout?.on('data', (data: Buffer) => {
-      this.handleOutput(data.toString());
-    });
-
-    // Wait for ready signal
-    await this.waitForReady();
+    const readyPromise = this.waitForReady();
+    this.process.stdout?.on('data', (data: Buffer) => this.handleOutput(data.toString()));
+    await readyPromise;
     this.ready = true;
     this.log('Sidecar process ready');
   }
@@ -186,27 +195,14 @@ export class PolarsProcess {
   private waitForReady(): Promise<void> {
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
+        this.readyResolver = null;
         reject(new Error('Sidecar process did not send ready signal within 10s'));
       }, 10000);
-
-      const checkReady = (data: Buffer) => {
-        try {
-          const lines = data.toString().split('\n').filter(l => l.trim());
-          for (const line of lines) {
-            const msg = JSON.parse(line);
-            if (msg.type === 'ready') {
-              clearTimeout(timeout);
-              this.process?.stdout?.off('data', checkReady);
-              resolve();
-              return;
-            }
-          }
-        } catch {
-          // Not JSON yet, keep waiting
-        }
+      this.readyResolver = () => {
+        clearTimeout(timeout);
+        this.readyResolver = null;
+        resolve();
       };
-
-      this.process?.stdout?.on('data', checkReady);
     });
   }
 
@@ -214,10 +210,17 @@ export class PolarsProcess {
    * Handle JSON output from the sidecar process.
    */
   private handleOutput(data: string): void {
-    const lines = data.split('\n').filter(l => l.trim());
+    this.outputBuffer += data;
+    const chunks = this.outputBuffer.split('\n');
+    this.outputBuffer = chunks.pop() ?? '';
+    const lines = chunks.filter(l => l.trim());
     for (const line of lines) {
       try {
         const response = JSON.parse(line);
+        if (response.type === 'ready') {
+          this.readyResolver?.();
+          continue;
+        }
         if (response.id && this.pendingRequests.has(response.id)) {
           const pending = this.pendingRequests.get(response.id)!;
           clearTimeout(pending.timer);
@@ -328,6 +331,25 @@ export class PolarsProcess {
       rows: result.rows || [],
       rowCount: result.rowCount || 0,
       duration
+    };
+  }
+
+  async applyPipeline(steps: TransformOperation[], offset: number, limit: number): Promise<{
+    result: QueryResult;
+    totalRows: number;
+    schema: Array<{ name: string; type: string; nullable: boolean }>;
+  }> {
+    const startTime = Date.now();
+    const response = await this.sendCommand('apply_pipeline', {
+      steps: steps.map(step => ({ type: step.type, params: step.params })), offset, limit,
+    });
+    return {
+      result: {
+        columns: response.columns ?? [], rows: response.rows ?? [],
+        rowCount: response.rows?.length ?? 0, duration: Date.now() - startTime,
+      },
+      totalRows: response.totalRows ?? 0,
+      schema: response.schema ?? [],
     };
   }
 

@@ -1,0 +1,21 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Run QuackWrangler Extension",
+      "type": "extensionHost",
+      "request": "launch",
+      "args": [
+        "--extensionDevelopmentPath=${workspaceFolder}",
+        "--disable-extension=ms-toolsai.datawrangler",
+        "--new-window",
+        "--folder-uri",
+        "file://${workspaceFolder}"
+      ],
+      "outFiles": [
+        "${workspaceFolder}/dist/**/*.cjs"
+      ],
+      "preLaunchTask": "QuackWrangler: Build"
+    }
+  ]
+}

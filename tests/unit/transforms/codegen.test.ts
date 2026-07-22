@@ -8,6 +8,7 @@ import {
   exportToNotebook,
 } from '../../../src/transforms/codegen';
 import { TransformOperation } from '../../../src/types';
+import { WranglingSession } from '../../../src/transforms/pipeline';
 
 describe('codegen', () => {
   const sampleSteps: TransformOperation[] = [
@@ -26,6 +27,39 @@ describe('codegen', () => {
       description: 'Fill missing values in price',
     },
   ];
+
+  it.each([
+    ['filter_rows', { column: 'name', operator: 'contains', value: 'a' }],
+    ['deduplicate', { columns: 'id' }],
+    ['rename_column', { oldName: 'name', newName: 'label' }],
+    ['drop_column', { column: 'nullable' }],
+    ['add_column', { name: 'double_amount', expression: 'amount * 2' }],
+    ['cast_type', { column: 'amount', targetType: 'DOUBLE' }],
+    ['fill_nulls', { column: 'nullable', value: 'missing' }],
+    ['sort_rows', { column: 'amount', direction: 'DESC' }],
+    ['aggregate', { function: 'SUM', column: 'amount', groupBy: 'region', alias: 'total' }],
+  ])('generates every code format for UI operation %s', (type, params) => {
+    const session = new WranglingSession({} as any);
+    session.load('/tmp/data.csv');
+    session.apply(type, params);
+    const history = session.getHistory();
+
+    expect(() => generateDuckDBSQL(history)).not.toThrow();
+    expect(() => generateDuckDBPython(history, '/tmp/data.csv')).not.toThrow();
+    expect(() => generatePolarsPython(history, '/tmp/data.csv')).not.toThrow();
+  });
+
+  it('normalizes duplicate columns from both single-select and array parameter shapes', () => {
+    const single: TransformOperation = {
+      id: 'one', type: 'deduplicate', params: { columns: 'id' }, sql: '', description: 'single',
+    };
+    const multiple: TransformOperation = {
+      id: 'many', type: 'deduplicate', params: { columns: ['id', 'region'] }, sql: '', description: 'multiple',
+    };
+
+    expect(generatePolarsPython([single])).toContain('subset=["id"]');
+    expect(generatePolarsPython([multiple])).toContain('subset=["id", "region"]');
+  });
 
   // ── DuckDB SQL ──────────────────────────────────────
 
@@ -100,6 +134,25 @@ describe('codegen', () => {
     it('should handle empty steps', () => {
       const python = generatePolarsPython([]);
       expect(python).toContain('import polars as pl');
+    });
+
+    it('generates structured filters', () => {
+      const step: TransformOperation = {
+        id: 'filter', type: 'filter_rows',
+        params: { column: 'name', operator: 'contains', value: 'lab' },
+        sql: 'SELECT * FROM current_data', description: 'contains lab',
+      };
+      expect(generatePolarsPython([step])).toContain("str.contains('lab', literal=True)");
+    });
+
+    it('generates add-column and aggregate operations', () => {
+      const steps: TransformOperation[] = [
+        { id: 'add', type: 'add_column', params: { name: 'total', expression: 'amount * 2' }, sql: '', description: 'add total' },
+        { id: 'agg', type: 'aggregate', params: { function: 'SUM', column: 'total', groupBy: 'region', alias: 'revenue' }, sql: '', description: 'aggregate' },
+      ];
+      const python = generatePolarsPython(steps);
+      expect(python).toContain("pl.sql_expr('amount * 2').alias('total')");
+      expect(python).toContain("group_by('region').agg(pl.col('total').sum().alias('revenue'))");
     });
   });
 

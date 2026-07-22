@@ -7,6 +7,9 @@ const DATA_FILE_EXTENSIONS = new Set([
   '.tsv',
   '.json',
   '.jsonl',
+  '.ndjson',
+  '.xlsx',
+  '.ods',
 ]);
 
 export function isDataFile(filePath: string): boolean {
@@ -21,6 +24,9 @@ export function getDataFilePatterns(): string[] {
     '**/*.tsv',
     '**/*.json',
     '**/*.jsonl',
+    '**/*.ndjson',
+    '**/*.xlsx',
+    '**/*.ods',
   ];
 }
 

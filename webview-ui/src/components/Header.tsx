@@ -1,19 +1,15 @@
 import React from 'react';
 
-type EngineType = 'duckdb' | 'polars';
-
 interface HeaderProps {
   fileName: string;
   rowCount: number;
   columnCount: number;
   isLoading: boolean;
-  engine: EngineType;
-  onEngineChange: (engine: EngineType) => void;
   onRefresh: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = React.memo(
-  ({ fileName, rowCount, columnCount, isLoading, engine, onEngineChange, onRefresh }) => {
+  ({ fileName, rowCount, columnCount, isLoading, onRefresh }) => {
     return (
       <header className="header">
         <div className="header-top">
@@ -30,22 +26,10 @@ export const Header: React.FC<HeaderProps> = React.memo(
           </div>
           <div className="header-actions">
             <div className="engine-selector">
-              <button
-                className={`engine-btn ${engine === 'duckdb' ? 'active' : ''}`}
-                onClick={() => onEngineChange('duckdb')}
-                title="Use DuckDB engine"
-              >
+              <div className="engine-btn active" title="Powered by DuckDB">
                 <span className="engine-icon">🦆</span>
                 <span className="engine-label">DuckDB</span>
-              </button>
-              <button
-                className={`engine-btn ${engine === 'polars' ? 'active' : ''}`}
-                onClick={() => onEngineChange('polars')}
-                title="Use Polars engine"
-              >
-                <span className="engine-icon">⚡</span>
-                <span className="engine-label">Polars</span>
-              </button>
+              </div>
             </div>
             {isLoading && <div className="loading-spinner" aria-label="Loading" />}
             <button

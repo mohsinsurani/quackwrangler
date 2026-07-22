@@ -1,27 +1,42 @@
 import * as vscode from 'vscode';
-import { DuckDBConnection } from '../duckdb/connection';
-import { loadFilePreview, getFileMetadata, loadFile } from '../duckdb/parquet-loader';
-import { executeQuery, exportResults } from '../duckdb/query-engine';
-import { DataWranglerPanel } from '../webview/provider';
-import { DataWranglerConfig, TransformOperation } from '../types';
+
+import { DuckDBConnection } from '../duckdb/connection.js';
+import { getFileMetadata, loadFile } from '../duckdb/parquet-loader.js';
+import { executeQuery, exportResults, normalizeReadOnlyQuery } from '../duckdb/query-engine.js';
+import { generateDuckDBPython, generatePolarsPython } from '../transforms/codegen.js';
+import { WranglingSession } from '../transforms/pipeline.js';
+import { DataWranglerConfig } from '../types/index.js';
+import { WebviewMessage } from '../types/index.js';
+import { DataWranglerPanel } from '../webview/provider.js';
 
 function getConfig(): DataWranglerConfig {
   const config = vscode.workspace.getConfiguration('quackwrangler');
   return {
-    memoryLimit: config.get<string>('memoryLimit', '1GB'),
-    tempDirectory: config.get<string>('tempDirectory', ''),
-    autoLoadExtensions: config.get<boolean>('autoLoadExtensions', true),
-    maxRowsPreview: config.get<number>('maxRowsPreview', 100),
-    exportFormat: config.get<'parquet' | 'csv' | 'json'>('exportFormat', 'parquet'),
+    memoryLimit: config.get<string>('duckdb.memoryLimit', '1GB'),
+    tempDirectory: config.get<string>('duckdb.tempDirectory', ''),
+    autoLoadExtensions: config.get<string[]>('duckdb.autoLoadExtensions', []),
+    maxRowsPreview: config.get<number>('display.maxRows', 10000),
+    exportFormat: config.get<'parquet' | 'csv' | 'json'>('display.exportFormat', 'parquet'),
+    engine: 'duckdb',
+    defaultExportEngine: 'duckdb',
   };
 }
 
 let connection: DuckDBConnection | null = null;
 let outputChannel: vscode.OutputChannel;
+let session: WranglingSession | null = null;
+let configuredExtensionUri: vscode.Uri | undefined;
+let customQuerySql: string | null = null;
+const WEBVIEW_PROTOCOL_VERSION = 2;
+
+export function configureCommands(extensionUri: vscode.Uri, channel: vscode.OutputChannel): void {
+  configuredExtensionUri = extensionUri;
+  outputChannel = channel;
+}
 
 async function getConnection(): Promise<DuckDBConnection> {
   if (!connection || !connection.isConnected()) {
-    outputChannel = vscode.window.createOutputChannel('QuackWrangler');
+    outputChannel ??= vscode.window.createOutputChannel('QuackWrangler');
     const config = getConfig();
     connection = new DuckDBConnection(config, outputChannel);
     await connection.connect();
@@ -29,16 +44,134 @@ async function getConnection(): Promise<DuckDBConnection> {
   return connection;
 }
 
+async function postSession(panel: DataWranglerPanel, offset = 0, limit = 100): Promise<void> {
+  if (!session) throw new Error('No active wrangling session');
+  const history = session.getHistory();
+  let state: Awaited<ReturnType<WranglingSession['getPage']>>;
+  state = await session.getPage(offset, limit);
+  let polarsPython: string;
+  try {
+    polarsPython = generatePolarsPython(history, session.getFilePath());
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    outputChannel.appendLine(`[Code generation] Polars export unavailable: ${detail}`);
+    polarsPython = `# Polars export could not be generated for this pipeline\n# ${detail}`;
+  }
+  panel.postMessage({
+    type: 'sessionUpdated', protocolVersion: WEBVIEW_PROTOCOL_VERSION, schema: state.schema, result: state.result, history, engine: session.getEngine(), page: state.page,
+    code: {
+      sql: session.getSql(),
+      duckdbPython: generateDuckDBPython(history, session.getFilePath()),
+      polarsPython,
+    },
+  });
+}
+
+async function postCustomQuery(panel: DataWranglerPanel, offset = 0, limit = 100): Promise<void> {
+  if (!session || !customQuerySql) throw new Error('No custom query is active');
+  const conn = await getConnection();
+  const [result, count, described] = await Promise.all([
+    conn.query(`SELECT * FROM (${customQuerySql}) AS custom_query LIMIT ${limit} OFFSET ${offset}`),
+    conn.query(`SELECT COUNT(*) FROM (${customQuerySql}) AS custom_query_count`),
+    conn.query(`DESCRIBE SELECT * FROM (${customQuerySql}) AS custom_query_schema`),
+  ]);
+  const totalRows = Number(count.rows[0]?.[0] ?? 0);
+  panel.postMessage({
+    type: 'customQueryResult',
+    schema: {
+      columns: described.rows.map(row => ({
+        name: String(row[0]), type: String(row[1]), nullable: String(row[2]).toUpperCase() === 'YES',
+      })),
+      rowCount: totalRows,
+      filePath: session.getFilePath(),
+    },
+    result,
+    page: { offset, limit, totalRows },
+  });
+}
+
+async function handleWebviewMessage(panel: DataWranglerPanel, message: WebviewMessage): Promise<void> {
+  try {
+    switch (message.type) {
+      case 'ready':
+        if (session) await postSession(panel);
+        return;
+      case 'openFilePicker':
+        await openFile();
+        return;
+      case 'loadFile':
+        await openDataWrangler(message.filePath);
+        return;
+      case 'applyTransform':
+        if (!session) throw new Error('Open a data file before applying a transform');
+        customQuerySql = null;
+        session.apply(message.transform.type, message.transform.params);
+        await postSession(panel);
+        return;
+      case 'undo': customQuerySql = null; session?.undo(); await postSession(panel); return;
+      case 'redo': customQuerySql = null; session?.redo(); await postSession(panel); return;
+      case 'reset': customQuerySql = null; session?.reset(); await postSession(panel); return;
+      case 'removeTransform': customQuerySql = null; session?.remove(message.id); await postSession(panel); return;
+      case 'pageChange':
+        if (customQuerySql) await postCustomQuery(panel, message.offset, message.limit);
+        else await postSession(panel, message.offset, message.limit);
+        return;
+      case 'executeCustomQuery':
+        if (!session) throw new Error('Open a data file before running a query');
+        customQuerySql = normalizeReadOnlyQuery(message.sql);
+        await postCustomQuery(panel);
+        return;
+      case 'clearCustomQuery':
+        customQuerySql = null;
+        await postSession(panel);
+        return;
+      case 'refresh':
+        if (!session?.getFilePath()) return;
+        customQuerySql = null;
+        await openDataWrangler(session.getFilePath());
+        return;
+      case 'getStats':
+        if (!session) throw new Error('No active wrangling session');
+        panel.postMessage({ type: 'stats', stats: await session.getStatistics() });
+        return;
+      case 'exportData': {
+        if (!session) throw new Error('Open a data file before exporting');
+        const sourcePath = session.getFilePath();
+        const defaultPath = sourcePath.replace(/\.[^.]+$/, `_transformed.${message.format}`);
+        const target = message.outputPath
+          ? vscode.Uri.file(message.outputPath)
+          : await vscode.window.showSaveDialog({
+              defaultUri: vscode.Uri.file(defaultPath),
+              filters: { [message.format.toUpperCase()]: [message.format] },
+              saveLabel: `Export ${message.format.toUpperCase()}`,
+            });
+        if (!target) {
+          panel.postMessage({ type: 'exportComplete', outputPath: '' });
+          return;
+        }
+        const conn = await getConnection();
+        await exportResults(conn, session.getSql(), target.fsPath, message.format);
+        panel.postMessage({ type: 'exportComplete', outputPath: target.fsPath });
+        vscode.window.showInformationMessage(`Exported ${message.format.toUpperCase()} to ${target.fsPath}`);
+        return;
+      }
+      default:
+        return;
+    }
+  } catch (error) {
+    panel.postMessage({ type: 'error', message: error instanceof Error ? error.message : String(error) });
+  }
+}
+
 export async function openDataWrangler(filePath?: string): Promise<void> {
-  const extensionUri = vscode.extensions.getExtension('quackwrangler.quackwrangler')?.extensionUri
-    || vscode.Uri.file(__dirname);
+  const extensionUri = configuredExtensionUri ?? vscode.extensions.getExtension('quackwrangler.quackwrangler')?.extensionUri;
 
   if (!filePath) {
     const uris = await vscode.window.showOpenDialog({
       canSelectFiles: true,
       canSelectMany: false,
       filters: {
-        'Data Files': ['parquet', 'csv', 'tsv', 'json', 'jsonl'],
+        'Data Files': ['parquet', 'csv', 'tsv', 'json', 'jsonl', 'ndjson', 'xlsx', 'ods'],
       },
     });
 
@@ -48,17 +181,22 @@ export async function openDataWrangler(filePath?: string): Promise<void> {
     filePath = uris[0].fsPath;
   }
 
+  if (!extensionUri) {
+    vscode.window.showErrorMessage('Extension URI not found');
+    return;
+  }
+
   const panel = DataWranglerPanel.createOrShow(extensionUri, filePath);
+  session = null;
+  customQuerySql = null;
+  panel.setMessageHandler(message => handleWebviewMessage(panel, message));
 
   try {
     const conn = await getConnection();
-    const [schema, preview] = await Promise.all([
-      getFileMetadata(conn, filePath),
-      loadFilePreview(conn, filePath, getConfig().maxRowsPreview),
-    ]);
-
     await loadFile(conn, filePath);
-    panel.postMessage({ type: 'fileLoaded', schema, preview });
+    session = new WranglingSession(conn);
+    session.load(filePath, getConfig().engine);
+    await postSession(panel, 0, Math.min(getConfig().maxRowsPreview, 100));
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     vscode.window.showErrorMessage(`Failed to load file: ${message}`);
@@ -76,7 +214,7 @@ export async function openFile(uri?: vscode.Uri): Promise<void> {
       canSelectFiles: true,
       canSelectMany: false,
       filters: {
-        'Data Files': ['parquet', 'csv', 'tsv', 'json', 'jsonl'],
+        'Data Files': ['parquet', 'csv', 'tsv', 'json', 'jsonl', 'ndjson', 'xlsx', 'ods'],
       },
     });
 
@@ -140,7 +278,7 @@ export async function exportDataCommand(): Promise<void> {
 
   try {
     const conn = await getConnection();
-    await exportResults(conn, 'SELECT * FROM current_data', uri.fsPath, format as any);
+    await exportResults(conn, session?.getSql() ?? 'SELECT * FROM current_data', uri.fsPath, format as 'parquet' | 'csv' | 'json');
     vscode.window.showInformationMessage(`Data exported to ${uri.fsPath}`);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -148,37 +286,26 @@ export async function exportDataCommand(): Promise<void> {
   }
 }
 
+export async function disposeCommands(): Promise<void> {
+  await connection?.close();
+  connection = null;
+  session = null;
+  customQuerySql = null;
+}
+
 export async function summarizeFileCommand(): Promise<void> {
-  const filePath = DataWranglerPanel.currentPanel?.filePath;
-  if (!filePath) {
+  const panel = DataWranglerPanel.currentPanel;
+  if (!panel || !session) {
     vscode.window.showWarningMessage('No file loaded. Open a file first.');
     return;
   }
 
   try {
-    const conn = await getConnection();
-    const sql = `SELECT * FROM current_data`;
-    const result = await conn.query(sql);
-
-    const summaryLines: string[] = [`File: ${filePath}`, `Rows: ${result.rowCount}`, ''];
-
-    const columnStats = await conn.query(`
-      SELECT
-        column_name,
-        data_type
-      FROM information_schema.columns
-      WHERE table_name = 'current_data'
-    `);
-
-    summaryLines.push('Schema:');
-    for (const row of columnStats.rows) {
-      summaryLines.push(`  ${row[0]}: ${row[1]}`);
-    }
-
-    const panel = DataWranglerPanel.currentPanel;
-    if (panel) {
-      panel.postMessage({ type: 'summary', summary: summaryLines.join('\n') });
-    }
+    const stats = await session.getStatistics();
+    panel.postMessage({ type: 'stats', stats });
+    vscode.window.showInformationMessage(
+      `Summarized ${stats.length} columns in ${session.getFilePath().split(/[\\/]/).pop()}`,
+    );
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     vscode.window.showErrorMessage(`Summarize failed: ${message}`);

@@ -1,12 +1,15 @@
+import * as fs from 'fs';
+
 import * as vscode from 'vscode';
-import * as path from 'path';
-import { WebviewMessage, ExtensionMessage } from '../types';
+
+import { WebviewMessage, ExtensionMessage } from '../types/index.js';
 
 export class DataWranglerPanel {
   public static currentPanel: DataWranglerPanel | undefined;
   private readonly _panel: vscode.WebviewPanel;
   private _disposables: vscode.Disposable[] = [];
   private _filePath: string | undefined;
+  private _messageDisposable: vscode.Disposable | undefined;
 
   private constructor(panel: vscode.WebviewPanel, extensionUri: vscode.Uri) {
     this._panel = panel;
@@ -24,7 +27,6 @@ export class DataWranglerPanel {
       DataWranglerPanel.currentPanel._panel.reveal(column);
       if (filePath) {
         DataWranglerPanel.currentPanel._filePath = filePath;
-        DataWranglerPanel.currentPanel._postMessage({ type: 'loadFile', filePath });
       }
       return DataWranglerPanel.currentPanel;
     }
@@ -64,6 +66,15 @@ export class DataWranglerPanel {
     return this._panel.webview.onDidReceiveMessage(callback, null, this._disposables);
   }
 
+  public setMessageHandler(callback: (message: WebviewMessage) => void | Promise<void>): void {
+    this._messageDisposable?.dispose();
+    this._messageDisposable = this._panel.webview.onDidReceiveMessage(
+      message => void Promise.resolve(callback(message)),
+      null,
+      this._disposables,
+    );
+  }
+
   public dispose(): void {
     DataWranglerPanel.currentPanel = undefined;
     this._panel.dispose();
@@ -79,52 +90,25 @@ export class DataWranglerPanel {
     return this._filePath;
   }
 
-  private _postMessage(message: WebviewMessage): void {
-    this._panel.webview.postMessage(message);
-  }
-
   private _getHtmlForWebview(
     webview: vscode.Webview,
     extensionUri: vscode.Uri
   ): string {
-    const scriptUri = webview.asWebviewUri(
-      vscode.Uri.joinPath(extensionUri, 'dist', 'webview', 'main.js')
-    );
-    const styleUri = webview.asWebviewUri(
-      vscode.Uri.joinPath(extensionUri, 'dist', 'webview', 'main.css')
-    );
-
-    return `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>QuackWrangler</title>
-  <link rel="stylesheet" href="${styleUri}">
-</head>
-<body>
-  <div id="app">
-    <div class="header">
-      <h1>🦆 QuackWrangler</h1>
-      <div class="toolbar">
-        <button id="btn-undo" title="Undo">↩</button>
-        <button id="btn-redo" title="Redo">↪</button>
-        <button id="btn-reset" title="Reset">⟳</button>
-        <button id="btn-export" title="Export">💾</button>
-      </div>
-    </div>
-    <div class="query-bar">
-      <input type="text" id="query-input" placeholder="Enter SQL query..." />
-      <button id="btn-execute">Execute</button>
-    </div>
-    <div class="content">
-      <div class="table-container" id="data-table"></div>
-      <div class="schema-panel" id="schema-panel"></div>
-    </div>
-    <div class="status-bar" id="status-bar">Ready</div>
-  </div>
-  <script src="${scriptUri}"></script>
-</body>
-</html>`;
+    const indexPath = vscode.Uri.joinPath(extensionUri, 'dist', 'webview', 'index.html').fsPath;
+    try {
+      let html = fs.readFileSync(indexPath, 'utf8');
+      html = html.replace(/<meta[^>]+http-equiv=["']Content-Security-Policy["'][^>]*>/gi, '');
+      html = html.replace(/(src|href)="\/?(assets\/[^\"]+)"/g, (_match, attribute, asset) => {
+        const uri = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'dist', 'webview', asset));
+        return `${attribute}="${uri}"`;
+      });
+      return html.replace(
+        '<head>',
+        `<head><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src ${webview.cspSource};">`,
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return `<!doctype html><html><body><h2>QuackWrangler webview is not built</h2><pre>${message}</pre></body></html>`;
+    }
   }
 }

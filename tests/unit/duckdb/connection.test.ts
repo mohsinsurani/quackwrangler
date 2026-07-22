@@ -18,10 +18,10 @@ vi.mock('@duckdb/node-api', () => ({
       connect: vi.fn().mockResolvedValue({
         all: vi.fn().mockResolvedValue([]),
         run: vi.fn().mockResolvedValue({
-          toArray: vi.fn().mockResolvedValue([{ id: 1 }]),
-          columnNames: ['id'],
+          getRowsJson: vi.fn().mockResolvedValue([[1]]),
+          columnNames: vi.fn().mockReturnValue(['id']),
         }),
-        close: vi.fn(),
+        closeSync: vi.fn(),
       }),
     }),
   },

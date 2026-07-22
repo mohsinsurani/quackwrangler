@@ -1,12 +1,11 @@
-import React, { useState, useCallback, useRef, useEffect } from 'react';
+import React, { useState, useCallback } from 'react';
 import type { TransformStep, ColumnInfo } from '../types';
-
-type EngineType = 'duckdb' | 'polars';
 
 interface OperationsPanelProps {
   columns: ColumnInfo[];
   transformSteps: TransformStep[];
   onTransform: (type: string, params: Record<string, unknown>) => void;
+  onExport: (format: 'parquet' | 'csv' | 'json') => void;
   onRemoveStep: (stepId: string) => void;
   onUndo: () => void;
   onRedo: () => void;
@@ -31,6 +30,7 @@ interface ParamDef {
   type: 'text' | 'number' | 'select' | 'column';
   required: boolean;
   options?: Array<{ label: string; value: string }>;
+  defaultValue?: unknown;
 }
 
 const OPERATION_CATEGORIES: OperationCategory[] = [
@@ -43,7 +43,29 @@ const OPERATION_CATEGORIES: OperationCategory[] = [
         name: 'Filter Rows',
         icon: '🔍',
         params: [
-          { name: 'condition', label: 'Condition', type: 'text', required: true },
+          { name: 'column', label: 'Column', type: 'column', required: true },
+          {
+            name: 'operator', label: 'Operator', type: 'select', required: true, defaultValue: 'equals',
+            options: [
+              { label: 'Equals (=)', value: 'equals' },
+              { label: 'Does not equal (≠)', value: 'not_equals' },
+              { label: 'Contains', value: 'contains' },
+              { label: "Doesn't contain", value: 'not_contains' },
+              { label: 'Starts with', value: 'starts_with' },
+              { label: 'Ends with', value: 'ends_with' },
+              { label: 'Greater than (>)', value: 'greater_than' },
+              { label: 'Greater than or equal (≥)', value: 'greater_equals' },
+              { label: 'Less than (<)', value: 'less_than' },
+              { label: 'Less than or equal (≤)', value: 'less_equals' },
+              { label: 'Between', value: 'between' },
+              { label: 'In list', value: 'in' },
+              { label: 'Not in list', value: 'not_in' },
+              { label: 'Is null', value: 'is_null' },
+              { label: 'Is not null', value: 'is_not_null' },
+            ],
+          },
+          { name: 'value', label: 'Value', type: 'text', required: false },
+          { name: 'value2', label: 'Upper value', type: 'text', required: false },
         ],
       },
       {
@@ -147,7 +169,19 @@ const OPERATION_CATEGORIES: OperationCategory[] = [
         icon: '📊',
         params: [
           { name: 'groupBy', label: 'Group By', type: 'column', required: false },
-          { name: 'aggregations', label: 'Aggregations', type: 'text', required: true },
+          {
+            name: 'function', label: 'Function', type: 'select', required: true, defaultValue: 'COUNT',
+            options: [
+              { label: 'Count rows', value: 'COUNT' },
+              { label: 'Count distinct', value: 'COUNT_DISTINCT' },
+              { label: 'Sum', value: 'SUM' },
+              { label: 'Average', value: 'AVG' },
+              { label: 'Minimum', value: 'MIN' },
+              { label: 'Maximum', value: 'MAX' },
+            ],
+          },
+          { name: 'column', label: 'Value Column', type: 'column', required: false },
+          { name: 'alias', label: 'Result Name', type: 'text', required: false },
         ],
       },
     ],
@@ -179,9 +213,10 @@ const OPERATION_CATEGORIES: OperationCategory[] = [
 ];
 
 export const OperationsPanel: React.FC<OperationsPanelProps> = React.memo(
-  ({ columns, transformSteps, onTransform, onRemoveStep, onUndo, onRedo }) => {
+  ({ columns, transformSteps, onTransform, onExport, onRemoveStep, onUndo, onRedo }) => {
     const [selectedOp, setSelectedOp] = useState<OperationDef | null>(null);
     const [formData, setFormData] = useState<Record<string, unknown>>({});
+    const [formError, setFormError] = useState('');
     const [draggedStep, setDraggedStep] = useState<string | null>(null);
     const [expandedCategories, setExpandedCategories] = useState<Set<string>>(
       new Set(OPERATION_CATEGORIES.map((c) => c.name))
@@ -200,34 +235,64 @@ export const OperationsPanel: React.FC<OperationsPanelProps> = React.memo(
     }, []);
 
     const handleSelectOp = useCallback((op: OperationDef) => {
+      if (op.id.startsWith('export_')) {
+        onExport(op.id.slice('export_'.length) as 'parquet' | 'csv' | 'json');
+        return;
+      }
       setSelectedOp(op);
+      setFormError('');
       const initial: Record<string, unknown> = {};
       op.params.forEach((p) => {
         if (p.defaultValue !== undefined) {
           initial[p.name] = p.defaultValue;
-        } else if (p.type === 'column' && columns.length > 0) {
+        } else if (p.type === 'column' && p.required && columns.length > 0) {
           initial[p.name] = columns[0].name;
         } else {
           initial[p.name] = '';
         }
       });
       setFormData(initial);
-    }, [columns]);
+    }, [columns, onExport]);
 
     const handleParamChange = useCallback((name: string, value: unknown) => {
+      setFormError('');
       setFormData((prev) => ({ ...prev, [name]: value }));
     }, []);
 
     const handleSubmit = useCallback(() => {
       if (!selectedOp) return;
+      const missingRequired = selectedOp.params.find(param =>
+        param.required && String(formData[param.name] ?? '').trim() === '',
+      );
+      if (missingRequired) {
+        setFormError(`${missingRequired.label} is required`);
+        return;
+      }
+      if (selectedOp.id === 'filter_rows') {
+        const operator = String(formData.operator || 'equals');
+        if (!['is_null', 'is_not_null'].includes(operator) && String(formData.value ?? '').trim() === '') {
+          setFormError('Value is required for this filter');
+          return;
+        }
+        if (operator === 'between' && String(formData.value2 ?? '').trim() === '') {
+          setFormError('Upper value is required for Between');
+          return;
+        }
+      }
+      if (selectedOp.id === 'aggregate' && String(formData.function || 'COUNT') !== 'COUNT' && !formData.column) {
+        setFormError('Value Column is required for this aggregation');
+        return;
+      }
       onTransform(selectedOp.id, formData);
       setSelectedOp(null);
       setFormData({});
+      setFormError('');
     }, [selectedOp, formData, onTransform]);
 
     const handleCancel = useCallback(() => {
       setSelectedOp(null);
       setFormData({});
+      setFormError('');
     }, []);
 
     const handleDragStart = useCallback((stepId: string, e: React.DragEvent) => {
@@ -344,7 +409,17 @@ export const OperationsPanel: React.FC<OperationsPanelProps> = React.memo(
               {selectedOp.params.length === 0 ? (
                 <p className="form-no-params">No parameters required</p>
               ) : (
-                selectedOp.params.map((param) => (
+                selectedOp.params.filter(param => {
+                  if (selectedOp.id === 'filter_rows') {
+                    const operator = String(formData.operator || 'equals');
+                    if (param.name === 'value') return !['is_null', 'is_not_null'].includes(operator);
+                    if (param.name === 'value2') return operator === 'between';
+                  }
+                  if (selectedOp.id === 'aggregate' && param.name === 'column') {
+                    return String(formData.function || 'COUNT') !== 'COUNT';
+                  }
+                  return true;
+                }).map((param) => (
                   <div key={param.name} className="param-group">
                     <label className="param-label">
                       {param.label}
@@ -398,6 +473,7 @@ export const OperationsPanel: React.FC<OperationsPanelProps> = React.memo(
               )}
             </div>
             <div className="form-actions">
+              {formError && <div className="form-validation-error" role="alert">{formError}</div>}
               <button className="form-cancel-btn" onClick={handleCancel}>
                 Cancel
               </button>
