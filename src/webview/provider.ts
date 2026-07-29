@@ -13,7 +13,14 @@ export class DataWranglerPanel {
 
   private constructor(panel: vscode.WebviewPanel, extensionUri: vscode.Uri) {
     this._panel = panel;
-    this._panel.onDidDispose(() => this.dispose(), null, this._disposables);
+    this._panel.webview.options = {
+      enableScripts: true,
+      localResourceRoots: [
+        vscode.Uri.joinPath(extensionUri, 'dist', 'webview'),
+        vscode.Uri.joinPath(extensionUri, 'media'),
+      ],
+    };
+    this._panel.onDidDispose(() => this._cleanup(), null, this._disposables);
     this._panel.webview.html = this._getHtmlForWebview(this._panel.webview, extensionUri);
   }
 
@@ -52,6 +59,16 @@ export class DataWranglerPanel {
     return DataWranglerPanel.currentPanel;
   }
 
+  public static attach(
+    panel: vscode.WebviewPanel,
+    extensionUri: vscode.Uri,
+    filePath: string,
+  ): DataWranglerPanel {
+    DataWranglerPanel.currentPanel = new DataWranglerPanel(panel, extensionUri);
+    DataWranglerPanel.currentPanel._filePath = filePath;
+    return DataWranglerPanel.currentPanel;
+  }
+
   public static revive(panel: vscode.WebviewPanel, extensionUri: vscode.Uri): void {
     DataWranglerPanel.currentPanel = new DataWranglerPanel(panel, extensionUri);
   }
@@ -76,8 +93,14 @@ export class DataWranglerPanel {
   }
 
   public dispose(): void {
-    DataWranglerPanel.currentPanel = undefined;
     this._panel.dispose();
+    this._cleanup();
+  }
+
+  private _cleanup(): void {
+    if (DataWranglerPanel.currentPanel === this) {
+      DataWranglerPanel.currentPanel = undefined;
+    }
     while (this._disposables.length) {
       const disposable = this._disposables.pop();
       if (disposable) {

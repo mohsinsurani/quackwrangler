@@ -70,6 +70,7 @@ export type WebviewMessage =
   | { type: 'saveConfig'; config: Partial<DataWranglerConfig> }
   | { type: 'switchEngine'; engine: EngineType }
   | { type: 'openFilePicker' }
+  | { type: 'openFolderPicker' }
   | { type: 'refresh' }
   | { type: 'removeTransform'; id: string }
   | { type: 'getStats' }

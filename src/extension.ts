@@ -9,33 +9,66 @@ import {
   showSchemaCommand,
   configureCommands,
   disposeCommands,
+  openDataWranglerCustomEditor,
 } from './commands/index.js';
 import { getDataFilePatterns } from './utils/fileDetector.js';
+import { DataFilesProvider } from './views/dataFilesProvider.js';
 
-class QuackWranglerActionsProvider implements vscode.TreeDataProvider<vscode.TreeItem> {
-  constructor(private readonly extensionUri: vscode.Uri) {}
+type ActionNode = vscode.TreeItem | import('./views/dataFilesProvider.js').DataFileNode;
+const DATA_EDITOR_VIEW_TYPE = 'quackwrangler.dataEditor';
 
-  getTreeItem(element: vscode.TreeItem): vscode.TreeItem {
-    return element;
+class QuackWranglerDocument implements vscode.CustomDocument {
+  constructor(readonly uri: vscode.Uri) {}
+  dispose(): void {}
+}
+
+class QuackWranglerEditorProvider implements vscode.CustomReadonlyEditorProvider {
+  openCustomDocument(uri: vscode.Uri): QuackWranglerDocument {
+    return new QuackWranglerDocument(uri);
   }
 
-  getChildren(): vscode.TreeItem[] {
+  async resolveCustomEditor(
+    document: QuackWranglerDocument,
+    webviewPanel: vscode.WebviewPanel,
+  ): Promise<void> {
+    await openDataWranglerCustomEditor(document.uri, webviewPanel);
+  }
+}
+
+class QuackWranglerActionsProvider implements vscode.TreeDataProvider<ActionNode> {
+  private readonly changeEmitter = new vscode.EventEmitter<ActionNode | undefined>();
+  readonly onDidChangeTreeData = this.changeEmitter.event;
+
+  constructor(private readonly dataFiles: DataFilesProvider) {
+    this.dataFiles.onDidChangeTreeData(() => this.changeEmitter.fire(undefined));
+  }
+
+  getTreeItem(element: ActionNode): vscode.TreeItem {
+    return element instanceof vscode.TreeItem ? element : this.dataFiles.getTreeItem(element);
+  }
+
+  getChildren(element?: ActionNode): ActionNode[] {
+    if (element && !(element instanceof vscode.TreeItem)) return this.dataFiles.getChildren(element);
+    if (element) return [];
+
     const openFileItem = new vscode.TreeItem('Open data file', vscode.TreeItemCollapsibleState.None);
-    openFileItem.iconPath = new vscode.ThemeIcon('folder-opened');
+    openFileItem.iconPath = new vscode.ThemeIcon('file');
     openFileItem.command = {
       command: 'quackwrangler.openDataWrangler',
       title: 'Open data file',
     };
 
-    const sampleItem = new vscode.TreeItem('Open sample CSV', vscode.TreeItemCollapsibleState.None);
-    sampleItem.iconPath = new vscode.ThemeIcon('table');
-    sampleItem.command = {
-      command: 'quackwrangler.openFile',
-      title: 'Open sample CSV',
-      arguments: [vscode.Uri.joinPath(this.extensionUri, 'media', 'sample.csv')],
+    const openFolderItem = new vscode.TreeItem(
+      'Open data folder',
+      vscode.TreeItemCollapsibleState.None,
+    );
+    openFolderItem.iconPath = new vscode.ThemeIcon('folder-opened');
+    openFolderItem.command = {
+      command: 'quackwrangler.openFolder',
+      title: 'Open data folder',
     };
 
-    return [openFileItem, sampleItem];
+    return [openFileItem, openFolderItem, ...this.dataFiles.getChildren()];
   }
 }
 
@@ -43,10 +76,19 @@ export function activate(context: vscode.ExtensionContext): void {
   const outputChannel = vscode.window.createOutputChannel('QuackWrangler');
   outputChannel.appendLine('QuackWrangler extension is now active');
   configureCommands(context.extensionUri, outputChannel);
+  const dataFilesProvider = new DataFilesProvider();
   context.subscriptions.push(
+    vscode.window.registerCustomEditorProvider(
+      DATA_EDITOR_VIEW_TYPE,
+      new QuackWranglerEditorProvider(),
+      {
+        supportsMultipleEditorsPerDocument: false,
+        webviewOptions: { retainContextWhenHidden: true },
+      },
+    ),
     vscode.window.registerTreeDataProvider(
       'quackwrangler.actions',
-      new QuackWranglerActionsProvider(context.extensionUri),
+      new QuackWranglerActionsProvider(dataFilesProvider),
     ),
   );
 
@@ -57,6 +99,14 @@ export function activate(context: vscode.ExtensionContext): void {
 
     vscode.commands.registerCommand('quackwrangler.openFile', (uri?: vscode.Uri) => {
       openFile(uri);
+    }),
+
+    vscode.commands.registerCommand('quackwrangler.openFolder', async () => {
+      await dataFilesProvider.selectFolder();
+    }),
+
+    vscode.commands.registerCommand('quackwrangler.refreshFolder', async () => {
+      await dataFilesProvider.refresh();
     }),
 
     vscode.commands.registerCommand('quackwrangler.executeQuery', () => {

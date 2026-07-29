@@ -24,10 +24,22 @@ function getConfig(): DataWranglerConfig {
 
 let connection: DuckDBConnection | null = null;
 let outputChannel: vscode.OutputChannel;
-let session: WranglingSession | null = null;
 let configuredExtensionUri: vscode.Uri | undefined;
-let customQuerySql: string | null = null;
+interface PanelState {
+  session: WranglingSession | null;
+  customQuerySql: string | null;
+}
+const panelStates = new WeakMap<DataWranglerPanel, PanelState>();
 const WEBVIEW_PROTOCOL_VERSION = 2;
+
+function getPanelState(panel: DataWranglerPanel): PanelState {
+  let state = panelStates.get(panel);
+  if (!state) {
+    state = { session: null, customQuerySql: null };
+    panelStates.set(panel, state);
+  }
+  return state;
+}
 
 export function configureCommands(extensionUri: vscode.Uri, channel: vscode.OutputChannel): void {
   configuredExtensionUri = extensionUri;
@@ -45,6 +57,7 @@ async function getConnection(): Promise<DuckDBConnection> {
 }
 
 async function postSession(panel: DataWranglerPanel, offset = 0, limit = 100): Promise<void> {
+  const { session } = getPanelState(panel);
   if (!session) throw new Error('No active wrangling session');
   const history = session.getHistory();
   let state: Awaited<ReturnType<WranglingSession['getPage']>>;
@@ -68,6 +81,7 @@ async function postSession(panel: DataWranglerPanel, offset = 0, limit = 100): P
 }
 
 async function postCustomQuery(panel: DataWranglerPanel, offset = 0, limit = 100): Promise<void> {
+  const { session, customQuerySql } = getPanelState(panel);
   if (!session || !customQuerySql) throw new Error('No custom query is active');
   const conn = await getConnection();
   const [result, count, described] = await Promise.all([
@@ -91,6 +105,8 @@ async function postCustomQuery(panel: DataWranglerPanel, offset = 0, limit = 100
 }
 
 async function handleWebviewMessage(panel: DataWranglerPanel, message: WebviewMessage): Promise<void> {
+  const state = getPanelState(panel);
+  const { session } = state;
   try {
     switch (message.type) {
       case 'ready':
@@ -99,36 +115,39 @@ async function handleWebviewMessage(panel: DataWranglerPanel, message: WebviewMe
       case 'openFilePicker':
         await openFile();
         return;
+      case 'openFolderPicker':
+        await vscode.commands.executeCommand('quackwrangler.openFolder');
+        return;
       case 'loadFile':
         await openDataWrangler(message.filePath);
         return;
       case 'applyTransform':
         if (!session) throw new Error('Open a data file before applying a transform');
-        customQuerySql = null;
+        state.customQuerySql = null;
         session.apply(message.transform.type, message.transform.params);
         await postSession(panel);
         return;
-      case 'undo': customQuerySql = null; session?.undo(); await postSession(panel); return;
-      case 'redo': customQuerySql = null; session?.redo(); await postSession(panel); return;
-      case 'reset': customQuerySql = null; session?.reset(); await postSession(panel); return;
-      case 'removeTransform': customQuerySql = null; session?.remove(message.id); await postSession(panel); return;
+      case 'undo': state.customQuerySql = null; session?.undo(); await postSession(panel); return;
+      case 'redo': state.customQuerySql = null; session?.redo(); await postSession(panel); return;
+      case 'reset': state.customQuerySql = null; session?.reset(); await postSession(panel); return;
+      case 'removeTransform': state.customQuerySql = null; session?.remove(message.id); await postSession(panel); return;
       case 'pageChange':
-        if (customQuerySql) await postCustomQuery(panel, message.offset, message.limit);
+        if (state.customQuerySql) await postCustomQuery(panel, message.offset, message.limit);
         else await postSession(panel, message.offset, message.limit);
         return;
       case 'executeCustomQuery':
         if (!session) throw new Error('Open a data file before running a query');
-        customQuerySql = normalizeReadOnlyQuery(message.sql);
+        state.customQuerySql = normalizeReadOnlyQuery(message.sql);
         await postCustomQuery(panel);
         return;
       case 'clearCustomQuery':
-        customQuerySql = null;
+        state.customQuerySql = null;
         await postSession(panel);
         return;
       case 'refresh':
         if (!session?.getFilePath()) return;
-        customQuerySql = null;
-        await openDataWrangler(session.getFilePath());
+        state.customQuerySql = null;
+        await loadDataIntoPanel(panel, session.getFilePath());
         return;
       case 'getStats':
         if (!session) throw new Error('No active wrangling session');
@@ -187,21 +206,39 @@ export async function openDataWrangler(filePath?: string): Promise<void> {
   }
 
   const panel = DataWranglerPanel.createOrShow(extensionUri, filePath);
-  session = null;
-  customQuerySql = null;
+  await loadDataIntoPanel(panel, filePath);
+}
+
+async function loadDataIntoPanel(panel: DataWranglerPanel, filePath: string): Promise<void> {
+  const state = getPanelState(panel);
+  state.session = null;
+  state.customQuerySql = null;
   panel.setMessageHandler(message => handleWebviewMessage(panel, message));
 
   try {
     const conn = await getConnection();
     await loadFile(conn, filePath);
-    session = new WranglingSession(conn);
-    session.load(filePath, getConfig().engine);
+    state.session = new WranglingSession(conn);
+    state.session.load(filePath, getConfig().engine);
     await postSession(panel, 0, Math.min(getConfig().maxRowsPreview, 100));
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     vscode.window.showErrorMessage(`Failed to load file: ${message}`);
     panel.postMessage({ type: 'error', message });
   }
+}
+
+export async function openDataWranglerCustomEditor(
+  documentUri: vscode.Uri,
+  webviewPanel: vscode.WebviewPanel,
+): Promise<void> {
+  const extensionUri =
+    configuredExtensionUri ??
+    vscode.extensions.getExtension('quackwrangler.quackwrangler')?.extensionUri;
+  if (!extensionUri) throw new Error('Extension URI not found');
+
+  const panel = DataWranglerPanel.attach(webviewPanel, extensionUri, documentUri.fsPath);
+  await loadDataIntoPanel(panel, documentUri.fsPath);
 }
 
 export async function openFile(uri?: vscode.Uri): Promise<void> {
@@ -278,7 +315,9 @@ export async function exportDataCommand(): Promise<void> {
 
   try {
     const conn = await getConnection();
-    await exportResults(conn, session?.getSql() ?? 'SELECT * FROM current_data', uri.fsPath, format as 'parquet' | 'csv' | 'json');
+    const panel = DataWranglerPanel.currentPanel;
+    const activeSession = panel ? getPanelState(panel).session : null;
+    await exportResults(conn, activeSession?.getSql() ?? 'SELECT * FROM current_data', uri.fsPath, format as 'parquet' | 'csv' | 'json');
     vscode.window.showInformationMessage(`Data exported to ${uri.fsPath}`);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -289,22 +328,21 @@ export async function exportDataCommand(): Promise<void> {
 export async function disposeCommands(): Promise<void> {
   await connection?.close();
   connection = null;
-  session = null;
-  customQuerySql = null;
 }
 
 export async function summarizeFileCommand(): Promise<void> {
   const panel = DataWranglerPanel.currentPanel;
-  if (!panel || !session) {
+  const activeSession = panel ? getPanelState(panel).session : null;
+  if (!panel || !activeSession) {
     vscode.window.showWarningMessage('No file loaded. Open a file first.');
     return;
   }
 
   try {
-    const stats = await session.getStatistics();
+    const stats = await activeSession.getStatistics();
     panel.postMessage({ type: 'stats', stats });
     vscode.window.showInformationMessage(
-      `Summarized ${stats.length} columns in ${session.getFilePath().split(/[\\/]/).pop()}`,
+      `Summarized ${stats.length} columns in ${activeSession.getFilePath().split(/[\\/]/).pop()}`,
     );
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

@@ -48,12 +48,15 @@ Alternatively, run **Extensions: Install from VSIX...** from the VS Code Command
 
 ## Use QuackWrangler
 
-1. Open a folder containing a supported data file.
-2. Right-click the file in Explorer and choose **Open in QuackWrangler**.
-3. Inspect column profiles and values in the synchronized data grid.
-4. Select an operation in the left panel, enter its parameters, and apply it.
-5. Use **Custom Query** to run a read-only `SELECT`, `WITH`, `DESCRIBE`, `SHOW`, `EXPLAIN`, or `PRAGMA` statement.
-6. Export the complete transformed dataset or copy the generated SQL.
+1. Open QuackWrangler from the Activity Bar.
+2. Choose **Open data file** for one file, or **Open data folder** to scan a directory.
+3. The folder view preserves subdirectories, hides unsupported files and empty folders, and opens a data file when selected.
+4. You can also right-click a supported file in Explorer and choose **Open in QuackWrangler**.
+5. CSV, TSV, Parquet, JSONL/NDJSON, XLSX, and ODS files open directly in QuackWrangler when it is their default editor. Use **Open With... → Configure default editor** to change an existing VS Code file association.
+6. Inspect column profiles and values in the synchronized data grid.
+7. Select an operation in the left panel, enter its parameters, and apply it.
+8. Use **Custom Query** to run a read-only `SELECT`, `WITH`, `DESCRIBE`, `SHOW`, `EXPLAIN`, or `PRAGMA` statement.
+9. Export the complete transformed dataset or copy the generated SQL.
 
 Custom queries run against `current_data`:
 

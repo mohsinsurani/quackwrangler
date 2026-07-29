@@ -5,6 +5,24 @@ All notable changes to QuackWrangler will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.1] - 2026-07-29
+
+### Fixed
+
+- Register QuackWrangler as the default custom editor for CSV, TSV, Parquet, JSONL/NDJSON, XLSX, and ODS files so a normal click opens the visual data editor
+
+## [0.2.0] - 2026-07-23
+
+### Added
+
+- Select a directory and browse supported data files in their original folder hierarchy
+- Open individual files from the QuackWrangler Activity Bar
+- Refresh the selected folder from the view title
+
+### Changed
+
+- Removed the built-in sample-file action and packaged sample data
+
 ## [0.1.1] - 2026-07-22
 
 ### Fixed

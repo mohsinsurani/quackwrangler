@@ -173,8 +173,11 @@ export const App: React.FC = () => {
           ) : (
             <div className="empty-state">
               <div className="empty-icon">📊</div><h2>No data loaded</h2>
-              <p>Open Parquet, CSV, TSV, JSON, NDJSON, XLSX, or ODS data.</p>
-              <button className="primary-button" onClick={() => postMessage({ type: 'openFilePicker' })}>Open File</button>
+              <p>Open a supported file directly, or select a folder to browse its data files by directory.</p>
+              <div className="empty-actions">
+                <button className="primary-button" onClick={() => postMessage({ type: 'openFilePicker' })}>Open File</button>
+                <button onClick={() => postMessage({ type: 'openFolderPicker' })}>Open Folder</button>
+              </div>
             </div>
           )}
         </div>
