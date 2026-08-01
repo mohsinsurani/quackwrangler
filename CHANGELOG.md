@@ -2,7 +2,7 @@
 
 All notable changes to QuackWrangler are documented here using [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Semantic Versioning](https://semver.org/).
 
-## [0.1.2] - 2026-08-01
+## [Unreleased]
 
 ### Added
 
@@ -59,5 +59,5 @@ All notable changes to QuackWrangler are documented here using [Keep a Changelog
 - Filtering, sorting, column transforms, deduplication, aggregation, paging, schema inspection, summaries, and Parquet/CSV/JSON export
 - Activity-bar file browser and custom data editor integration
 
-[0.1.2]: https://github.com/mohsinsurani/quackwrangler/compare/v0.1.1...v0.1.2
+[Unreleased]: https://github.com/mohsinsurani/quackwrangler/compare/v0.1.1...HEAD
 [0.1.1]: https://github.com/mohsinsurani/quackwrangler/releases/tag/v0.1.1

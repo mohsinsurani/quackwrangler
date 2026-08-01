@@ -4,8 +4,8 @@ QuackWrangler welcomes bug fixes, documentation improvements, tests, and focused
 
 ## Requirements
 
-- Node.js 18 or newer
-- npm 9 or newer
+- Node.js 20 or newer
+- npm 10 or newer
 - VS Code 1.85 or newer
 - Git
 

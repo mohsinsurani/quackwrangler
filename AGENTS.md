@@ -1,5 +1,16 @@
 # QuackWrangler Development Guide
 
+## Coding principles
+
+These project rules adapt the Karpathy-inspired coding-agent guidelines: think before changing code, prefer the simplest sufficient solution, keep changes surgical, and verify the requested outcome.
+
+- State important assumptions and resolve ambiguity from the repository before coding.
+- Make the smallest coherent change that solves the reported problem.
+- Do not add speculative abstractions, compatibility layers, or fallback paths.
+- Preserve unrelated behavior and user changes. Do not refactor adjacent code without a task-driven reason.
+- Define success in observable terms, then run the narrowest tests that prove it. Expand verification when the change affects shared boundaries.
+- If evidence contradicts the planned approach, stop and reassess instead of forcing the implementation.
+
 ## Release policy
 
 - The latest published Marketplace version is `0.1.1`.
