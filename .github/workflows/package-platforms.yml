@@ -93,38 +93,25 @@ jobs:
             target: alpine-arm64
             binding: linux-arm64-musl
     runs-on: ${{ matrix.runner }}
-    container: node:20-alpine
     steps:
-      - name: Install runner tools
-        run: apk add --no-cache git
-
       - name: Checkout repository
         uses: actions/checkout@v7
 
-      - name: Install dependencies
-        run: npm ci --include=optional
-
-      - name: Install webview dependencies
-        working-directory: webview-ui
-        run: npm ci
-
-      - name: Verify version and DuckDB binding
+      # GitHub JavaScript actions cannot run inside an Alpine container on ARM64.
+      # Build in a native Alpine Docker container while checkout and artifact
+      # upload remain on the supported Ubuntu host.
+      - name: Verify and package in Alpine
         env:
           EXPECTED_VERSION: ${{ inputs.expected_version }}
           DUCKDB_BINDING: ${{ matrix.binding }}
-        run: node scripts/verify-release-target.mjs
-
-      - name: Lint
-        run: npm run lint
-
-      - name: Test
-        run: npm test
-
-      - name: Build
-        run: npm run build
-
-      - name: Package targeted VSIX
-        run: npm run package
+        run: |
+          docker run --rm \
+            --volume "${{ github.workspace }}:/workspace" \
+            --workdir /workspace \
+            --env EXPECTED_VERSION \
+            --env DUCKDB_BINDING \
+            node:20-alpine \
+            sh -c "npm ci --include=optional && npm --prefix webview-ui ci && node scripts/verify-release-target.mjs && npm run lint && npm test && npm run build && npm run package"
 
       - name: Upload targeted VSIX
         uses: actions/upload-artifact@v7

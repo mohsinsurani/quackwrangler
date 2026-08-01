@@ -36,6 +36,10 @@ args.push(...forwardedArgs);
 console.log(`Running vsce ${command} for ${target}`);
 
 const executable = process.platform === 'win32' ? 'vsce.cmd' : 'vsce';
-const result = spawnSync(executable, args, { stdio: 'inherit' });
+const result = spawnSync(executable, args, {
+  stdio: 'inherit',
+  // Windows exposes locally installed npm binaries as .cmd launchers.
+  shell: process.platform === 'win32',
+});
 if (result.error) throw result.error;
 process.exitCode = result.status ?? 1;
