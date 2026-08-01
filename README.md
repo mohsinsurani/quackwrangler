@@ -14,7 +14,7 @@ QuackWrangler ships with DuckDB built in. Open CSV, Parquet, JSON, Excel, and OD
 
 > QuackWrangler is an independent open-source project inspired by the visual workflow of data-wrangling tools. It is not affiliated with or endorsed by Microsoft.
 
-> **Development status:** this README documents the upcoming `0.1.2` source tree. The latest published Marketplace release remains `0.1.1`. Version `0.1.2` will not be packaged or published until the maintainer explicitly approves the release.
+> **Release status:** this source tree and local release candidate are version `0.1.2`. The latest published Marketplace release remains `0.1.1`; `0.1.2` will not be published until the maintainer explicitly approves publication.
 
 **Install:** `code --install-extension quackwrangler.quackwrangler`
 
