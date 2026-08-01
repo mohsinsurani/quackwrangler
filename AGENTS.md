@@ -1,165 +1,74 @@
-# QuackWrangler - Development Guide
+# QuackWrangler Development Guide
 
-## Project Structure
+## Release policy
 
-```
-quackwrangler/
-├── src/                          # Extension source code
-│   ├── extension.ts              # Entry point (activate/deactivate)
-│   ├── types/                    # Shared TypeScript types
-│   │   └── index.ts
-│   ├── duckdb/                   # DuckDB integration
-│   │   ├── connection.ts         # Connection manager
-│   │   ├── parquet-loader.ts     # File loading utilities
-│   │   └── query-engine.ts       # Query execution engine
-│   ├── transforms/               # Data transformations
-│   │   ├── registry.ts           # Transform registry
-│   │   └── codegen.ts            # Code generation
-│   ├── webview/                  # VS Code webview
-│   │   └── provider.ts          # Webview provider
-│   ├── commands/                 # Command handlers
-│   │   └── index.ts
-│   └── utils/                    # Utility functions
-│       └── fileDetector.ts
-├── webview-ui/                   # React webview UI
-│   ├── src/
-│   │   ├── App.tsx              # Main React component
-│   │   ├── components/          # UI components
-│   │   ├── hooks/               # Custom React hooks
-│   │   └── styles/              # CSS styles
-│   ├── package.json
-│   └── vite.config.ts
-├── tests/                        # Test files
-│   ├── unit/                     # Unit tests
-│   ├── integration/              # Integration tests
-│   └── fixtures/                 # Test data
-├── docs/                         # Documentation
-│   └── ARCHITECTURE.md
-├── .github/                      # GitHub configuration
-│   ├── workflows/ci.yml
-│   └── ISSUE_TEMPLATE/
-├── package.json                  # Extension manifest
-├── tsconfig.json                 # TypeScript config
-├── esbuild.js                    # Build script
-├── vitest.config.ts              # Test config
-├── AGENTS.md                     # This file
-├── README.md                     # User documentation
-├── CONTRIBUTING.md               # Contributing guidelines
-└── CHANGELOG.md                  # Version history
-```
+- The latest published Marketplace version is `0.1.1`.
+- Current development targets `0.1.2`; do not change the manifest version, package, or publish it without explicit maintainer approval.
+- Record normal work under `Unreleased`.
+- Do not bump versions, create a release VSIX, tag, or publish without explicit owner confirmation.
+- Development builds and tests do not authorize a release.
 
-## Build Commands
+## Architecture
+
+The shipped extension is TypeScript end to end: React webview → VS Code extension host → in-process DuckDB. There is no Python or Polars runtime. Read `docs/ARCHITECTURE.md` before changing runtime boundaries.
+
+Key implementation files:
+
+| File                                            | Purpose                                                        |
+| ----------------------------------------------- | -------------------------------------------------------------- |
+| `src/extension.ts`                              | Activation, editor and command registration, activity-bar tree |
+| `src/commands/index.ts`                         | Sessions, messages, persistence, dialogs, exports              |
+| `src/duckdb/parquet-loader.ts`                  | File readers and source loading                                |
+| `src/transforms/pipeline.ts`                    | Validated transforms and analytical queries                    |
+| `src/types/index.ts`                            | Extension protocol and domain types                            |
+| `webview-ui/src/App.tsx`                        | Webview orchestration                                          |
+| `webview-ui/src/components/OperationsPanel.tsx` | Operation forms                                                |
+| `webview-ui/src/components/DataGrid.tsx`        | Virtualized data table                                         |
+
+## Commands
 
 ```bash
-# Full build (extension + webview)
-npm run build
-
-# Watch mode for development
-npm run watch
-
-# Build webview only
-npm run build:webview
-
-# Build extension only
-npm run compile
-
-# Package extension for distribution
-npm run package
-```
-
-## Testing Commands
-
-```bash
-# Run all tests
+npm run typecheck
+npm run lint
 npm test
-
-# Watch mode
-npm run test:watch
-
-# Coverage report
+npm run build
+npm run watch
 npm run test:coverage
+npm run benchmark
+npm run benchmark:scalability
+npm run benchmark:formats
 ```
 
-## Code Style
+Run `npm run package` only when the owner explicitly requests a release candidate.
 
-- **TypeScript**: Strict mode enabled
-- **Formatting**: Prettier with single quotes, trailing commas
-- **Linting**: ESLint with TypeScript plugin
-- **Imports**: Organized by groups (builtin, external, internal)
+Benchmark Python packages are isolated tooling managed by `uv`; they are not extension dependencies. Keep 50M/100M runs opt-in, preserve the default result artifact with `QW_SCALABILITY_OUTPUT`, and record worker failures without inferring OOM from a signal alone.
 
-## Architecture Decisions
+## Engineering rules
 
-### Why DuckDB?
+- Keep TypeScript strict and avoid `any`.
+- Prefer one source of truth for supported formats and shared option sets.
+- Route every visual transform through `WranglingSession`; do not execute separate UI-only SQL.
+- Quote identifiers and literals and allow-list SQL keywords derived from UI input.
+- Keep webview messages bounded; never send a complete large dataset.
+- Preserve virtualized rendering and the shared profile/header/row grid tracks.
+- Remove unused APIs instead of retaining speculative scaffolding.
+- Add unit and in-memory DuckDB integration tests for every visible operation.
+- Update README, architecture, changelog, and contribution guidance with behavior changes.
+- Refresh README visuals from the standalone Vite preview after visible UI changes; do not use an imagined mockup.
 
-- Fastest Parquet loading (9.8ms vs Polars 63ms for 10M rows)
-- Direct file querying without materialization
-- Built-in SQL support for analytical queries
-- Memory-efficient with automatic disk spilling
-- Can combine with Polars via Arrow interop
+## Adding a transform
 
-### Message Passing Pattern
+1. Implement and validate its SQL in `operationSql` in `src/transforms/pipeline.ts`.
+2. Add the form definition in `webview-ui/src/components/OperationsPanel.tsx`.
+3. Add generation, validation, execution, and UI contract tests.
 
-Extension ↔ Webview communication uses VS Code's message passing:
+## Adding a file format
 
-```typescript
-// Extension → Webview
-panel.webview.postMessage({ type: 'updateData', data: result });
+1. Add it to `DATA_FILE_EXTENSIONS` in `src/utils/fileDetector.ts`.
+2. Add its reader in `src/duckdb/parquet-loader.ts`.
+3. Update the declarative file selectors and activation events in `package.json`.
+4. Add file-detection and loader tests and update the supported-formats documentation.
 
-// Webview → Extension
-vscode.postMessage({ type: 'executeQuery', sql: 'SELECT * FROM ...' });
-```
+## Working tree
 
-### Transform Pipeline
-
-1. User selects operation in UI
-2. UI sends transform request to extension
-3. Extension executes DuckDB SQL
-4. Results sent back to webview
-5. Code generation produces exportable SQL/Python
-
-## Adding New Transforms
-
-1. Open `src/transforms/registry.ts`
-2. Add to the `builtInTransforms` array:
-
-```typescript
-{
-  id: 'myTransform',
-  name: 'My Transform',
-  description: 'Does something useful',
-  params: [
-    { name: 'column', type: 'string', required: true },
-    { name: 'value', type: 'string', required: false },
-  ],
-  generateSQL: (params) => `SELECT ... FROM ...`,
-}
-```
-
-3. Add UI in `webview-ui/src/components/TransformPanel.tsx`
-
-## Adding New File Formats
-
-1. Open `src/utils/fileDetector.ts`
-2. Add extension to `DATA_FILE_EXTENSIONS`
-3. Add handler in `src/duckdb/parquet-loader.ts`
-4. Update `package.json` activation events
-
-## Performance Considerations
-
-- **Virtualized Grid**: Only renders visible rows (100k+ support)
-- **Lazy Loading**: Fetches data on demand
-- **Streaming**: DuckDB streams results to webview
-- **Memory Limits**: Configurable DuckDB memory limit
-
-## Key Files
-
-| File | Purpose |
-|------|---------|
-| `src/extension.ts` | Entry point, command registration |
-| `src/duckdb/connection.ts` | DuckDB lifecycle management |
-| `src/duckdb/query-engine.ts` | SQL execution and pagination |
-| `src/transforms/registry.ts` | Transform definitions |
-| `src/transforms/codegen.ts` | SQL/Python code generation |
-| `webview-ui/src/App.tsx` | Main React component |
-| `webview-ui/src/components/DataGrid.tsx` | Virtualized data grid |
-| `webview-ui/src/components/TransformPanel.tsx` | Transform UI |
+User changes may already be present. Preserve unrelated edits, do not reset the tree, and do not delete ignored local artifacts unless explicitly requested.

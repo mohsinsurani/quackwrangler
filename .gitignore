@@ -1,4 +1,5 @@
 node_modules/
+benchmarks/.data/
 dist/
 *.vsix
 .vscode-test/
@@ -9,15 +10,11 @@ coverage/
 .env.local
 webview-ui/node_modules/
 
-# Python sidecar environments and tooling
+build/
+
+# Local environments and stale build metadata are never source artifacts.
 .venv/
 venv/
-__pycache__/
-*.py[cod]
-*.egg-info/
-.pytest_cache/
 .ruff_cache/
-.mypy_cache/
-.coverage
-htmlcov/
-build/
+*.egg-info/
+__pycache__/

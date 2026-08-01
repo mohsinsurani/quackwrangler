@@ -1,0 +1,28 @@
+{
+  "generated_at": "2026-08-01T03:28:26.297Z",
+  "methodology": {
+    "rows": 100000,
+    "runs": 7,
+    "statistic": "median"
+  },
+  "results": [
+    {
+      "format": "Parquet",
+      "rows": 100000,
+      "file_mb": 0.22,
+      "load_ms": 13.98
+    },
+    {
+      "format": "CSV",
+      "rows": 100000,
+      "file_mb": 4.55,
+      "load_ms": 63.49
+    },
+    {
+      "format": "NDJSON",
+      "rows": 100000,
+      "file_mb": 11.71,
+      "load_ms": 50.62
+    }
+  ]
+}

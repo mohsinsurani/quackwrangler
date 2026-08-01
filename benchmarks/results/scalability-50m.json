@@ -1,0 +1,41 @@
+{
+  "generated_at": "2026-08-01T04:09:34.519Z",
+  "machine": {
+    "cpu": "Apple M3 Pro",
+    "architecture": "arm64",
+    "memory_gb": 18,
+    "os": "Darwin 25.5.0"
+  },
+  "methodology": {
+    "runs": 1,
+    "process_isolation": "fresh process per measurement",
+    "statistic": "median",
+    "sizes": [
+      50000000
+    ],
+    "result_validation": "exact keys/counts and 0.001 absolute tolerance for floating-point aggregates"
+  },
+  "results": [
+    {
+      "rows": 50000000,
+      "engine": "QuackWrangler (DuckDB)",
+      "total_ms": 1179.55,
+      "peak_rss_mb": 2287.92,
+      "status": "completed"
+    },
+    {
+      "rows": 50000000,
+      "engine": "Polars",
+      "total_ms": 2725.76,
+      "peak_rss_mb": 3821.86,
+      "status": "completed"
+    },
+    {
+      "rows": 50000000,
+      "engine": "Pandas",
+      "total_ms": 4544.8,
+      "peak_rss_mb": 4924.06,
+      "status": "completed"
+    }
+  ]
+}

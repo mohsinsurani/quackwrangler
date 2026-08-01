@@ -44,6 +44,13 @@ export class DuckDBConnection {
         log(`Temp directory set to ${this.config.tempDirectory}`);
       }
 
+      if (this.config.maxTempDirectorySize) {
+        const conn = await this.instance.connect();
+        await conn.run(`SET max_temp_directory_size='${this.config.maxTempDirectorySize}'`);
+        conn.closeSync();
+        log(`Maximum temp directory size set to ${this.config.maxTempDirectorySize}`);
+      }
+
       const configuredExtensions = Array.isArray(this.config.autoLoadExtensions)
         ? this.config.autoLoadExtensions
         : this.config.autoLoadExtensions ? ['httpfs'] : [];

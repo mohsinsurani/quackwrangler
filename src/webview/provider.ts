@@ -69,18 +69,8 @@ export class DataWranglerPanel {
     return DataWranglerPanel.currentPanel;
   }
 
-  public static revive(panel: vscode.WebviewPanel, extensionUri: vscode.Uri): void {
-    DataWranglerPanel.currentPanel = new DataWranglerPanel(panel, extensionUri);
-  }
-
   public postMessage(message: ExtensionMessage): void {
     this._panel.webview.postMessage(message);
-  }
-
-  public onDidReceiveMessage(
-    callback: (message: WebviewMessage) => void
-  ): vscode.Disposable {
-    return this._panel.webview.onDidReceiveMessage(callback, null, this._disposables);
   }
 
   public setMessageHandler(callback: (message: WebviewMessage) => void | Promise<void>): void {
@@ -90,11 +80,6 @@ export class DataWranglerPanel {
       null,
       this._disposables,
     );
-  }
-
-  public dispose(): void {
-    this._panel.dispose();
-    this._cleanup();
   }
 
   private _cleanup(): void {

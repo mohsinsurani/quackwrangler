@@ -30,7 +30,7 @@ If applicable, add screenshots to help explain your problem.
 
 - OS: [e.g., macOS 14.0, Windows 11, Ubuntu 22.04]
 - VS Code Version: [e.g., 1.85.0]
-- QuackWrangler Version: [e.g., 0.1.0]
+- QuackWrangler Version: [e.g., 0.1.1]
 - File Type: [e.g., Parquet, CSV, JSON]
 - File Size: [e.g., 10MB, 1GB]
 

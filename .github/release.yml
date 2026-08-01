@@ -1,0 +1,29 @@
+changelog:
+  exclude:
+    labels:
+      - skip-changelog
+    authors:
+      - dependabot
+  categories:
+    - title: New features
+      labels:
+        - enhancement
+        - feature
+    - title: Fixes
+      labels:
+        - bug
+        - fix
+    - title: User interface
+      labels:
+        - "area: ui"
+    - title: File formats and DuckDB
+      labels:
+        - "area: duckdb"
+        - "area: file-formats"
+    - title: Documentation and community
+      labels:
+        - documentation
+        - community
+    - title: Other changes
+      labels:
+        - "*"

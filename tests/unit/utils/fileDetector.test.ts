@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { isDataFile, getDataFilePatterns, formatFileSize } from '../../../src/utils/fileDetector';
+import {
+  DATA_FILE_EXTENSIONS,
+  isDataFile,
+  getDataFilePatterns,
+} from '../../../src/utils/fileDetector';
 
 describe('fileDetector utils', () => {
   describe('isDataFile', () => {
@@ -25,6 +29,13 @@ describe('fileDetector utils', () => {
       expect(isDataFile('legacy.xls')).toBe(false);
     });
 
+    it('recognizes Arrow IPC and capability-gated ORC files', () => {
+      expect(isDataFile('data.arrow')).toBe(true);
+      expect(isDataFile('stream.arrows')).toBe(true);
+      expect(isDataFile('batch.ipc')).toBe(true);
+      expect(isDataFile('warehouse.orc')).toBe(true);
+    });
+
     it('should reject non-data files', () => {
       expect(isDataFile('readme.md')).toBe(false);
       expect(isDataFile('script.py')).toBe(false);
@@ -33,26 +44,10 @@ describe('fileDetector utils', () => {
   });
 
   describe('getDataFilePatterns', () => {
-    it('should return array of glob patterns', () => {
-      const patterns = getDataFilePatterns();
-      expect(Array.isArray(patterns)).toBe(true);
-      expect(patterns.length).toBeGreaterThan(0);
-    });
-
-    it('should include parquet pattern', () => {
-      const patterns = getDataFilePatterns();
-      expect(patterns.some((p) => p.includes('parquet'))).toBe(true);
-      expect(patterns).toContain('**/*.xlsx');
-      expect(patterns).toContain('**/*.ods');
-    });
-  });
-
-  describe('formatFileSize', () => {
-    it('should format bytes correctly', () => {
-      expect(formatFileSize(0)).toBe('0 B');
-      expect(formatFileSize(1024)).toBe('1.00 KB');
-      expect(formatFileSize(1024 * 1024)).toBe('1.00 MB');
-      expect(formatFileSize(1024 * 1024 * 1024)).toBe('1.00 GB');
+    it('derives watcher patterns from the supported extension source of truth', () => {
+      expect(getDataFilePatterns()).toEqual(
+        DATA_FILE_EXTENSIONS.map((extension) => `**/*.${extension}`),
+      );
     });
   });
 });

@@ -7,34 +7,6 @@ on:
     branches: [main]
 
 jobs:
-  python-sidecar:
-    name: Python sidecar
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v7
-
-      - name: Setup Python
-        uses: actions/setup-python@v7
-        with:
-          python-version: '3.12'
-
-      - name: Install uv
-        run: python -m pip install uv
-
-      - name: Install locked sidecar environment
-        run: uv sync --frozen --extra arrow --extra dev
-
-      - name: Lint Python
-        run: uv run ruff check src/sidecar
-
-      - name: Check Python formatting
-        run: uv run ruff format --check src/sidecar
-
-      - name: Validate sidecar syntax
-        run: uv run python -m py_compile src/sidecar/polars-bridge.py
-
   build:
     runs-on: ubuntu-latest
 
@@ -73,40 +45,3 @@ jobs:
           name: extension-build
           path: dist/
           retention-days: 7
-
-  package:
-    needs: build
-    runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main'
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v7
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v7
-        with:
-          node-version: 20
-          cache: 'npm'
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Install webview dependencies
-        run: cd webview-ui && npm ci
-
-      - name: Install VS Code extension manager
-        run: npm install --global @vscode/vsce@3.9.2
-
-      - name: Build
-        run: npm run build
-
-      - name: Package extension
-        run: npm run package
-
-      - name: Upload VSIX
-        uses: actions/upload-artifact@v7
-        with:
-          name: quackwrangler-vsix
-          path: '*.vsix'
-          retention-days: 30

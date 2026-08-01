@@ -1,5 +1,3 @@
-export type EngineType = 'duckdb' | 'polars';
-
 export interface ColumnInfo {
   name: string;
   type: string;
@@ -15,7 +13,7 @@ export interface TableSchema {
 
 export interface QueryResult {
   columns: string[];
-  rows: any[][];
+  rows: unknown[][];
   rowCount: number;
   duration: number;
 }
@@ -28,6 +26,30 @@ export interface ColumnStatistics {
   min?: unknown;
   max?: unknown;
   mean?: number;
+  p50?: number;
+  p90?: number;
+  p99?: number;
+}
+
+export type ChartType = 'histogram' | 'bar' | 'scatter' | 'line' | 'box' | 'correlation';
+
+export interface ChartRequest {
+  type: ChartType;
+  xColumn: string;
+  yColumn?: string;
+  aggregation?: 'COUNT' | 'SUM' | 'AVG' | 'MIN' | 'MAX';
+  columns?: string[];
+}
+
+export interface DataQualitySummary {
+  duplicateRows: number;
+  issues: Array<{
+    severity: 'warning' | 'info';
+    kind: 'nulls' | 'duplicates' | 'outliers';
+    message: string;
+    column?: string;
+    count: number;
+  }>;
 }
 
 export interface PageInfo {
@@ -39,7 +61,7 @@ export interface PageInfo {
 export interface TransformOperation {
   id: string;
   type: string;
-  params: Record<string, any>;
+  params: Record<string, unknown>;
   sql: string;
   description: string;
 }
@@ -47,46 +69,51 @@ export interface TransformOperation {
 export interface DataWranglerConfig {
   memoryLimit: string;
   tempDirectory: string;
+  maxTempDirectorySize: string;
   autoLoadExtensions: boolean | string[];
+  pageSize: number;
   maxRowsPreview: number;
-  exportFormat: 'parquet' | 'csv' | 'json';
-  engine: EngineType;
-  defaultExportEngine: EngineType;
 }
 
 export type WebviewMessage =
-  | { type: 'loadFile'; filePath: string }
-  | { type: 'executeQuery'; sql: string }
   | { type: 'executeCustomQuery'; sql: string }
   | { type: 'clearCustomQuery' }
   | { type: 'applyTransform'; transform: TransformOperation }
   | { type: 'exportData'; format: 'parquet' | 'csv' | 'json'; outputPath?: string }
-  | { type: 'getSchema'; filePath: string }
-  | { type: 'summarize'; filePath: string }
   | { type: 'undo' }
   | { type: 'redo' }
-  | { type: 'reset' }
   | { type: 'pageChange'; offset: number; limit: number }
-  | { type: 'saveConfig'; config: Partial<DataWranglerConfig> }
-  | { type: 'switchEngine'; engine: EngineType }
   | { type: 'openFilePicker' }
   | { type: 'openFolderPicker' }
+  | { type: 'selectSecondaryFile' }
   | { type: 'refresh' }
   | { type: 'removeTransform'; id: string }
+  | { type: 'reorderTransforms'; sourceId: string; targetId: string }
+  | { type: 'searchRows'; query: string }
+  | { type: 'requestChart'; chart: ChartRequest }
   | { type: 'getStats' }
-  | { type: 'ready' }
-  | { type: 'exportCode'; format: 'duckdb-sql' | 'duckdb-python' | 'polars-python' };
+  | { type: 'ready' };
 
 export type ExtensionMessage =
-  | { type: 'fileLoaded'; schema: TableSchema; preview: QueryResult }
-  | { type: 'queryResult'; result: QueryResult }
+  | { type: 'loadingProgress'; percent: number; message: string; source: string }
   | { type: 'customQueryResult'; schema: TableSchema; result: QueryResult; page: PageInfo }
-  | { type: 'transformApplied'; result: QueryResult; history: TransformOperation[] }
+  | {
+      type: 'searchResult';
+      schema: TableSchema;
+      result: QueryResult;
+      page: PageInfo;
+      query: string;
+    }
   | { type: 'error'; message: string }
-  | { type: 'schema'; schema: TableSchema }
-  | { type: 'summary'; summary: string }
   | { type: 'exportComplete'; outputPath: string }
-  | { type: 'configLoaded'; config: DataWranglerConfig }
-  | { type: 'sessionUpdated'; protocolVersion: number; schema: TableSchema; result: QueryResult; history: TransformOperation[]; engine: EngineType; page: PageInfo; code: { sql: string; duckdbPython: string; polarsPython: string } }
-  | { type: 'stats'; stats: ColumnStatistics[] }
-  | { type: 'engineSwitched'; engine: EngineType; available: boolean; message?: string };
+  | {
+      type: 'sessionUpdated';
+      protocolVersion: number;
+      schema: TableSchema;
+      result: QueryResult;
+      history: TransformOperation[];
+      page: PageInfo;
+    }
+  | { type: 'stats'; stats: ColumnStatistics[]; quality: DataQualitySummary }
+  | { type: 'chartResult'; chart: ChartRequest; result: QueryResult }
+  | { type: 'secondaryFileSelected'; filePath: string; columns: ColumnInfo[] };

@@ -2,8 +2,8 @@
   "name": "quackwrangler",
   "type": "module",
   "displayName": "QuackWrangler",
-  "description": "Explore, transform, query, and export data files visually with DuckDB",
-  "version": "0.2.1",
+  "description": "Explore, transform, visualize, query, and export data with built-in DuckDB. No Python or Jupyter; file contents stay local.",
+  "version": "0.1.1",
   "publisher": "quackwrangler",
   "license": "MIT",
   "repository": {
@@ -23,32 +23,50 @@
     "duckdb",
     "data wrangler",
     "csv",
+    "csv viewer",
+    "parquet viewer",
+    "json viewer",
+    "python-free",
+    "no-jupyter",
+    "data visualization",
     "data exploration",
     "data cleaning",
     "analytics"
   ],
+  "galleryBanner": {
+    "color": "#111719",
+    "theme": "dark"
+  },
   "engines": {
     "vscode": "^1.85.0"
   },
   "main": "./dist/extension.cjs",
-  "extensionKind": ["workspace"],
+  "extensionKind": [
+    "workspace"
+  ],
   "activationEvents": [
     "onCommand:quackwrangler.openDataWrangler",
     "onCommand:quackwrangler.openFile",
     "onCommand:quackwrangler.openFolder",
-    "onCommand:quackwrangler.executeQuery",
     "onCommand:quackwrangler.exportData",
     "onCommand:quackwrangler.summarizeFile",
-    "onCommand:quackwrangler.showSchema",
+    "onCommand:quackwrangler.saveWorkspace",
+    "onCommand:quackwrangler.openWorkspace",
+    "onCommand:quackwrangler.openRemoteData",
+    "onCommand:quackwrangler.configureAI",
+    "onCommand:quackwrangler.generateAITransforms",
+    "onCommand:quackwrangler.compareSchemas",
+    "onCommand:quackwrangler.detectSchemaDrift",
     "onView:quackwrangler.actions",
-    "onLanguage:sql",
     "workspaceContains:**/*.parquet",
     "workspaceContains:**/*.csv",
     "workspaceContains:**/*.json",
     "workspaceContains:**/*.jsonl",
     "workspaceContains:**/*.ndjson",
     "workspaceContains:**/*.xlsx",
-    "workspaceContains:**/*.ods"
+    "workspaceContains:**/*.ods",
+    "workspaceContains:**/*.arrow",
+    "workspaceContains:**/*.orc"
   ],
   "contributes": {
     "customEditors": [
@@ -56,13 +74,39 @@
         "viewType": "quackwrangler.dataEditor",
         "displayName": "QuackWrangler",
         "selector": [
-          { "filenamePattern": "*.parquet" },
-          { "filenamePattern": "*.csv" },
-          { "filenamePattern": "*.tsv" },
-          { "filenamePattern": "*.jsonl" },
-          { "filenamePattern": "*.ndjson" },
-          { "filenamePattern": "*.xlsx" },
-          { "filenamePattern": "*.ods" }
+          {
+            "filenamePattern": "*.parquet"
+          },
+          {
+            "filenamePattern": "*.csv"
+          },
+          {
+            "filenamePattern": "*.tsv"
+          },
+          {
+            "filenamePattern": "*.jsonl"
+          },
+          {
+            "filenamePattern": "*.ndjson"
+          },
+          {
+            "filenamePattern": "*.xlsx"
+          },
+          {
+            "filenamePattern": "*.ods"
+          },
+          {
+            "filenamePattern": "*.arrow"
+          },
+          {
+            "filenamePattern": "*.arrows"
+          },
+          {
+            "filenamePattern": "*.ipc"
+          },
+          {
+            "filenamePattern": "*.orc"
+          }
         ],
         "priority": "default"
       }
@@ -89,11 +133,6 @@
         "icon": "$(refresh)"
       },
       {
-        "command": "quackwrangler.executeQuery",
-        "title": "QuackWrangler: Execute Query",
-        "icon": "$(play)"
-      },
-      {
         "command": "quackwrangler.exportData",
         "title": "QuackWrangler: Export Data",
         "icon": "$(export)"
@@ -104,14 +143,39 @@
         "icon": "$(graph)"
       },
       {
-        "command": "quackwrangler.showSchema",
-        "title": "QuackWrangler: Show Schema",
-        "icon": "$(list-flat)"
+        "command": "quackwrangler.saveWorkspace",
+        "title": "QuackWrangler: Save Workspace",
+        "icon": "$(save)"
       },
       {
-        "command": "quackwrangler.refreshData",
-        "title": "QuackWrangler: Refresh Data",
-        "icon": "$(refresh)"
+        "command": "quackwrangler.openWorkspace",
+        "title": "QuackWrangler: Open Workspace",
+        "icon": "$(folder-opened)"
+      },
+      {
+        "command": "quackwrangler.openRemoteData",
+        "title": "QuackWrangler: Open Remote HTTPS/S3 Data",
+        "icon": "$(cloud-download)"
+      },
+      {
+        "command": "quackwrangler.configureAI",
+        "title": "QuackWrangler: Configure OpenAI API Key",
+        "icon": "$(key)"
+      },
+      {
+        "command": "quackwrangler.generateAITransforms",
+        "title": "QuackWrangler: Generate Visual Transforms with AI",
+        "icon": "$(sparkle)"
+      },
+      {
+        "command": "quackwrangler.compareSchemas",
+        "title": "QuackWrangler: Compare File Schemas",
+        "icon": "$(diff)"
+      },
+      {
+        "command": "quackwrangler.detectSchemaDrift",
+        "title": "QuackWrangler: Detect Folder Schema Drift",
+        "icon": "$(warning)"
       }
     ],
     "menus": {
@@ -125,24 +189,14 @@
       "editor/title": [
         {
           "command": "quackwrangler.openDataWrangler",
-          "when": "resourceExtname == .parquet || resourceExtname == .csv || resourceExtname == .tsv || resourceExtname == .json || resourceExtname == .jsonl || resourceExtname == .ndjson || resourceExtname == .xlsx || resourceExtname == .ods",
+          "when": "resourceExtname == .parquet || resourceExtname == .csv || resourceExtname == .tsv || resourceExtname == .json || resourceExtname == .jsonl || resourceExtname == .ndjson || resourceExtname == .xlsx || resourceExtname == .ods || resourceExtname == .arrow || resourceExtname == .arrows || resourceExtname == .ipc || resourceExtname == .orc",
           "group": "navigation"
         }
       ],
       "explorer/context": [
         {
           "command": "quackwrangler.openFile",
-          "when": "resourceExtname == .parquet || resourceExtname == .csv || resourceExtname == .json || resourceExtname == .tsv || resourceExtname == .jsonl || resourceExtname == .ndjson || resourceExtname == .xlsx || resourceExtname == .ods",
-          "group": "1_datawrangler"
-        },
-        {
-          "command": "quackwrangler.summarizeFile",
-          "when": "resourceExtname == .parquet || resourceExtname == .csv || resourceExtname == .tsv || resourceExtname == .json || resourceExtname == .jsonl || resourceExtname == .ndjson || resourceExtname == .xlsx || resourceExtname == .ods",
-          "group": "1_datawrangler"
-        },
-        {
-          "command": "quackwrangler.showSchema",
-          "when": "resourceExtname == .parquet || resourceExtname == .csv || resourceExtname == .tsv || resourceExtname == .json || resourceExtname == .jsonl || resourceExtname == .ndjson || resourceExtname == .xlsx || resourceExtname == .ods",
+          "when": "resourceExtname == .parquet || resourceExtname == .csv || resourceExtname == .json || resourceExtname == .tsv || resourceExtname == .jsonl || resourceExtname == .ndjson || resourceExtname == .xlsx || resourceExtname == .ods || resourceExtname == .arrow || resourceExtname == .arrows || resourceExtname == .ipc || resourceExtname == .orc",
           "group": "1_datawrangler"
         }
       ]
@@ -184,24 +238,14 @@
         },
         "quackwrangler.duckdb.autoLoadExtensions": {
           "type": "array",
-          "default": ["parquet", "json"],
-          "items": { "type": "string" },
+          "default": [
+            "parquet",
+            "json"
+          ],
+          "items": {
+            "type": "string"
+          },
           "description": "DuckDB extensions to auto-install and load"
-        },
-        "quackwrangler.fileViewer.parquet": {
-          "type": "boolean",
-          "default": true,
-          "description": "Auto-open .parquet files with QuackWrangler"
-        },
-        "quackwrangler.fileViewer.csv": {
-          "type": "boolean",
-          "default": true,
-          "description": "Auto-open .csv files with QuackWrangler"
-        },
-        "quackwrangler.fileViewer.json": {
-          "type": "boolean",
-          "default": false,
-          "description": "Auto-open .json files with QuackWrangler"
         },
         "quackwrangler.display.pageSize": {
           "type": "number",
@@ -216,21 +260,14 @@
           "minimum": 100,
           "maximum": 1000000,
           "description": "Maximum rows to display in the data grid"
+        },
+        "quackwrangler.ai.model": {
+          "type": "string",
+          "default": "gpt-5.6-luna",
+          "description": "OpenAI model used for opt-in schema-only visual transform generation"
         }
       }
-    },
-    "keybindings": [
-      {
-        "command": "quackwrangler.executeQuery",
-        "key": "cmd+enter",
-        "when": "editorTextFocus && editorLangId == sql"
-      },
-      {
-        "command": "quackwrangler.executeQuery",
-        "key": "ctrl+enter",
-        "when": "editorTextFocus && editorLangId == sql"
-      }
-    ]
+    }
   },
   "scripts": {
     "vscode:prepublish": "npm run build:production",
@@ -247,11 +284,14 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p webview-ui/tsconfig.json",
-    "build": "npm run typecheck && npm run compile && npm run build:webview"
+    "build": "npm run typecheck && npm run compile && npm run build:webview",
+    "benchmark": "node benchmarks/run.mjs",
+    "benchmark:scalability": "node benchmarks/scalability.mjs",
+    "benchmark:formats": "node benchmarks/formats.mjs",
+    "benchmark:all": "npm run benchmark && npm run benchmark:scalability && npm run benchmark:formats"
   },
   "dependencies": {
-    "@duckdb/node-api": "^1.5.4-r.1",
-    "@vscode/webview-ui-toolkit": "^1.4.0"
+    "@duckdb/node-api": "^1.5.4-r.1"
   },
   "devDependencies": {
     "@types/node": "^26.1.2",

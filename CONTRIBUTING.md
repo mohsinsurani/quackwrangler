@@ -1,139 +1,82 @@
 # Contributing to QuackWrangler
 
-Thank you for your interest in contributing to QuackWrangler! This guide will help you get started.
+QuackWrangler welcomes bug fixes, documentation improvements, tests, and focused features.
 
-## Prerequisites
+## Requirements
 
-- Node.js 18 or higher
-- npm 9 or higher
-- VS Code 1.85.0 or higher
-- Python 3.10 or higher when changing the optional Polars sidecar
-- [uv](https://docs.astral.sh/uv/) recommended for Python dependency management
+- Node.js 18 or newer
+- npm 9 or newer
+- VS Code 1.85 or newer
 - Git
 
-## Development Setup
+Python, Jupyter, Polars, and Pandas are not extension runtime dependencies. Optional comparative benchmarks require `uv`, which creates isolated script environments from inline dependency metadata.
 
-1. **Fork and clone the repository**
+## Setup
 
 ```bash
 git clone https://github.com/mohsinsurani/quackwrangler.git
 cd quackwrangler
-```
-
-2. **Install dependencies**
-
-```bash
 npm ci
 npm --prefix webview-ui ci
-```
-
-3. **Open in VS Code**
-
-```bash
-code .
-```
-
-4. **Build the extension**
-
-```bash
 npm run build
 ```
 
-5. **Run the extension**
+Open the repository in VS Code, select **Run QuackWrangler Extension** in Run and Debug, and press `F5`. Test inside the Extension Development Host window.
 
-Press `F5` in VS Code to launch the Extension Development Host.
+## Workflow
 
-Python is not required for Version 1. When changing the optional Version 2
-sidecar, install its recorded environment with:
+1. Create a focused branch.
+2. Make the smallest coherent change.
+3. Add tests that fail without the change.
+4. Update user and architecture documentation when behavior changes.
+5. Run the complete local gate:
 
-```bash
-uv sync --frozen --extra arrow --extra dev
-```
-
-## Development Workflow
-
-### Making Changes
-
-1. Create a feature branch:
    ```bash
-   git checkout -b feature/my-feature
+   npm run typecheck
+   npm run lint
+   npm test
+   npm run build
+   git diff --check
    ```
 
-2. Make your changes in the `src/` directory
+   When changing execution, file loading, or benchmark code, also run the relevant reproducible suite:
 
-3. Build and test:
    ```bash
-    npm run build
-    npm test
-    uv run ruff check src/sidecar
-    uv run ruff format --check src/sidecar
+   npm run benchmark
+   npm run benchmark:scalability
+   npm run benchmark:formats
    ```
 
-4. Commit your changes:
-   ```bash
-   git commit -m "feat: add my feature"
-   ```
+6. Open a pull request explaining the user impact, design, verification, and screenshots for visible UI changes.
 
-5. Push and create a PR:
-   ```bash
-   git push origin feature/my-feature
-   ```
+## Code standards
 
-### Code Style
+- Use strict TypeScript, explicit domain types, and no unexplained `any`.
+- Follow Prettier and ESLint import ordering.
+- Reuse supported-file, message, and transform definitions instead of duplicating constants.
+- Treat webview input as untrusted: validate parameters, quote identifiers/literals, and allow-list SQL keywords.
+- Keep large data in DuckDB. Send only bounded pages and chart/profile results to the webview.
+- Keep UI shortcuts and forms on the same `WranglingSession` transform path.
+- Preserve accessibility labels, keyboard focus, VS Code theme variables, and virtualized table behavior.
 
-- Use TypeScript with strict mode
-- Follow Prettier formatting (single quotes, trailing commas)
-- Use ESLint for code quality
-- Write meaningful commit messages
-- Record Python runtime and optional dependencies in `pyproject.toml`; do not add ad-hoc requirements files
-- Keep Python changes compatible with the `requires-python` range in `pyproject.toml`
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for current runtime boundaries and extension points.
 
-### Testing
+## Tests
 
-```bash
-# Run all tests
-npm test
+- Unit tests belong under `tests/unit`.
+- SQL transforms need in-memory execution coverage under `tests/integration`.
+- UI interaction contracts currently use source-level tests under `tests/unit/webview`; add behavioral component tests when a DOM test environment is introduced.
+- Keep fixtures small and free of private data.
+- Preserve successful benchmark artifacts and their generation dates. Never rewrite a failed or exploratory result as an OOM without supporting evidence.
 
-# Run tests in watch mode
-npm run test:watch
+## Releases
 
-# Generate coverage report
-npm run test:coverage
-```
+Version numbers, VSIX files, Git tags, and Marketplace publishing are maintainer-controlled. Put changes under `Unreleased`; do not bump or package a release in a normal pull request.
 
-## Pull Request Process
+## Issues and community
 
-1. **Update documentation** if adding new features
-2. **Add tests** for new functionality
-3. **Ensure all tests pass** before submitting
-4. **Follow the PR template**
-5. **Request review** from maintainers
+Use [GitHub Discussions](https://github.com/mohsinsurani/quackwrangler/discussions) for questions and early ideas. Use issues for reproducible bugs and scoped work.
 
-## Issue Templates
+Helpful labels include `good first issue`, `help wanted`, `area: ui`, `area: duckdb`, `area: file-formats`, and `documentation`.
 
-### Bug Reports
-
-- VS Code version
-- QuackWrangler version
-- Operating system
-- Steps to reproduce
-- Expected vs actual behavior
-
-### Feature Requests
-
-- Use case description
-- Proposed solution
-- Alternatives considered
-- Additional context
-
-## Code of Conduct
-
-- Be respectful and inclusive
-- Focus on constructive feedback
-- Help newcomers feel welcome
-
-## Questions?
-
-Open a discussion on GitHub or reach out to maintainers.
-
-Thank you for contributing!
+Be respectful, provide reproducible evidence, and avoid sharing confidential datasets in issues or fixtures.

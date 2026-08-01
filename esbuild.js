@@ -89,7 +89,6 @@ async function main() {
   for (const staleBundle of [
     'dist/extension.js',
     'dist/extension.js.map',
-    'dist/sidecar/polars-bridge.py',
   ]) {
     if (existsSync(staleBundle)) {
       unlinkSync(staleBundle);

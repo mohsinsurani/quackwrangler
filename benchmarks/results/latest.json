@@ -1,0 +1,44 @@
+{
+  "generated_at": "2026-08-01T03:32:52.060Z",
+  "machine": {
+    "os": "Darwin 25.5.0",
+    "architecture": "arm64",
+    "cpu": "Apple M3 Pro",
+    "logical_cores": 11,
+    "memory_gb": 18,
+    "node": "v20.20.0",
+    "python": "3.11.11"
+  },
+  "methodology": {
+    "dataset_rows": 1000000,
+    "dataset": "deterministic synthetic Parquet (Zstandard)",
+    "runs": 7,
+    "warmups": 2,
+    "statistic": "median",
+    "workload": "materialize Parquet, then filter + grouped aggregates + sort + limit",
+    "result_validation": "all engines must return the same rounded 20-row result"
+  },
+  "results": [
+    {
+      "engine": "QuackWrangler (DuckDB)",
+      "version": "1.5.4-r.1",
+      "load_ms": 16.07,
+      "transform_ms": 6.89,
+      "total_ms": 22.35
+    },
+    {
+      "engine": "Polars",
+      "version": "1.43.1",
+      "load_ms": 2.75,
+      "transform_ms": 8.56,
+      "total_ms": 11.31
+    },
+    {
+      "engine": "Pandas",
+      "version": "3.0.5",
+      "load_ms": 8.89,
+      "transform_ms": 35.09,
+      "total_ms": 43.66
+    }
+  ]
+}

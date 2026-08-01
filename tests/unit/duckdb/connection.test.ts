@@ -1,11 +1,17 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-const mockAppendLine = vi.fn();
+const mocks = vi.hoisted(() => ({
+  appendLine: vi.fn(),
+  run: vi.fn().mockResolvedValue({
+    getRowsJson: vi.fn().mockResolvedValue([[1]]),
+    columnNames: vi.fn().mockReturnValue(['id']),
+  }),
+}));
 
 vi.mock('vscode', () => ({
   window: {
     createOutputChannel: vi.fn().mockReturnValue({
-      appendLine: mockAppendLine,
+      appendLine: mocks.appendLine,
       show: vi.fn(),
       dispose: vi.fn(),
     }),
@@ -17,10 +23,7 @@ vi.mock('@duckdb/node-api', () => ({
     create: vi.fn().mockResolvedValue({
       connect: vi.fn().mockResolvedValue({
         all: vi.fn().mockResolvedValue([]),
-        run: vi.fn().mockResolvedValue({
-          getRowsJson: vi.fn().mockResolvedValue([[1]]),
-          columnNames: vi.fn().mockReturnValue(['id']),
-        }),
+        run: mocks.run,
         closeSync: vi.fn(),
       }),
     }),
@@ -35,9 +38,15 @@ describe('DuckDBConnection', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     connection = new DuckDBConnection(
-      { memoryLimit: '1GB', tempDirectory: '', autoLoadExtensions: false },
       {
-        appendLine: mockAppendLine,
+        memoryLimit: '1GB',
+        tempDirectory: '',
+        maxTempDirectorySize: '15GB',
+        autoLoadExtensions: false,
+        pageSize: 100,
+      },
+      {
+        appendLine: mocks.appendLine,
         show: vi.fn(),
         dispose: vi.fn(),
       } as any,
@@ -48,6 +57,7 @@ describe('DuckDBConnection', () => {
     it('should create a DuckDB instance', async () => {
       await connection.connect();
       expect(connection.isConnected()).toBe(true);
+      expect(mocks.run).toHaveBeenCalledWith("SET max_temp_directory_size='15GB'");
     });
   });
 

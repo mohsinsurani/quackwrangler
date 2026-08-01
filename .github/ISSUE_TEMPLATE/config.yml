@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Questions and ideas
+    url: https://github.com/mohsinsurani/quackwrangler/discussions
+    about: Ask for help, share a workflow, or explore an idea with the community.
+  - name: VS Code Marketplace
+    url: https://marketplace.visualstudio.com/items?itemName=quackwrangler.quackwrangler
+    about: Install QuackWrangler or leave a Marketplace review.
