@@ -73,6 +73,8 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for current runtime boundaries 
 
 Version numbers, VSIX files, Git tags, and Marketplace publishing are maintainer-controlled. Put changes under `Unreleased`; do not bump or package a release in a normal pull request.
 
+Maintainers should follow [docs/RELEASING.md](docs/RELEASING.md).
+
 ## Issues and community
 
 Use [GitHub Discussions](https://github.com/mohsinsurani/quackwrangler/discussions) for questions and early ideas. Use issues for reproducible bugs and scoped work.

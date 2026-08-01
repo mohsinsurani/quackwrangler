@@ -1,5 +1,9 @@
 # QuackWrangler
 
+<p align="center">
+  <img src="logo.png" alt="QuackWrangler logo" width="128" height="128">
+</p>
+
 [![CI](https://github.com/mohsinsurani/quackwrangler/actions/workflows/ci.yml/badge.svg)](https://github.com/mohsinsurani/quackwrangler/actions/workflows/ci.yml)
 [![Marketplace Version](https://img.shields.io/visual-studio-marketplace/v/quackwrangler.quackwrangler?label=marketplace)](https://marketplace.visualstudio.com/items?itemName=quackwrangler.quackwrangler)
 [![Marketplace Installs](https://img.shields.io/visual-studio-marketplace/i/quackwrangler.quackwrangler?label=installs)](https://marketplace.visualstudio.com/items?itemName=quackwrangler.quackwrangler)
@@ -271,33 +275,9 @@ Before a release, follow the [complete QA checklist](docs/QA_CHECKLIST.md), incl
 
 Python, Polars, and Pandas are not extension runtime dependencies. Benchmark scripts use isolated `uv` environments.
 
-## Publish on the VS Code Marketplace
+## Maintainers
 
-The VS Code Marketplace hosts and distributes the extension; GitHub hosts its source code and releases.
-
-1. Create a Marketplace publisher at the [Visual Studio Marketplace publisher portal](https://marketplace.visualstudio.com/manage/publishers/).
-2. Ensure the publisher ID exactly matches `publisher` in `package.json`. The published extension uses `quackwrangler`.
-3. Create an Azure DevOps personal access token with the Marketplace **Manage** scope. Never commit the token.
-4. Authenticate, validate, and package:
-
-   ```bash
-   npx vsce login quackwrangler
-   npm test
-   npm run build
-   npm run package
-   ```
-
-5. Install and smoke-test the resulting VSIX locally.
-6. After explicit maintainer approval, increment the semantic version and publish:
-
-   ```bash
-   npm version patch
-   npm run publish:marketplace
-   ```
-
-You can also upload the VSIX manually from the publisher portal. See the official [Publishing Extensions](https://code.visualstudio.com/api/working-with-extensions/publishing-extension) and [Install from VSIX](https://code.visualstudio.com/docs/configure/extensions/extension-marketplace#_install-from-a-vsix) documentation.
-
-For automated releases, store the token as a protected GitHub Actions secret such as `VSCE_PAT`; do not put it in source, workflow text, or documentation examples.
+Marketplace releases are maintainer-controlled. See [Release and Marketplace publishing](docs/RELEASING.md) for the private-credential, QA, packaging, and publishing workflow.
 
 ## Contributing
 

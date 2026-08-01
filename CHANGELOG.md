@@ -6,6 +6,7 @@ All notable changes to QuackWrangler are documented here using [Keep a Changelog
 
 ### Added
 
+- A compact 128×128 Marketplace icon and public project logo
 - DuckDB-backed column profiles, percentiles, distributions, data-quality findings, and charts
 - Virtualized synchronized profile/header/data grid with drag resize, double-click auto-fit, width presets, clip/wrap modes, and complete-value inspection
 - Row selection and multi-row copying as TSV, CSV, pipe-separated text, or named JSON
