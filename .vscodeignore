@@ -25,6 +25,7 @@ dist/.gitignore
 .github/**
 scripts/**
 benchmarks/**
+Screenshot*.png
 docs/**
 !docs/assets/
 !docs/assets/quackwrangler-demo.gif

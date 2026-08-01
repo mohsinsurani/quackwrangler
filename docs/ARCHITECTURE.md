@@ -127,6 +127,12 @@ Increment `WEBVIEW_PROTOCOL_VERSION` when a `sessionUpdated` payload changes inc
 - Saved workspaces persist parameters, never executable serialized SQL.
 - Custom SQL is read-only and limited to one statement.
 
+## Native distribution
+
+DuckDB's Node binding contains platform-specific native libraries. QuackWrangler therefore publishes separate VSIX packages for Windows, Linux, Alpine Linux, and macOS on x64 and ARM64 under one Marketplace version. VS Code selects the matching target automatically. There is no un-targeted fallback package because a VSIX containing only the maintainer's local DuckDB binary would fail on other systems.
+
+`scripts/vsce-platform.mjs` makes local packaging target the current platform. `.github/workflows/package-platforms.yml` builds the complete release matrix on matching GitHub-hosted runners and verifies that the expected DuckDB binding is installed before packaging.
+
 ## Testing
 
 - Unit tests cover file detection, remote progress, SQL generation, connection setup, message/layout contracts, and grid serialization.

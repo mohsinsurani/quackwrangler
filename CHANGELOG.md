@@ -4,9 +4,32 @@ All notable changes to QuackWrangler are documented here using [Keep a Changelog
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-08-01
+
 ### Added
 
 - A compact 128×128 Marketplace icon and public project logo
+- A maintainer-focused release and Marketplace publishing guide
+- Platform-specific Marketplace packaging for Windows, Linux, Alpine Linux, and macOS on x64 and ARM64
+
+### Changed
+
+- Replaced retired dynamic Marketplace badges with a stable linked release badge
+- Aligned CI and contributor requirements on Node.js 20 and 22, TypeScript 5.9, and ESLint 9
+- Changed the default opt-in AI transform model to the available `gpt-4o-mini` model
+- Rewrote the project introduction, privacy explanation, and DuckDB/Polars roadmap in a clearer maintainer voice
+- Added concise Karpathy-inspired coding principles to the repository agent guidance
+- Made local packaging detect and label the current native platform instead of producing a misleading universal VSIX
+
+### Fixed
+
+- Restored clean dependency installation by resolving TypeScript and ESLint peer conflicts
+- Updated Vite chunk configuration for the current webview build toolchain
+
+## [0.1.2] - 2026-08-01
+
+### Added
+
 - DuckDB-backed column profiles, percentiles, distributions, data-quality findings, and charts
 - Virtualized synchronized profile/header/data grid with drag resize, double-click auto-fit, width presets, clip/wrap modes, and complete-value inspection
 - Row selection and multi-row copying as TSV, CSV, pipe-separated text, or named JSON
@@ -60,5 +83,7 @@ All notable changes to QuackWrangler are documented here using [Keep a Changelog
 - Filtering, sorting, column transforms, deduplication, aggregation, paging, schema inspection, summaries, and Parquet/CSV/JSON export
 - Activity-bar file browser and custom data editor integration
 
-[Unreleased]: https://github.com/mohsinsurani/quackwrangler/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/mohsinsurani/quackwrangler/compare/v0.1.3...HEAD
+[0.1.3]: https://github.com/mohsinsurani/quackwrangler/compare/v0.1.2...v0.1.3
+[0.1.2]: https://github.com/mohsinsurani/quackwrangler/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/mohsinsurani/quackwrangler/releases/tag/v0.1.1

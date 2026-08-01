@@ -35,7 +35,7 @@ Authenticate locally only when necessary:
 npx vsce login quackwrangler
 ```
 
-## Build and inspect the VSIX
+## Build and inspect platform VSIXs
 
 Packaging is allowed only after the owner approves the release candidate:
 
@@ -43,19 +43,31 @@ Packaging is allowed only after the owner approves the release candidate:
 npm run package
 ```
 
+The local command always creates a VSIX targeted to the current OS and CPU. It must not be uploaded as a universal fallback because DuckDB is a native dependency.
+
+For a public release, run **Package platform VSIXs** from GitHub Actions with the approved version. The workflow builds separate packages for:
+
+- Windows x64 and ARM64
+- Linux x64 and ARM64
+- Alpine Linux x64 and ARM64
+- macOS Intel and Apple Silicon
+
+Download all eight workflow artifacts. They share one extension version and listing; VS Code selects the matching package for each user.
+
 Before publishing:
 
 1. Inspect the VSIX contents and confirm that source fixtures, development files, credentials, and benchmark datasets are absent.
-2. Confirm that `logo.png`, README assets, the bundled webview, and the correct DuckDB native files are present.
-3. Install the VSIX using **Extensions: Install from VSIX...** in VS Code.
+2. Confirm that `logo.png`, README assets, the bundled webview, and only the matching DuckDB native files are present in each target package.
+3. Install the VSIX for the maintainer's platform using **Extensions: Install from VSIX...** in VS Code.
 4. Repeat the release smoke tests in a clean Extension Development Host or VS Code profile.
 
 ## Publish
 
-Publishing requires a second explicit approval after the VSIX has passed inspection and smoke testing:
+Publishing requires a second explicit approval after the VSIXs have passed inspection and smoke testing. Publish every targeted package for the approved version; do not publish the un-targeted fallback package:
 
 ```bash
-npm run publish:marketplace
+npx vsce publish --packagePath path/to/quackwrangler-win32-x64-<version>.vsix
+# Repeat for every target artifact.
 ```
 
 Alternatively, upload the approved VSIX through the [Visual Studio Marketplace publisher portal](https://marketplace.visualstudio.com/manage/publishers/).

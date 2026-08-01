@@ -4,7 +4,7 @@
   "displayName": "QuackWrangler",
   "icon": "logo.png",
   "description": "Explore, transform, visualize, query, and export data with built-in DuckDB. No Python or Jupyter; file contents stay local.",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "publisher": "quackwrangler",
   "license": "MIT",
   "repository": {
@@ -277,8 +277,8 @@
     "watch": "node esbuild.js --watch",
     "build:webview": "cd webview-ui && npm run build",
     "build:production": "npm run typecheck && node esbuild.js --production && npm run build:webview",
-    "package": "vsce package",
-    "publish:marketplace": "vsce publish",
+    "package": "node scripts/vsce-platform.mjs package",
+    "publish:marketplace": "node scripts/vsce-platform.mjs publish",
     "lint": "eslint src --ext ts",
     "lint:fix": "eslint src --ext ts --fix",
     "format": "prettier --write \"src/**/*.ts\" \"webview-ui/src/**/*.tsx\"",
@@ -300,12 +300,13 @@
     "@types/vscode": "^1.85.0",
     "@typescript-eslint/eslint-plugin": "^8.0.0",
     "@typescript-eslint/parser": "^8.0.0",
+    "@vitest/coverage-v8": "^4.1.10",
+    "@vscode/vsce": "^3.9.2",
     "esbuild": "^0.28.1",
     "eslint": "^9.39.5",
     "eslint-plugin-import": "^2.31.0",
     "prettier": "^3.4.0",
     "typescript": "^5.9.3",
-    "vitest": "^4.1.10",
-    "@vitest/coverage-v8": "^4.1.10"
+    "vitest": "^4.1.10"
   }
 }

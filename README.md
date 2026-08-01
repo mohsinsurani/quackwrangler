@@ -5,8 +5,7 @@
 </p>
 
 [![CI](https://github.com/mohsinsurani/quackwrangler/actions/workflows/ci.yml/badge.svg)](https://github.com/mohsinsurani/quackwrangler/actions/workflows/ci.yml)
-[![Marketplace Version](https://img.shields.io/visual-studio-marketplace/v/quackwrangler.quackwrangler?label=marketplace)](https://marketplace.visualstudio.com/items?itemName=quackwrangler.quackwrangler)
-[![Marketplace Installs](https://img.shields.io/visual-studio-marketplace/i/quackwrangler.quackwrangler?label=installs)](https://marketplace.visualstudio.com/items?itemName=quackwrangler.quackwrangler)
+[![VS Code Marketplace](https://img.shields.io/badge/VS_Code_Marketplace-0.1.3-007ACC?logo=visualstudiocode)](https://marketplace.visualstudio.com/items?itemName=quackwrangler.quackwrangler)
 [![MIT License](https://img.shields.io/badge/license-MIT-yellow.svg)](LICENSE)
 [![VS Code 1.85+](https://img.shields.io/badge/VS%20Code-1.85%2B-blue.svg)](https://code.visualstudio.com/)
 
@@ -17,8 +16,6 @@ QuackWrangler does not upload rows or cell values. If you choose to use the opti
 QuackWrangler ships with DuckDB built in. Open CSV, Parquet, JSON, Excel, and ODS files directly—no Python environment, Jupyter kernel, or database setup required.
 
 > QuackWrangler is an independent open-source project inspired by the visual workflow of data-wrangling tools.
-
-> **Release status:** `0.1.1` is the current Marketplace release. Work for `0.1.2` is still being tested and has not been published.
 
 **Install:** `code --install-extension quackwrangler.quackwrangler`
 
@@ -153,6 +150,8 @@ Open Extensions in VS Code, search for **QuackWrangler**, and select **Install**
 ```bash
 code --install-extension quackwrangler.quackwrangler
 ```
+
+Marketplace releases use separate native packages for Windows, Linux, Alpine Linux, Intel/Apple Silicon macOS, and x64/ARM64 systems. VS Code selects the matching package automatically from the single QuackWrangler listing.
 
 ### From a local VSIX
 
