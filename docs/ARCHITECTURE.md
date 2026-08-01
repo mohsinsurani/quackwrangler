@@ -43,7 +43,7 @@ The webview never reads the file system. The extension host owns file dialogs, p
 | `webview-ui/src/components/DataQualitySummary.tsx` | Null, duplicate, and outlier issues                                                      |
 | `webview-ui/src/components/ChartPanel.tsx`         | Histogram, bar, line, scatter, box-plot, and correlation controls/rendering              |
 | `src/utils/remoteProgress.ts`                      | Remote-source detection and monotonic loading stages                                     |
-| `benchmarks/run.mjs`                               | Validated one-million-row DuckDB/Polars/Pandas comparison                                |
+| `benchmarks/run.mjs`                               | Validated one-million-row cross-engine comparison                                        |
 | `benchmarks/scalability.mjs`                       | Fresh-process scaling, peak RSS, and failure recording                                   |
 | `benchmarks/formats.mjs`                           | DuckDB Parquet, CSV, and NDJSON loading comparison                                       |
 
@@ -137,12 +137,8 @@ The Operations panel starts as a labelled collapsed rail so the grid receives th
 
 ## Performance evidence
 
-Benchmarks are development tooling, not extension runtime code. The primary and scalability suites compare the production `@duckdb/node-api` path with equivalent eager Polars and Pandas operations installed in isolated `uv` script environments. Result keys and row counts must match exactly; floating-point aggregates use an explicit absolute tolerance.
+Benchmarks are development tooling, not extension runtime code. The primary and scalability suites compare the production `@duckdb/node-api` path with equivalent eager dataframe operations installed in isolated `uv` script environments. Result keys and row counts must match exactly; floating-point aggregates use an explicit absolute tolerance.
 
 The scalability runner starts a fresh process for every engine sample so peak RSS includes runtime and imported-library overhead. A failed worker records `status`, exit code or signal, and a bounded error while leaving timing and RSS null; remaining engines continue. Signals are evidence of process termination, not proof of OOM by themselves. Large 50M/100M inputs are opt-in.
 
 See `benchmarks/README.md` for reproducibility details and caveats. Engine timings are not presented as end-to-end VS Code first-paint measurements; that requires explicit extension-host and webview instrumentation.
-
-## Future engines
-
-Polars remains a possible future major-version feature. It is intentionally not scaffolded in the current runtime. A future implementation should begin with a separate architecture decision covering packaging, process isolation, Arrow transport, dependency discovery, and feature parity rather than reviving dormant code.
