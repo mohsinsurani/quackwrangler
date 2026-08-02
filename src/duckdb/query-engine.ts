@@ -5,7 +5,9 @@ export function normalizeReadOnlyQuery(sql: string): string {
   const normalized = sql.trim().replace(/;\s*$/, '').trim();
   if (!normalized) throw new Error('Enter a query to run');
   if (normalized.includes(';')) throw new Error('Run one query at a time');
-  const withoutComments = normalized.replace(/^(?:\s*--[^\n]*(?:\n|$)|\s*\/\*[\s\S]*?\*\/\s*)+/, '').trimStart();
+  const withoutComments = normalized
+    .replace(/^(?:\s*--[^\n]*(?:\n|$)|\s*\/\*[\s\S]*?\*\/\s*)+/, '')
+    .trimStart();
   if (!/^(SELECT|WITH|VALUES)\b/i.test(withoutComments)) {
     throw new Error('Custom queries are read-only. Start with SELECT, WITH, or VALUES.');
   }
@@ -16,7 +18,7 @@ export async function exportResults(
   connection: DuckDBConnection,
   sql: string,
   outputPath: string,
-  format: 'parquet' | 'csv' | 'json'
+  format: 'parquet' | 'csv' | 'json',
 ): Promise<void> {
   const trimmedSql = sql.replace(/;$/, '');
   const destination = quoteLiteral(outputPath);

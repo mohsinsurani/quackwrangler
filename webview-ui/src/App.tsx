@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+
 import { ChartPanel, type ChartConfig } from './components/ChartPanel';
 import type { ColumnProfile } from './components/ColumnProfiles';
 import { DataGrid } from './components/DataGrid';

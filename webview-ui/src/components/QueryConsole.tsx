@@ -17,16 +17,22 @@ export const QueryConsole: React.FC<QueryConsoleProps> = ({ loading, active, onR
 
   return (
     <section className={`query-console ${open ? 'open' : ''}`}>
-      <button className="query-console-toggle" type="button" onClick={() => setOpen(value => !value)}>
-        <span><b>⌘</b> Custom DuckDB query</span>
+      <button
+        className="query-console-toggle"
+        type="button"
+        onClick={() => setOpen((value) => !value)}
+      >
+        <span>
+          <b>⌘</b> Custom DuckDB query
+        </span>
         <span className="query-console-chevron">›</span>
       </button>
       {open && (
         <div className="query-console-body">
           <textarea
             value={sql}
-            onChange={event => setSql(event.target.value)}
-            onKeyDown={event => {
+            onChange={(event) => setSql(event.target.value)}
+            onKeyDown={(event) => {
               if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
                 event.preventDefault();
                 if (sql.trim() && !loading) onRun(sql);
@@ -36,9 +42,20 @@ export const QueryConsole: React.FC<QueryConsoleProps> = ({ loading, active, onR
             aria-label="Custom DuckDB SQL"
           />
           <div className="query-console-actions">
-            <span>Query <code>current_data</code> · ⌘/Ctrl+Enter to run</span>
-            {active && <button type="button" onClick={onClear} disabled={loading}>Return to pipeline</button>}
-            <button className="primary-button" type="button" onClick={() => onRun(sql)} disabled={loading || !sql.trim()}>
+            <span>
+              Query <code>current_data</code> · ⌘/Ctrl+Enter to run
+            </span>
+            {active && (
+              <button type="button" onClick={onClear} disabled={loading}>
+                Return to pipeline
+              </button>
+            )}
+            <button
+              className="primary-button"
+              type="button"
+              onClick={() => onRun(sql)}
+              disabled={loading || !sql.trim()}
+            >
               {loading ? 'Running…' : 'Run query'}
             </button>
           </div>

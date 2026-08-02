@@ -9,6 +9,12 @@ coverage/
 .env
 .env.local
 webview-ui/node_modules/
+.idea/
+.fleet/
+*.swp
+*.swo
+*~
+*.tsbuildinfo
 
 build/
 

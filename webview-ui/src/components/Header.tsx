@@ -52,7 +52,7 @@ export const Header: React.FC<HeaderProps> = React.memo(
         </div>
       </header>
     );
-  }
+  },
 );
 
 Header.displayName = 'Header';

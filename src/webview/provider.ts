@@ -24,10 +24,7 @@ export class DataWranglerPanel {
     this._panel.webview.html = this._getHtmlForWebview(this._panel.webview, extensionUri);
   }
 
-  public static createOrShow(
-    extensionUri: vscode.Uri,
-    filePath?: string
-  ): DataWranglerPanel {
+  public static createOrShow(extensionUri: vscode.Uri, filePath?: string): DataWranglerPanel {
     const column = vscode.ViewColumn.One;
 
     if (DataWranglerPanel.currentPanel) {
@@ -38,19 +35,14 @@ export class DataWranglerPanel {
       return DataWranglerPanel.currentPanel;
     }
 
-    const panel = vscode.window.createWebviewPanel(
-      'dataWrangler',
-      'QuackWrangler',
-      column,
-      {
-        enableScripts: true,
-        retainContextWhenHidden: true,
-        localResourceRoots: [
-          vscode.Uri.joinPath(extensionUri, 'dist', 'webview'),
-          vscode.Uri.joinPath(extensionUri, 'media'),
-        ],
-      }
-    );
+    const panel = vscode.window.createWebviewPanel('dataWrangler', 'QuackWrangler', column, {
+      enableScripts: true,
+      retainContextWhenHidden: true,
+      localResourceRoots: [
+        vscode.Uri.joinPath(extensionUri, 'dist', 'webview'),
+        vscode.Uri.joinPath(extensionUri, 'media'),
+      ],
+    });
 
     DataWranglerPanel.currentPanel = new DataWranglerPanel(panel, extensionUri);
     if (filePath) {
@@ -76,7 +68,7 @@ export class DataWranglerPanel {
   public setMessageHandler(callback: (message: WebviewMessage) => void | Promise<void>): void {
     this._messageDisposable?.dispose();
     this._messageDisposable = this._panel.webview.onDidReceiveMessage(
-      message => void Promise.resolve(callback(message)),
+      (message) => void Promise.resolve(callback(message)),
       null,
       this._disposables,
     );
@@ -98,16 +90,15 @@ export class DataWranglerPanel {
     return this._filePath;
   }
 
-  private _getHtmlForWebview(
-    webview: vscode.Webview,
-    extensionUri: vscode.Uri
-  ): string {
+  private _getHtmlForWebview(webview: vscode.Webview, extensionUri: vscode.Uri): string {
     const indexPath = vscode.Uri.joinPath(extensionUri, 'dist', 'webview', 'index.html').fsPath;
     try {
       let html = fs.readFileSync(indexPath, 'utf8');
       html = html.replace(/<meta[^>]+http-equiv=["']Content-Security-Policy["'][^>]*>/gi, '');
       html = html.replace(/(src|href)="\/?(assets\/[^\"]+)"/g, (_match, attribute, asset) => {
-        const uri = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'dist', 'webview', asset));
+        const uri = webview.asWebviewUri(
+          vscode.Uri.joinPath(extensionUri, 'dist', 'webview', asset),
+        );
         return `${attribute}="${uri}"`;
       });
       return html.replace(

@@ -34,6 +34,8 @@ Open the repository in VS Code, select **Run QuackWrangler Extension** in Run an
    ```bash
    npm run typecheck
    npm run lint
+   npm run format:check
+   npm run security:audit
    npm test
    npm run build
    git diff --check
@@ -68,6 +70,7 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for current runtime boundaries 
 - UI interaction contracts currently use source-level tests under `tests/unit/webview`; add behavioral component tests when a DOM test environment is introduced.
 - Keep fixtures small and free of private data.
 - Preserve successful benchmark artifacts and their generation dates. Never rewrite a failed or exploratory result as an OOM without supporting evidence.
+- Coverage cannot decrease below the enforced baseline. The project is working toward 80% global statement coverage as VS Code-host and React interaction tests are added.
 
 ## Releases
 
@@ -81,4 +84,4 @@ Use [GitHub Discussions](https://github.com/mohsinsurani/quackwrangler/discussio
 
 Helpful labels include `good first issue`, `help wanted`, `area: ui`, `area: duckdb`, `area: file-formats`, and `documentation`.
 
-Be respectful, provide reproducible evidence, and avoid sharing confidential datasets in issues or fixtures.
+Be respectful, provide reproducible evidence, and avoid sharing confidential datasets in issues or fixtures. Participation is governed by the [Code of Conduct](CODE_OF_CONDUCT.md), and suspected vulnerabilities must follow the private process in [SECURITY.md](SECURITY.md).

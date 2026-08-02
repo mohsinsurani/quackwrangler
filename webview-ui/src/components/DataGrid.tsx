@@ -1,4 +1,5 @@
 import React, { useMemo, useCallback, useRef, useState, useEffect } from 'react';
+
 import { ColumnProfiles, type ColumnProfile } from './ColumnProfiles';
 import { NestedValueTree } from './NestedValueTree';
 
@@ -9,11 +10,11 @@ interface Column {
 
 interface DataGridProps {
   columns: Column[];
-  rows: any[][];
+  rows: unknown[][];
   sortBy?: string;
   sortDirection?: 'asc' | 'desc';
   onSort?: (column: string) => void;
-  onCellClick?: (row: number, col: number, value: any) => void;
+  onCellClick?: (row: number, col: number, value: unknown) => void;
   selectedRows?: Set<number>;
   onRowSelect?: (row: number) => void;
   profiles?: ColumnProfile[];
@@ -299,14 +300,14 @@ export const DataGrid: React.FC<DataGridProps> = ({
     setScrollTop(e.currentTarget.scrollTop);
   }, []);
 
-  const formatValue = useCallback((value: any, type: string): string => {
+  const formatValue = useCallback((value: unknown, type: string): string => {
     if (value === null || value === undefined) return 'null';
     if (typeof value === 'object') return formatCellValue(value);
     if (type === 'DOUBLE' || type === 'FLOAT') {
       return typeof value === 'number' ? value.toFixed(2) : String(value);
     }
     if (type === 'TIMESTAMP') {
-      return new Date(value).toLocaleString();
+      return new Date(String(value)).toLocaleString();
     }
     return String(value);
   }, []);

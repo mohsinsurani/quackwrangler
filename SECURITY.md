@@ -1,6 +1,12 @@
 # Security Policy
 
-QuackWrangler takes the security and privacy of local data seriously. The extension processes datasets locally using DuckDB and does not intentionally upload file contents to QuackWrangler-operated services.
+QuackWrangler treats local datasets as sensitive. File parsing, queries, profiling, transforms, visualizations, and exports run locally in the VS Code extension host with DuckDB. The extension does not intentionally upload file contents to QuackWrangler-operated services.
+
+The optional AI transform planner is disabled until a user configures an OpenAI API key. When invoked, it sends the user's instruction and schema metadata (column names, DuckDB types, and nullability) to OpenAI. It does not send rows, cell values, samples, or file contents. Proposed operations require user approval and pass through the same local validation as visual operations.
+
+OpenAI API keys are stored with VS Code `SecretStorage`. They must never be placed in settings, workspace files, logs, issues, or source control.
+
+Remote datasets necessarily contact the URL supplied by the user. Downloaded content is processed locally after retrieval.
 
 ## Supported Versions
 
@@ -8,24 +14,24 @@ Security updates are provided for the latest Marketplace release only.
 
 | Version | Supported |
 | ------- | --------- |
-| 0.1.3   | ✅ |
-| < 0.1.3 | ❌ |
+| 0.1.3   | ✅        |
+| < 0.1.3 | ❌        |
 
 Users should update to the latest version available from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=quackwrangler.quackwrangler).
 
 ## Reporting a Vulnerability
 
-Please do not report suspected security vulnerabilities through public GitHub issues, discussions, or social media.
+Please do not report suspected security vulnerabilities through public GitHub issues, discussions, social media, or Marketplace reviews.
 
 Report vulnerabilities privately through [GitHub Private Vulnerability Reporting](https://github.com/mohsinsurani/quackwrangler/security/advisories/new).
 
 Include as much of the following information as possible:
 
 - A description of the vulnerability and its potential impact
-- The affected QuackWrangler version and operating system
+- The affected QuackWrangler version, operating system, and VS Code version
 - Steps or a minimal example that reproduces the issue
 - Relevant logs, screenshots, or proof-of-concept code
-- Whether the issue involves a local file, remote URL, generated SQL, webview, export, or dependency
+- Whether the issue involves a local file, remote URL, generated SQL, webview, AI request, secret, export, or dependency
 - Any suggested mitigation, if known
 
 Do not include sensitive personal information, credentials, access tokens, or private datasets. Use a minimal synthetic dataset when possible.
@@ -49,7 +55,7 @@ Response times are targets rather than guarantees, particularly for an independe
 
 Please allow reasonable time for investigation and remediation before publicly disclosing a vulnerability.
 
-Security fixes will normally be released as a new Marketplace version. Relevant details and acknowledgements may be included in the release notes after users have had time to update, subject to the reporter’s preferences.
+Security fixes will normally be released as a new Marketplace version. Relevant details and acknowledgements may be included in the release notes after users have had time to update, subject to the reporter's preferences.
 
 ## Security-Relevant Areas
 

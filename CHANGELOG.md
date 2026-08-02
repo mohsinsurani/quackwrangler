@@ -4,6 +4,10 @@ All notable changes to QuackWrangler are documented here using [Keep a Changelog
 
 ## [Unreleased]
 
+### Security and community
+
+- Added a documented security and privacy policy, CodeQL analysis, production dependency audits, contributor conduct and ownership files, a pull-request template, staged-file hooks, webview linting, formatting checks, and coverage regression gates.
+
 ## [0.1.3] - 2026-08-01
 
 ### Added

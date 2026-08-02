@@ -279,9 +279,11 @@
     "build:production": "npm run typecheck && node esbuild.js --production && npm run build:webview",
     "package": "node scripts/vsce-platform.mjs package",
     "publish:marketplace": "node scripts/vsce-platform.mjs publish",
-    "lint": "eslint src --ext ts",
-    "lint:fix": "eslint src --ext ts --fix",
+    "lint": "eslint \"src/**/*.ts\" \"webview-ui/src/**/*.{ts,tsx}\"",
+    "lint:fix": "eslint \"src/**/*.ts\" \"webview-ui/src/**/*.{ts,tsx}\" --fix",
     "format": "prettier --write \"src/**/*.ts\" \"webview-ui/src/**/*.tsx\"",
+    "format:check": "prettier --check \"src/**/*.ts\" \"webview-ui/src/**/*.{ts,tsx}\"",
+    "security:audit": "npm audit --omit=dev --audit-level=high && npm --prefix webview-ui audit --omit=dev --audit-level=high",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
@@ -290,7 +292,8 @@
     "benchmark": "node benchmarks/run.mjs",
     "benchmark:scalability": "node benchmarks/scalability.mjs",
     "benchmark:formats": "node benchmarks/formats.mjs",
-    "benchmark:all": "npm run benchmark && npm run benchmark:scalability && npm run benchmark:formats"
+    "benchmark:all": "npm run benchmark && npm run benchmark:scalability && npm run benchmark:formats",
+    "prepare": "husky"
   },
   "dependencies": {
     "@duckdb/node-api": "^1.5.4-r.1"
@@ -305,8 +308,21 @@
     "esbuild": "^0.28.1",
     "eslint": "^9.39.5",
     "eslint-plugin-import": "^2.31.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "husky": "^9.1.7",
+    "lint-staged": "^16.4.0",
     "prettier": "^3.4.0",
     "typescript": "^5.9.3",
     "vitest": "^4.1.10"
+  },
+  "lint-staged": {
+    "src/**/*.ts": [
+      "eslint --fix",
+      "prettier --write"
+    ],
+    "webview-ui/src/**/*.{ts,tsx}": [
+      "eslint --fix",
+      "prettier --write"
+    ]
   }
 }

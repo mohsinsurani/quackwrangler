@@ -53,7 +53,9 @@ export class DuckDBConnection {
 
       const configuredExtensions = Array.isArray(this.config.autoLoadExtensions)
         ? this.config.autoLoadExtensions
-        : this.config.autoLoadExtensions ? ['httpfs'] : [];
+        : this.config.autoLoadExtensions
+          ? ['httpfs']
+          : [];
       if (configuredExtensions.includes('httpfs')) {
         const conn = await this.instance.connect();
         try {

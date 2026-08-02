@@ -30,7 +30,7 @@ export function useVSCodeAPI(): {
 
   useEffect(() => {
     const receive = (event: MessageEvent<ExtensionMessage>) => {
-      handlers.current.forEach(handler => handler(event.data));
+      handlers.current.forEach((handler) => handler(event.data));
     };
     window.addEventListener('message', receive);
     return () => window.removeEventListener('message', receive);

@@ -284,6 +284,8 @@ See [CONTRIBUTING.md](CONTRIBUTING.md). Bug reports and pull requests are welcom
 
 - Ask questions and share ideas in [GitHub Discussions](https://github.com/mohsinsurani/quackwrangler/discussions).
 - Browse [good first issues](https://github.com/mohsinsurani/quackwrangler/labels/good%20first%20issue) if you are new to the project.
+- Read the [Code of Conduct](CODE_OF_CONDUCT.md) before participating.
+- Report security issues privately by following the [Security Policy](SECURITY.md); do not open a public issue for a suspected vulnerability.
 - See [CHANGELOG.md](CHANGELOG.md) for versioned release notes.
 
 ## License

@@ -49,14 +49,16 @@ export const ColumnProfiles: React.FC<ColumnProfilesProps> = ({
     <div className="profile-gutter" title="Column profiles">
       {loading && profiles.length === 0 ? <span className="profile-spinner" /> : '▥'}
     </div>
-    {columns.map(column => {
-      const profile = profiles.find(item => item.name === column.name);
+    {columns.map((column) => {
+      const profile = profiles.find((item) => item.name === column.name);
       if (!profile) {
         return (
           <article className="profile-card profile-placeholder" key={column.name}>
             <header className="profile-card-header">
               <strong title={column.name}>{column.name}</strong>
-              <span className="profile-type" title={column.type}>{column.type}</span>
+              <span className="profile-type" title={column.type}>
+                {column.type}
+              </span>
             </header>
             <span>{loading ? 'Profiling…' : 'No profile available'}</span>
           </article>
@@ -73,18 +75,28 @@ export const ColumnProfiles: React.FC<ColumnProfilesProps> = ({
         numericMax !== undefined &&
         profile.mean !== undefined &&
         numericMax !== numericMin
-          ? Math.max(0, Math.min(100, ((profile.mean - numericMin) / (numericMax - numericMin)) * 100))
+          ? Math.max(
+              0,
+              Math.min(100, ((profile.mean - numericMin) / (numericMax - numericMin)) * 100),
+            )
           : undefined;
 
       return (
         <article className="profile-card" key={profile.name}>
           <header className="profile-card-header">
             <strong title={profile.name}>{profile.name}</strong>
-            <span className="profile-type" title={profile.type}>{profile.type}</span>
+            <span className="profile-type" title={profile.type}>
+              {profile.type}
+            </span>
           </header>
           <div className="profile-summary-line">
-            <span>Missing: <b>{profile.nullCount.toLocaleString()}</b> <small>({nullPercent.toFixed(1)}%)</small></span>
-            <span>Distinct: <b>{profile.distinctCount.toLocaleString()}</b></span>
+            <span>
+              Missing: <b>{profile.nullCount.toLocaleString()}</b>{' '}
+              <small>({nullPercent.toFixed(1)}%)</small>
+            </span>
+            <span>
+              Distinct: <b>{profile.distinctCount.toLocaleString()}</b>
+            </span>
           </div>
           <div
             className="quality-bar"
@@ -112,8 +124,14 @@ export const ColumnProfiles: React.FC<ColumnProfilesProps> = ({
             </div>
           ) : (
             <div className="value-range">
-              <span><small>Min</small><b title={compact(profile.min)}>{compact(profile.min)}</b></span>
-              <span><small>Max</small><b title={compact(profile.max)}>{compact(profile.max)}</b></span>
+              <span>
+                <small>Min</small>
+                <b title={compact(profile.min)}>{compact(profile.min)}</b>
+              </span>
+              <span>
+                <small>Max</small>
+                <b title={compact(profile.max)}>{compact(profile.max)}</b>
+              </span>
             </div>
           )}
         </article>
