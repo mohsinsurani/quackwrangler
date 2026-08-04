@@ -39,7 +39,9 @@ vi.mock('vscode', () => ({
     fs: { readDirectory: mocks.readDirectory },
     getConfiguration: vi.fn(() => ({
       get: vi.fn((key: string, fallback: unknown) =>
-        key === 'duckdb.tempDirectory' ? '/private/tmp/quackwrangler-panel-flow' : fallback,
+        key === 'duckdb.tempDirectory'
+          ? `${process.env.RUNNER_TEMP ?? process.env.TMPDIR ?? process.env.TEMP ?? '/tmp'}/quackwrangler-panel-flow`
+          : fallback,
       ),
     })),
     getWorkspaceFolder: vi.fn(),
