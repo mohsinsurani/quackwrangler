@@ -19,6 +19,8 @@ Confirm that `package.json` and `package-lock.json` remain on the currently publ
 Run **Run QuackWrangler Extension** from the repository's Run and Debug view, then check:
 
 - Open CSV, TSV, Parquet, JSON, JSONL/NDJSON, XLSX, ODS, and Arrow files.
+- Click a Parquet file and confirm it opens directly in the QuackWrangler custom editor; confirm CSV and other formats retain their normal editor association until **Open in QuackWrangler** is selected.
+- Open data from a read-only workspace and confirm DuckDB spill storage is created under VS Code extension storage rather than a relative `.tmp` directory.
 - Open a folder and confirm supported files appear under their actual subfolders.
 - Open an HTTPS/S3 source. Confirm staged progress is visible, reaches 100%, and a network or format failure appears as an actionable error.
 - Confirm Operations starts collapsed, remains visibly labelled, and expands/collapses without covering the grid.
@@ -32,6 +34,7 @@ Run **Run QuackWrangler Extension** from the repository's Run and Debug view, th
 - Export CSV, JSON, and Parquet and reopen each exported file.
 - Check recent files, dark/high-contrast/light themes, keyboard actions, and narrow/wide editor layouts.
 - If AI assistance is configured, verify provider/model validation and confirm that only schema plus the user's prompt are sent—never row data.
+- In a fixture with `dbt_project.yml`, confirm **Copy as dbt SQL** appears and both model/CTE outputs reference the requested upstream model. Confirm the action stays hidden outside a dbt project.
 
 ## Documentation and media
 

@@ -59,6 +59,24 @@ describe('DuckDBConnection', () => {
       expect(connection.isConnected()).toBe(true);
       expect(mocks.run).toHaveBeenCalledWith("SET max_temp_directory_size='15GB'");
     });
+
+    it('escapes a configured temporary directory before applying the DuckDB setting', async () => {
+      connection = new DuckDBConnection(
+        {
+          memoryLimit: '1GB',
+          tempDirectory: "/tmp/quack's-spill",
+          maxTempDirectorySize: '15GB',
+          autoLoadExtensions: false,
+          pageSize: 100,
+          maxRowsPreview: 10000,
+        },
+        { appendLine: mocks.appendLine } as never,
+      );
+
+      await connection.connect();
+
+      expect(mocks.run).toHaveBeenCalledWith("SET temp_directory='/tmp/quack''s-spill'");
+    });
   });
 
   describe('query', () => {

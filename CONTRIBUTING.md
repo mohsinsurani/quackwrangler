@@ -68,6 +68,7 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for current runtime boundaries 
 - Unit tests belong under `tests/unit`.
 - SQL transforms need in-memory execution coverage under `tests/integration`.
 - UI interaction contracts currently use source-level tests under `tests/unit/webview`; add behavioral component tests when a DOM test environment is introduced.
+- File-opening, extension-storage, and contextual dbt changes need focused unit tests plus an Extension Development Host smoke test because VS Code owns those boundaries.
 - Keep fixtures small and free of private data.
 - Preserve successful benchmark artifacts and their generation dates. Never rewrite a failed or exploratory result as an OOM without supporting evidence.
 - Coverage cannot decrease below the enforced baseline. The project is working toward 80% global statement coverage as VS Code-host and React interaction tests are added.

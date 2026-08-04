@@ -4,7 +4,7 @@
   "displayName": "QuackWrangler",
   "icon": "logo.png",
   "description": "Explore, transform, visualize, query, and export data with built-in DuckDB. No Python or Jupyter; file contents stay local.",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "publisher": "quackwrangler",
   "license": "MIT",
   "repository": {
@@ -59,6 +59,8 @@
     "onCommand:quackwrangler.generateAITransforms",
     "onCommand:quackwrangler.compareSchemas",
     "onCommand:quackwrangler.detectSchemaDrift",
+    "onCommand:quackwrangler.copyDbtSql",
+    "onCustomEditor:quackwrangler.dataEditor",
     "onView:quackwrangler.actions",
     "workspaceContains:**/*.parquet",
     "workspaceContains:**/*.csv",
@@ -78,36 +80,6 @@
         "selector": [
           {
             "filenamePattern": "*.parquet"
-          },
-          {
-            "filenamePattern": "*.csv"
-          },
-          {
-            "filenamePattern": "*.tsv"
-          },
-          {
-            "filenamePattern": "*.jsonl"
-          },
-          {
-            "filenamePattern": "*.ndjson"
-          },
-          {
-            "filenamePattern": "*.xlsx"
-          },
-          {
-            "filenamePattern": "*.ods"
-          },
-          {
-            "filenamePattern": "*.arrow"
-          },
-          {
-            "filenamePattern": "*.arrows"
-          },
-          {
-            "filenamePattern": "*.ipc"
-          },
-          {
-            "filenamePattern": "*.orc"
           }
         ],
         "priority": "default"
@@ -178,9 +150,20 @@
         "command": "quackwrangler.detectSchemaDrift",
         "title": "QuackWrangler: Detect Folder Schema Drift",
         "icon": "$(warning)"
+      },
+      {
+        "command": "quackwrangler.copyDbtSql",
+        "title": "QuackWrangler: Copy as dbt SQL",
+        "icon": "$(copy)"
       }
     ],
     "menus": {
+      "commandPalette": [
+        {
+          "command": "quackwrangler.copyDbtSql",
+          "when": "quackwrangler.dbtDetected"
+        }
+      ],
       "view/title": [
         {
           "command": "quackwrangler.refreshFolder",
@@ -189,6 +172,11 @@
         }
       ],
       "editor/title": [
+        {
+          "command": "quackwrangler.copyDbtSql",
+          "when": "quackwrangler.dbtDetected && (activeCustomEditorId == quackwrangler.dataEditor || activeWebviewPanelId == dataWrangler)",
+          "group": "navigation"
+        },
         {
           "command": "quackwrangler.openDataWrangler",
           "when": "resourceExtname == .parquet || resourceExtname == .csv || resourceExtname == .tsv || resourceExtname == .json || resourceExtname == .jsonl || resourceExtname == .ndjson || resourceExtname == .xlsx || resourceExtname == .ods || resourceExtname == .arrow || resourceExtname == .arrows || resourceExtname == .ipc || resourceExtname == .orc",

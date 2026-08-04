@@ -4,9 +4,24 @@ All notable changes to QuackWrangler are documented here using [Keep a Changelog
 
 ## [Unreleased]
 
+## [0.1.4] - 2026-08-04
+
 ### Security and community
 
 - Added a documented security and privacy policy, CodeQL analysis, production dependency audits, contributor conduct and ownership files, a pull-request template, staged-file hooks, webview linting, formatting checks, and coverage regression gates.
+
+### Added
+
+- Added contextual `dbt_project.yml` detection with compact copy actions for complete dbt model SQL or reusable CTE snippets.
+
+### Changed
+
+- Made Parquet the only default QuackWrangler custom-editor association; other supported formats remain opt-in through **Open in QuackWrangler**.
+
+### Fixed
+
+- Moved default DuckDB spill files into unique VS Code-managed extension storage with cleanup, avoiding relative `.tmp` creation in read-only locations.
+- Routed local Parquet command opens through the same visual custom-editor flow used by direct file clicks.
 
 ## [0.1.3] - 2026-08-01
 
@@ -87,7 +102,8 @@ All notable changes to QuackWrangler are documented here using [Keep a Changelog
 - Filtering, sorting, column transforms, deduplication, aggregation, paging, schema inspection, summaries, and Parquet/CSV/JSON export
 - Activity-bar file browser and custom data editor integration
 
-[Unreleased]: https://github.com/mohsinsurani/quackwrangler/compare/v0.1.3...HEAD
+[Unreleased]: https://github.com/mohsinsurani/quackwrangler/compare/v0.1.4...HEAD
+[0.1.4]: https://github.com/mohsinsurani/quackwrangler/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/mohsinsurani/quackwrangler/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/mohsinsurani/quackwrangler/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/mohsinsurani/quackwrangler/releases/tag/v0.1.1

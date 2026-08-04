@@ -1,8 +1,12 @@
-import { readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { basename, join } from 'node:path';
 
 import * as vscode from 'vscode';
 
 import { suggestTransforms } from '../ai/assistant.js';
+import { findDbtProject } from '../dbt/context.js';
+import { buildDbtSql, DbtExportStyle } from '../dbt/export.js';
 import { DuckDBConnection } from '../duckdb/connection.js';
 import { getFileMetadata, loadFile, prepareDataFileReader } from '../duckdb/parquet-loader.js';
 import { exportResults, normalizeReadOnlyQuery } from '../duckdb/query-engine.js';
@@ -10,6 +14,7 @@ import { schemaComparisonMarkdown } from '../schema/compare.js';
 import { WranglingSession } from '../transforms/pipeline.js';
 import { DataWranglerConfig } from '../types/index.js';
 import { WebviewMessage } from '../types/index.js';
+import { DATA_EDITOR_VIEW_TYPE, shouldOpenWithDataEditor } from '../utils/editorRouting.js';
 import { DATA_FILE_EXTENSIONS } from '../utils/fileDetector.js';
 import { isDataFile } from '../utils/fileDetector.js';
 import {
@@ -17,6 +22,7 @@ import {
   isRemoteDataSource,
   REMOTE_LOAD_STAGES,
 } from '../utils/remoteProgress.js';
+import { createManagedTempDirectory, ManagedTempDirectory } from '../utils/tempStorage.js';
 import { DataWranglerPanel } from '../webview/provider.js';
 
 const DATA_FILE_FILTER = { 'Data Files': [...DATA_FILE_EXTENSIONS] };
@@ -34,6 +40,7 @@ function getConfig(): DataWranglerConfig {
 }
 
 let connection: DuckDBConnection | null = null;
+let managedTempDirectory: ManagedTempDirectory | undefined;
 let outputChannel: vscode.OutputChannel;
 let configuredExtensionUri: vscode.Uri | undefined;
 let extensionContext: vscode.ExtensionContext | undefined;
@@ -43,6 +50,7 @@ interface PanelState {
   session: WranglingSession | null;
   customQuerySql: string | null;
   searchQuery: string;
+  dbtProjectRoot?: string;
 }
 const panelStates = new WeakMap<DataWranglerPanel, PanelState>();
 const WEBVIEW_PROTOCOL_VERSION = 2;
@@ -83,10 +91,37 @@ async function getConnection(): Promise<DuckDBConnection> {
   if (!connection || !connection.isConnected()) {
     outputChannel ??= vscode.window.createOutputChannel('QuackWrangler');
     const config = getConfig();
+    if (config.tempDirectory) {
+      await mkdir(config.tempDirectory, { recursive: true });
+    } else {
+      const storageRoot =
+        extensionContext?.globalStorageUri.fsPath ?? join(tmpdir(), 'quackwrangler');
+      managedTempDirectory = await createManagedTempDirectory(storageRoot);
+      config.tempDirectory = managedTempDirectory.path;
+    }
     connection = new DuckDBConnection(config, outputChannel);
-    await connection.connect();
+    try {
+      await connection.connect();
+    } catch (error) {
+      await cleanupManagedTempDirectory();
+      connection = null;
+      throw error;
+    }
   }
   return connection;
+}
+
+async function cleanupManagedTempDirectory(): Promise<void> {
+  const directory = managedTempDirectory;
+  managedTempDirectory = undefined;
+  if (!directory) return;
+  try {
+    await directory.cleanup();
+  } catch (error) {
+    outputChannel?.appendLine(
+      `[DuckDB] Could not remove temporary directory ${directory.path}: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
 }
 
 async function postSession(
@@ -314,6 +349,15 @@ export async function openDataWrangler(filePath?: string): Promise<void> {
     return;
   }
 
+  if (shouldOpenWithDataEditor(filePath) && !isRemoteDataSource(filePath)) {
+    await vscode.commands.executeCommand(
+      'vscode.openWith',
+      vscode.Uri.file(filePath),
+      DATA_EDITOR_VIEW_TYPE,
+    );
+    return;
+  }
+
   const panel = DataWranglerPanel.createOrShow(extensionUri, filePath);
   await loadDataIntoPanel(panel, filePath);
 }
@@ -451,6 +495,8 @@ async function loadDataIntoPanel(panel: DataWranglerPanel, filePath: string): Pr
   state.session = null;
   state.customQuerySql = null;
   state.searchQuery = '';
+  state.dbtProjectRoot = undefined;
+  await vscode.commands.executeCommand('setContext', 'quackwrangler.dbtDetected', false);
   panel.setMessageHandler((message) => handleWebviewMessage(panel, message));
 
   try {
@@ -467,6 +513,16 @@ async function loadDataIntoPanel(panel: DataWranglerPanel, filePath: string): Pr
     progress(REMOTE_LOAD_STAGES.previewing);
     state.session = new WranglingSession(conn);
     state.session.load(filePath);
+    if (!remote) {
+      const workspaceRoot = vscode.workspace.getWorkspaceFolder(vscode.Uri.file(filePath))?.uri
+        .fsPath;
+      state.dbtProjectRoot = await findDbtProject(filePath, workspaceRoot);
+      await vscode.commands.executeCommand(
+        'setContext',
+        'quackwrangler.dbtDetected',
+        Boolean(state.dbtProjectRoot),
+      );
+    }
     await rememberRecentFile(filePath);
     const config = getConfig();
     progress(REMOTE_LOAD_STAGES.ready);
@@ -571,8 +627,53 @@ export async function openFile(uri?: vscode.Uri | string): Promise<void> {
   }
 
   if (filePath) {
-    await openDataWrangler(filePath);
+    if (shouldOpenWithDataEditor(filePath) && !isRemoteDataSource(filePath)) {
+      await vscode.commands.executeCommand(
+        'vscode.openWith',
+        typeof uri === 'object' ? uri : vscode.Uri.file(filePath),
+        DATA_EDITOR_VIEW_TYPE,
+      );
+    } else {
+      await openDataWrangler(filePath);
+    }
   }
+}
+
+export async function copyDbtSqlCommand(): Promise<void> {
+  const panel = DataWranglerPanel.currentPanel;
+  const state = panel ? getPanelState(panel) : undefined;
+  if (!state?.session || !state.dbtProjectRoot) {
+    vscode.window.showWarningMessage('Open a data file inside a dbt project first.');
+    return;
+  }
+
+  const choice = await vscode.window.showQuickPick(
+    [
+      { label: 'Copy dbt model SQL', description: 'Complete model query', style: 'model' },
+      { label: 'Copy dbt CTEs', description: 'CTE snippet for an existing model', style: 'cte' },
+    ] as Array<{ label: string; description: string; style: DbtExportStyle }>,
+    { placeHolder: `dbt project: ${basename(state.dbtProjectRoot)}` },
+  );
+  if (!choice) return;
+
+  const defaultModel = basename(state.session.getFilePath())
+    .replace(/\.[^.]+$/, '')
+    .replace(/\W/g, '_');
+  const upstreamModel = await vscode.window.showInputBox({
+    title: 'Upstream dbt model',
+    prompt: "Used in {{ ref('model_name') }}. Row data is not read or sent anywhere.",
+    value: defaultModel,
+    validateInput: (value) =>
+      /^[A-Za-z_][A-Za-z0-9_]*$/.test(value.trim())
+        ? undefined
+        : 'Use letters, numbers, and underscores; start with a letter or underscore',
+  });
+  if (!upstreamModel) return;
+
+  await vscode.env.clipboard.writeText(
+    buildDbtSql(state.session.getHistory(), upstreamModel, choice.style),
+  );
+  vscode.window.showInformationMessage(`${choice.label} copied to the clipboard.`);
 }
 
 export async function exportDataCommand(): Promise<void> {
@@ -619,6 +720,7 @@ export async function exportDataCommand(): Promise<void> {
 export async function disposeCommands(): Promise<void> {
   await connection?.close();
   connection = null;
+  await cleanupManagedTempDirectory();
 }
 
 export async function summarizeFileCommand(): Promise<void> {

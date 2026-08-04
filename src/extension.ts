@@ -15,12 +15,13 @@ import {
   configureAICommand,
   generateAITransformsCommand,
   compareSchemasCommand,
+  copyDbtSqlCommand,
 } from './commands/index.js';
+import { DATA_EDITOR_VIEW_TYPE } from './utils/editorRouting.js';
 import { getDataFilePatterns } from './utils/fileDetector.js';
 import { DataFilesProvider } from './views/dataFilesProvider.js';
 
 type ActionNode = vscode.TreeItem | import('./views/dataFilesProvider.js').DataFileNode;
-const DATA_EDITOR_VIEW_TYPE = 'quackwrangler.dataEditor';
 
 class QuackWranglerDocument implements vscode.CustomDocument {
   constructor(readonly uri: vscode.Uri) {}
@@ -162,6 +163,7 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('quackwrangler.detectSchemaDrift', () =>
       compareSchemasCommand(true),
     ),
+    vscode.commands.registerCommand('quackwrangler.copyDbtSql', () => copyDbtSqlCommand()),
   );
 
   const filePatterns = getDataFilePatterns();

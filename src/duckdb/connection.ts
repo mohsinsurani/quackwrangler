@@ -14,6 +14,10 @@ function logError(message: string, error?: unknown): void {
   outputChannel.appendLine(`[DuckDB ERROR] ${message}: ${errMsg}`);
 }
 
+function quoteSetting(value: string): string {
+  return `'${value.replace(/'/g, "''")}'`;
+}
+
 export class DuckDBConnection {
   private instance: DuckDBInstance | null = null;
   private config: DataWranglerConfig;
@@ -32,21 +36,23 @@ export class DuckDBConnection {
 
       if (this.config.memoryLimit) {
         const conn = await this.instance.connect();
-        await conn.run(`SET memory_limit='${this.config.memoryLimit}'`);
+        await conn.run(`SET memory_limit=${quoteSetting(this.config.memoryLimit)}`);
         conn.closeSync();
         log(`Memory limit set to ${this.config.memoryLimit}`);
       }
 
       if (this.config.tempDirectory) {
         const conn = await this.instance.connect();
-        await conn.run(`SET temp_directory='${this.config.tempDirectory}'`);
+        await conn.run(`SET temp_directory=${quoteSetting(this.config.tempDirectory)}`);
         conn.closeSync();
         log(`Temp directory set to ${this.config.tempDirectory}`);
       }
 
       if (this.config.maxTempDirectorySize) {
         const conn = await this.instance.connect();
-        await conn.run(`SET max_temp_directory_size='${this.config.maxTempDirectorySize}'`);
+        await conn.run(
+          `SET max_temp_directory_size=${quoteSetting(this.config.maxTempDirectorySize)}`,
+        );
         conn.closeSync();
         log(`Maximum temp directory size set to ${this.config.maxTempDirectorySize}`);
       }

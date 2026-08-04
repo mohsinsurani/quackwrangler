@@ -56,6 +56,8 @@ The webview never reads the file system. The extension host owns file dialogs, p
 5. The extension sends schema, one bounded result page, page metadata, and history.
 6. The webview requests profiles separately so the grid can appear first.
 
+Only Parquet is registered with default custom-editor priority. Local Parquet paths selected through QuackWrangler commands are routed through the same `vscode.openWith` custom-editor flow. Other supported formats keep their existing VS Code editor association and open visually only when the user invokes QuackWrangler.
+
 Supported extensions have one TypeScript source of truth in `DATA_FILE_EXTENSIONS`. The VS Code manifest must also be updated when a format is added because contribution points are declarative JSON.
 
 ## Transform pipeline
@@ -90,6 +92,14 @@ Nested cells open in a recursive tree inside the grid inspector. The browser bui
 The custom query console accepts one `SELECT`, `WITH`, or `VALUES` statement. Mutation statements and multiple statements are rejected. Queries run against `current_data` and show their own paginated result state.
 
 Exports use DuckDB `COPY` over the full pipeline SQL, not the visible page. CSV, JSON, and Parquet are supported.
+
+## DuckDB temporary storage
+
+When the user has not configured `quackwrangler.duckdb.tempDirectory`, the extension creates a unique spill directory below `ExtensionContext.globalStorageUri`. This prevents DuckDB from attempting to create a relative `.tmp` directory in a read-only workspace or process directory. The directory is removed after connection failure or extension deactivation; cleanup failures are logged without masking the original error. User-configured directories are created when needed and are not deleted by QuackWrangler.
+
+## Lightweight dbt context
+
+For a local data file, the extension searches upward to the active workspace boundary for `dbt_project.yml`. A successful match sets a contextual VS Code key that reveals one compact **Copy as dbt SQL** action. The export asks for an upstream model name and wraps the active validated transform history with `{{ ref('model_name') }}` as either a complete model query or a CTE snippet. It preserves DuckDB SQL semantics and does not translate expressions for other dbt adapters. It also does not parse artifacts, inspect the dbt graph, run dbt, or add a permanent sidebar.
 
 Remote HTTPS and S3 paths flow through the same reader mapping as local files. The extension prepares DuckDB `httpfs` before metadata or loading queries and emits monotonic staged progress to the webview; failures replace progress with an actionable error. Because DuckDB uses HTTP range requests for formats such as Parquet, these stages describe loading progress rather than falsely claiming exact downloaded-byte percentages. S3 credentials remain in DuckDB/AWS credential-chain facilities and are never serialized into webview messages or `.qw` workspaces. Arrow IPC uses the signed `nanoarrow` community extension. ORC is recognized but intentionally rejected because the embedded DuckDB runtime has no supported reader.
 

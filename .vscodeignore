@@ -23,6 +23,7 @@ dist/**/*.whl
 dist/**/*.tar.gz
 dist/.gitignore
 .github/**
+.husky/**
 scripts/**
 benchmarks/**
 Screenshot*.png

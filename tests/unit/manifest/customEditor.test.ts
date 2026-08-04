@@ -4,7 +4,7 @@ import path from 'path';
 import { describe, expect, it } from 'vitest';
 
 describe('QuackWrangler custom editor contribution', () => {
-  it('registers supported data files with default editor priority', () => {
+  it('registers only Parquet with default editor priority', () => {
     const manifest = JSON.parse(
       fs.readFileSync(path.resolve(process.cwd(), 'package.json'), 'utf8'),
     ) as {
@@ -20,10 +20,7 @@ describe('QuackWrangler custom editor contribution', () => {
 
     expect(editor.viewType).toBe('quackwrangler.dataEditor');
     expect(editor.priority).toBe('default');
-    expect(editor.selector.map((item) => item.filenamePattern)).toEqual(
-      expect.arrayContaining(['*.csv', '*.tsv', '*.parquet', '*.jsonl', '*.xlsx', '*.ods']),
-    );
-    expect(editor.selector.map((item) => item.filenamePattern)).not.toContain('*.json');
+    expect(editor.selector.map((item) => item.filenamePattern)).toEqual(['*.parquet']);
   });
 
   it('registers release-critical commands, formats, and privacy settings', () => {
@@ -38,7 +35,7 @@ describe('QuackWrangler custom editor contribution', () => {
       };
     };
     const commands = manifest.contributes.commands.map((item) => item.command);
-    expect(manifest.version).toBe('0.1.3');
+    expect(manifest.version).toBe('0.1.4');
     expect(commands).toEqual(
       expect.arrayContaining([
         'quackwrangler.openRemoteData',
@@ -46,10 +43,15 @@ describe('QuackWrangler custom editor contribution', () => {
         'quackwrangler.generateAITransforms',
         'quackwrangler.compareSchemas',
         'quackwrangler.detectSchemaDrift',
+        'quackwrangler.copyDbtSql',
       ]),
     );
     expect(manifest.activationEvents).toEqual(
-      expect.arrayContaining(['workspaceContains:**/*.arrow', 'workspaceContains:**/*.orc']),
+      expect.arrayContaining([
+        'workspaceContains:**/*.arrow',
+        'workspaceContains:**/*.orc',
+        'onCustomEditor:quackwrangler.dataEditor',
+      ]),
     );
     expect(manifest.contributes.configuration.properties).toHaveProperty('quackwrangler.ai.model');
   });

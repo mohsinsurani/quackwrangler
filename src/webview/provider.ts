@@ -77,6 +77,7 @@ export class DataWranglerPanel {
   private _cleanup(): void {
     if (DataWranglerPanel.currentPanel === this) {
       DataWranglerPanel.currentPanel = undefined;
+      void vscode.commands.executeCommand('setContext', 'quackwrangler.dbtDetected', false);
     }
     while (this._disposables.length) {
       const disposable = this._disposables.pop();

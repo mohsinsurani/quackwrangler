@@ -5,7 +5,7 @@
 </p>
 
 [![CI](https://github.com/mohsinsurani/quackwrangler/actions/workflows/ci.yml/badge.svg)](https://github.com/mohsinsurani/quackwrangler/actions/workflows/ci.yml)
-[![VS Code Marketplace](https://img.shields.io/badge/VS_Code_Marketplace-0.1.3-007ACC?logo=visualstudiocode)](https://marketplace.visualstudio.com/items?itemName=quackwrangler.quackwrangler)
+[![VS Code Marketplace](https://img.shields.io/badge/VS_Code_Marketplace-0.1.4-007ACC?logo=visualstudiocode)](https://marketplace.visualstudio.com/items?itemName=quackwrangler.quackwrangler)
 [![MIT License](https://img.shields.io/badge/license-MIT-yellow.svg)](LICENSE)
 [![VS Code 1.85+](https://img.shields.io/badge/VS%20Code-1.85%2B-blue.svg)](https://code.visualstudio.com/)
 
@@ -134,6 +134,7 @@ npm run benchmark:all # primary, scalability, and format suites
 - Multi-file joins and union-by-name
 - Shareable `.qw` workspaces and recent-file shortcuts
 - HTTPS/S3 sources, schema comparison/drift reports, and opt-in schema-only AI transform plans
+- Contextual dbt project detection with copyable model SQL and CTE snippets
 
 ### Why DuckDB is the default engine
 
@@ -172,7 +173,7 @@ Alternatively, run **Extensions: Install from VSIX...** from the VS Code Command
 2. Choose **Open data file** for one file, or **Open data folder** to scan a directory.
 3. The folder view preserves subdirectories, hides unsupported files and empty folders, and opens a data file when selected.
 4. You can also right-click a supported file in Explorer and choose **Open in QuackWrangler**.
-5. CSV, TSV, Parquet, JSONL/NDJSON, XLSX, and ODS files open directly in QuackWrangler when it is their default editor. Use **Open With... → Configure default editor** to change an existing VS Code file association.
+5. Clicking a Parquet file opens the QuackWrangler visual editor by default. Other supported formats remain available through **Open in QuackWrangler** without replacing their normal VS Code editor association.
 6. Inspect column profiles and values in the synchronized data grid.
 7. Select an operation in the left panel, enter its parameters, and apply it.
 8. Use **Custom DuckDB query** to run one read-only `SELECT`, `WITH`, or `VALUES` statement.
@@ -229,6 +230,8 @@ Spreadsheet support can require DuckDB to download an extension the first time i
 
 AI transform generation is disabled until you explicitly store an OpenAI API key using **QuackWrangler: Configure OpenAI API Key**. The key is kept in VS Code SecretStorage, never settings or `.qw` files. Requests contain your instruction and schema metadata only—no cell values or sampled rows. The proposed plan is shown for approval, cannot contain raw SQL, and is limited to the same validated operations available in the visual UI. Configure `quackwrangler.ai.model` to choose the model; the default is `gpt-4o-mini`.
 
+When an opened local file is inside a workspace containing an ancestor `dbt_project.yml`, QuackWrangler reveals **Copy as dbt SQL** in the editor toolbar and Command Palette. It can copy a complete dbt model query or reusable CTEs built from the active validated transform history. QuackWrangler asks for the upstream model used by `ref()` and does not parse or modify the dbt project. Generated expressions retain DuckDB SQL semantics; review adapter compatibility when the dbt target is not DuckDB.
+
 ## Settings
 
 Open VS Code Settings and search for `QuackWrangler`, or configure values directly:
@@ -242,6 +245,8 @@ Open VS Code Settings and search for `QuackWrangler`, or configure values direct
   "quackwrangler.display.maxRows": 10000
 }
 ```
+
+When `duckdb.tempDirectory` is empty, spill files use a unique directory under VS Code's extension storage and are removed when QuackWrangler shuts down. A configured directory is created if needed and is never automatically deleted.
 
 ## Develop locally
 
