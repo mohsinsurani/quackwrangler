@@ -127,6 +127,8 @@ Join and union forms ask the extension host to select a second supported file. T
 
 Main webview requests include `ready`, `applyTransform`, paging, search, chart requests, exports, file selection, and history actions. Main extension responses include `sessionUpdated`, remote loading progress, query/search/chart results, statistics, secondary-file metadata, export completion, and errors.
 
+Extension-host messages are accepted only from the current webview origin. VS Code can relay those messages through an internal frame that is not the webview's immediate parent, so sender-frame identity is not used as a trust signal. Empty-state file and folder pickers load the selected file into their originating panel; choosing a folder recursively discovers supported files and asks the user which one to open.
+
 Increment `WEBVIEW_PROTOCOL_VERSION` when a `sessionUpdated` payload changes incompatibly. This produces an actionable restart message instead of silently rendering stale state in an Extension Development Host.
 
 ## Security

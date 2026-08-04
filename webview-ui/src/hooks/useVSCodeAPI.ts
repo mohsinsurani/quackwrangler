@@ -12,6 +12,13 @@ declare function acquireVsCodeApi(): VSCodeAPI;
 
 let api: VSCodeAPI | undefined;
 
+export function isTrustedExtensionMessageOrigin(
+  eventOrigin: string,
+  webviewOrigin: string,
+): boolean {
+  return eventOrigin === webviewOrigin;
+}
+
 function getVSCodeApi(): VSCodeAPI | undefined {
   if (api) return api;
   try {
@@ -30,10 +37,12 @@ export function useVSCodeAPI(): {
 
   useEffect(() => {
     const trustedOrigin = window.location.origin;
-    const trustedSource = window.parent;
 
     const receive = (event: MessageEvent<ExtensionMessage>) => {
-      if (event.origin !== trustedOrigin || event.source !== trustedSource) return;
+      // VS Code may relay extension-host messages through an internal frame that
+      // is not the webview's immediate parent. The webview origin is stable and
+      // remains the security boundary documented by VS Code.
+      if (!isTrustedExtensionMessageOrigin(event.origin, trustedOrigin)) return;
       handlers.current.forEach((handler) => handler(event.data));
     };
     window.addEventListener('message', receive);

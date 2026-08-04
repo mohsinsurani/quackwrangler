@@ -20,6 +20,7 @@ Run **Run QuackWrangler Extension** from the repository's Run and Debug view, th
 
 - Open CSV, TSV, Parquet, JSON, JSONL/NDJSON, XLSX, ODS, and Arrow files.
 - Click a Parquet file and confirm it opens directly in the QuackWrangler custom editor; confirm CSV and other formats retain their normal editor association until **Open in QuackWrangler** is selected.
+- From a **No data loaded** editor, use **Open File** and confirm the selected file replaces the empty state in the same tab. Use **Open Folder**, select a nested supported file, and confirm it loads in that same tab; verify cancellation and empty folders leave a clear, usable state.
 - Open data from a read-only workspace and confirm DuckDB spill storage is created under VS Code extension storage rather than a relative `.tmp` directory.
 - Open a folder and confirm supported files appear under their actual subfolders.
 - Open an HTTPS/S3 source. Confirm staged progress is visible, reaches 100%, and a network or format failure appears as an actionable error.

@@ -4,6 +4,11 @@ All notable changes to QuackWrangler are documented here using [Keep a Changelog
 
 ## [Unreleased]
 
+### Fixed
+
+- Restored extension-host messages in VS Code webviews by validating their stable webview origin without incorrectly requiring the internal relay frame to be the immediate parent.
+- Made the empty-state **Open File** and **Open Folder** actions load the chosen supported file into the current QuackWrangler editor, including nested folder selection and actionable empty-folder/load errors.
+
 ## [0.1.4] - 2026-08-04
 
 ### Security and community

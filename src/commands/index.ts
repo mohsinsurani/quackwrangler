@@ -180,10 +180,10 @@ async function handleWebviewMessage(
         if (session) await postSession(panel);
         return;
       case 'openFilePicker':
-        await openFile();
+        await selectFileIntoPanel(panel);
         return;
       case 'openFolderPicker':
-        await vscode.commands.executeCommand('quackwrangler.openFolder');
+        await selectFolderFileIntoPanel(panel);
         return;
       case 'selectSecondaryFile': {
         const selected = await vscode.window.showOpenDialog({
@@ -491,13 +491,13 @@ export async function compareSchemasCommand(folderMode = false): Promise<void> {
 }
 
 async function loadDataIntoPanel(panel: DataWranglerPanel, filePath: string): Promise<void> {
+  panel.setMessageHandler((message) => handleWebviewMessage(panel, message));
   const state = getPanelState(panel);
   state.session = null;
   state.customQuerySql = null;
   state.searchQuery = '';
   state.dbtProjectRoot = undefined;
   await vscode.commands.executeCommand('setContext', 'quackwrangler.dbtDetected', false);
-  panel.setMessageHandler((message) => handleWebviewMessage(panel, message));
 
   try {
     const remote = isRemoteDataSource(filePath);
@@ -532,6 +532,45 @@ async function loadDataIntoPanel(panel: DataWranglerPanel, filePath: string): Pr
     vscode.window.showErrorMessage(`Failed to load file: ${message}`);
     panel.postMessage({ type: 'error', message });
   }
+}
+
+async function selectFileIntoPanel(panel: DataWranglerPanel): Promise<void> {
+  const selected = await vscode.window.showOpenDialog({
+    canSelectFiles: true,
+    canSelectMany: false,
+    filters: DATA_FILE_FILTER,
+    openLabel: 'Open in QuackWrangler',
+  });
+  if (selected?.[0]) await loadDataIntoPanel(panel, selected[0].fsPath);
+}
+
+async function selectFolderFileIntoPanel(panel: DataWranglerPanel): Promise<void> {
+  const folder = (
+    await vscode.window.showOpenDialog({
+      canSelectFolders: true,
+      canSelectFiles: false,
+      canSelectMany: false,
+      openLabel: 'Choose data folder',
+    })
+  )?.[0];
+  if (!folder) return;
+
+  const files = await collectDataFiles(folder);
+  if (!files.length) {
+    vscode.window.showWarningMessage('No supported data files were found in this folder.');
+    return;
+  }
+  const selected = await vscode.window.showQuickPick(
+    files
+      .sort((left, right) => left.fsPath.localeCompare(right.fsPath))
+      .map((uri) => ({
+        label: basename(uri.fsPath),
+        description: uri.fsPath.slice(folder.fsPath.length).replace(/^[\\/]/, ''),
+        uri,
+      })),
+    { placeHolder: 'Select a data file to open in this QuackWrangler tab' },
+  );
+  if (selected) await loadDataIntoPanel(panel, selected.uri.fsPath);
 }
 
 interface SavedWorkspace {
