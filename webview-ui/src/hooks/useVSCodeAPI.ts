@@ -29,7 +29,11 @@ export function useVSCodeAPI(): {
   const handlers = useRef(new Set<MessageHandler>());
 
   useEffect(() => {
+    const trustedOrigin = window.location.origin;
+    const trustedSource = window.parent;
+
     const receive = (event: MessageEvent<ExtensionMessage>) => {
+      if (event.origin !== trustedOrigin || event.source !== trustedSource) return;
       handlers.current.forEach((handler) => handler(event.data));
     };
     window.addEventListener('message', receive);
