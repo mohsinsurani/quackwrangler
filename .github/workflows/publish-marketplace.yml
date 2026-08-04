@@ -1,0 +1,76 @@
+name: Publish Marketplace release
+
+on:
+  workflow_dispatch:
+    inputs:
+      expected_version:
+        description: Approved extension version (for example 0.1.4)
+        required: true
+        type: string
+      package_run_id:
+        description: Successful Package platform VSIXs workflow run ID
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: marketplace-publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    environment: marketplace
+    steps:
+      - name: Checkout approved release commit
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 20
+
+      - name: Verify approved version
+        shell: bash
+        env:
+          EXPECTED_VERSION: ${{ inputs.expected_version }}
+        run: |
+          manifest_version=$(node -p "require('./package.json').version")
+          if [[ "$manifest_version" != "$EXPECTED_VERSION" ]]; then
+            printf 'Expected package version %s, found %s\n' "$EXPECTED_VERSION" "$manifest_version" >&2
+            exit 1
+          fi
+
+      - name: Download inspected platform packages
+        uses: actions/download-artifact@v8
+        with:
+          pattern: quackwrangler-*-${{ inputs.expected_version }}
+          path: release
+          merge-multiple: true
+          run-id: ${{ inputs.package_run_id }}
+          github-token: ${{ github.token }}
+
+      - name: Verify package set
+        shell: bash
+        env:
+          EXPECTED_VERSION: ${{ inputs.expected_version }}
+        run: |
+          mapfile -t packages < <(find release -maxdepth 1 -type f -name "quackwrangler-*-${EXPECTED_VERSION}.vsix" -print | sort)
+          if [[ ${#packages[@]} -ne 8 ]]; then
+            printf 'Expected 8 platform VSIXs, found %s\n' "${#packages[@]}" >&2
+            printf '%s\n' "${packages[@]}" >&2
+            exit 1
+          fi
+
+      - name: Publish all platform packages
+        shell: bash
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+        run: |
+          mapfile -t packages < <(find release -maxdepth 1 -type f -name '*.vsix' -print | sort)
+          for package in "${packages[@]}"; do
+            npx --yes @vscode/vsce publish --packagePath "$package"
+          done
