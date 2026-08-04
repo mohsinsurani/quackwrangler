@@ -1,5 +1,7 @@
 import { spawnSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync, rmSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import process from 'node:process';
 
 import { familySync, MUSL } from 'detect-libc';
@@ -23,6 +25,35 @@ const target = targets[platformKey];
 if (!target) {
   throw new Error(`QuackWrangler does not currently package ${platformKey}`);
 }
+
+const targetBindings = {
+  'darwin-arm64': 'node-bindings-darwin-arm64',
+  'darwin-x64': 'node-bindings-darwin-x64',
+  'linux-arm64': 'node-bindings-linux-arm64',
+  'linux-x64': 'node-bindings-linux-x64',
+  'alpine-arm64': 'node-bindings-linux-arm64-musl',
+  'alpine-x64': 'node-bindings-linux-x64-musl',
+  'win32-arm64': 'node-bindings-win32-arm64',
+  'win32-x64': 'node-bindings-win32-x64',
+};
+
+const expectedBinding = targetBindings[target];
+const duckdbModules = join(
+  dirname(fileURLToPath(import.meta.url)),
+  '..',
+  'node_modules',
+  '@duckdb',
+);
+for (const entry of readdirSync(duckdbModules, { withFileTypes: true })) {
+  if (
+    entry.isDirectory() &&
+    entry.name.startsWith('node-bindings-') &&
+    entry.name !== expectedBinding
+  ) {
+    rmSync(join(duckdbModules, entry.name), { recursive: true, force: true });
+  }
+}
+console.log(`Keeping only @duckdb/${expectedBinding} for ${target}`);
 
 const manifest = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
 const forwardedArgs = process.argv.slice(3);

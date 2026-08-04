@@ -15,17 +15,14 @@ describe('platform-specific Marketplace packaging', () => {
       path.join(root, '.github/workflows/package-platforms.yml'),
       'utf8',
     );
-    const packagingScript = readFileSync(
-      path.join(root, 'scripts/vsce-platform.mjs'),
-      'utf8',
-    );
+    const packagingScript = readFileSync(path.join(root, 'scripts/vsce-platform.mjs'), 'utf8');
 
     expect(manifest.scripts.package).toBe('node scripts/vsce-platform.mjs package');
-    expect(manifest.scripts['publish:marketplace']).toBe(
-      'node scripts/vsce-platform.mjs publish',
-    );
+    expect(manifest.scripts['publish:marketplace']).toBe('node scripts/vsce-platform.mjs publish');
     expect(manifest.devDependencies['@vscode/vsce']).toBeTruthy();
     expect(packagingScript).toContain("shell: process.platform === 'win32'");
+    expect(packagingScript).toContain("entry.name.startsWith('node-bindings-')");
+    expect(packagingScript).toContain('entry.name !== expectedBinding');
     expect(workflow).toContain('docker run --rm');
     expect(workflow).not.toContain('container: node:20-alpine');
 
@@ -40,6 +37,7 @@ describe('platform-specific Marketplace packaging', () => {
       'darwin-arm64',
     ]) {
       expect(workflow).toContain(`target: ${target}`);
+      expect(packagingScript).toContain(`'${target}':`);
     }
   });
 });

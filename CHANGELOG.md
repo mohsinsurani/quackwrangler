@@ -17,6 +17,7 @@ All notable changes to QuackWrangler are documented here using [Keep a Changelog
 ### Changed
 
 - Made Parquet the only default QuackWrangler custom-editor association; other supported formats remain opt-in through **Open in QuackWrangler**.
+- Reduced Linux and Alpine package size by retaining only the target-compatible DuckDB native binding in each VSIX.
 
 ### Fixed
 
