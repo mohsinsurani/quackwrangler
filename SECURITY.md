@@ -14,8 +14,8 @@ Security updates are provided for the latest Marketplace release only.
 
 | Version | Supported |
 | ------- | --------- |
-| 0.1.4   | ✅        |
-| < 0.1.4 | ❌        |
+| 0.1.5   | ✅        |
+| < 0.1.5 | ❌        |
 
 Users should update to the latest version available from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=quackwrangler.quackwrangler).
 

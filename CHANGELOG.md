@@ -4,6 +4,8 @@ All notable changes to QuackWrangler are documented here using [Keep a Changelog
 
 ## [Unreleased]
 
+## [0.1.5] - 2026-08-04
+
 ### Fixed
 
 - Restored extension-host messages in VS Code webviews by validating their stable webview origin without incorrectly requiring the internal relay frame to be the immediate parent.
@@ -108,7 +110,8 @@ All notable changes to QuackWrangler are documented here using [Keep a Changelog
 - Filtering, sorting, column transforms, deduplication, aggregation, paging, schema inspection, summaries, and Parquet/CSV/JSON export
 - Activity-bar file browser and custom data editor integration
 
-[Unreleased]: https://github.com/mohsinsurani/quackwrangler/compare/v0.1.4...HEAD
+[Unreleased]: https://github.com/mohsinsurani/quackwrangler/compare/v0.1.5...HEAD
+[0.1.5]: https://github.com/mohsinsurani/quackwrangler/compare/v0.1.4...v0.1.5
 [0.1.4]: https://github.com/mohsinsurani/quackwrangler/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/mohsinsurani/quackwrangler/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/mohsinsurani/quackwrangler/compare/v0.1.1...v0.1.2
