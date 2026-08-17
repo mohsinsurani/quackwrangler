@@ -4,6 +4,52 @@ All notable changes to QuackWrangler are documented here using [Keep a Changelog
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-08-17
+
+### Added
+
+- Added validated OpenAI-compatible provider, base URL, request timeout, current-history prompting, strict transform contracts, and an in-editor AI planning action.
+- Added automatic eager/lazy source loading with configurable file-size threshold, DuckDB worker threads, and insertion-order behavior.
+- Added a clean-profile VS Code Extension Host test suite for command registration, independent CSV panels, active-panel summarization, disposal, and reopening.
+
+### Changed
+
+- Registered CSV and XLSX alongside Parquet as default QuackWrangler custom-editor formats; explicit user editor associations can still override the defaults.
+- Simplified the editor header and empty state, made AI planning easier to discover, added transform feedback and keyboard shortcuts, and accurately enabled undo/redo controls.
+- Cached transformed schema, row counts, and statistics until pipeline changes, and combined search paging with its total count in the common case.
+- Correlated asynchronous grid, profile, chart, export, and AI responses with request and session revisions so delayed work cannot overwrite newer editor state. Unsolicited host pushes such as **Summarize File** remain accepted and are validated against the visible session identity and revision.
+
+### Fixed
+
+- Each open editor now uses a unique DuckDB relation so loading or refreshing one panel does not silently replace another's data; failed reloads leave the prior session intact.
+- Schema, row-count, and statistics caches no longer store stale results when the pipeline changes while a query is in flight.
+- Bounded statistics queries to eight concurrent columns to prevent resource exhaustion on wide schemas.
+- Cleared search state on all pipeline mutations (undo, redo, remove, reorder) so pagination cannot resume a stale search after a transform.
+- AI transform history is now redacted before sending to the provider: only operation types and schema-safe column references are included; values, expressions, file paths, and literals are never transmitted.
+- Removed `add_column` from AI contracts to prevent arbitrary SQL expression injection via an untrusted provider.
+- `fill_nulls` now accepts number, boolean, and null values from the AI contract in addition to strings.
+- The AI workflow is now guarded against stale-plan application: it rejects plans when the session or pipeline changed while waiting for the provider, and prevents concurrent AI requests per editor.
+- dbt detection now requires a regular file, not any accessible entry.
+- dbt context and the **Copy as dbt SQL** command now target the active/focused editor tab rather than the last-attached panel; context is recomputed on focus change and panel disposal.
+- dbt SQL export now rejects histories containing `join_file` or `union_file` as these produce non-portable SQL with local file paths.
+- Stats responses no longer clear global loading, preventing premature re-enabling of controls while a transform or query is still in flight.
+- Remove, reorder, and export actions are guarded against firing while the session is loading.
+- Charts cannot be requested while a session mutation is in progress.
+- AI plan action disables and shows progress during the workflow; error responses clear the loading state.
+- Category disclosure buttons in the Operations panel now carry `aria-expanded`.
+- Operation form labels are now properly associated with their controls via `htmlFor`/`id`.
+- Form close and chip remove buttons now have descriptive `aria-label` attributes.
+- The global error banner now carries `role="alert"`.
+- Column sort headers now carry `aria-sort` and support keyboard activation.
+- Narrow responsive layout now correctly overrides the collapsed operations column width.
+- The standalone development preview now responds to transform, search, query, export, and page requests so interactions do not permanently lock loading indicators.
+- Custom queries now bind `current_data` to the originating panel's transformed pipeline, and exports preserve the active custom-query result instead of silently exporting different rows.
+- Source reload promotion now uses a same-connection DuckDB transaction and unique staging relations so a failed promotion rolls back without destroying the prior dataset.
+- AI cancellation, empty plans, stale plans, and overlapping requests now send terminal lifecycle messages so the AI action cannot remain indefinitely busy.
+- dbt SQL export rejects raw `add_column` expressions and directs users to the validated Formula Builder for portable output.
+- Row selection now works consistently in controlled and local modes, resets when loaded rows change, and ignores stale indexes when calculating Select All state.
+- Command-created editors no longer reuse and replace an unrelated active panel.
+
 ## [0.1.5] - 2026-08-04
 
 ### Fixed
@@ -110,7 +156,8 @@ All notable changes to QuackWrangler are documented here using [Keep a Changelog
 - Filtering, sorting, column transforms, deduplication, aggregation, paging, schema inspection, summaries, and Parquet/CSV/JSON export
 - Activity-bar file browser and custom data editor integration
 
-[Unreleased]: https://github.com/mohsinsurani/quackwrangler/compare/v0.1.5...HEAD
+[Unreleased]: https://github.com/mohsinsurani/quackwrangler/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/mohsinsurani/quackwrangler/compare/v0.1.5...v0.2.0
 [0.1.5]: https://github.com/mohsinsurani/quackwrangler/compare/v0.1.4...v0.1.5
 [0.1.4]: https://github.com/mohsinsurani/quackwrangler/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/mohsinsurani/quackwrangler/compare/v0.1.2...v0.1.3

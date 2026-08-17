@@ -1,10 +1,11 @@
+import { randomBytes } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 
 import * as vscode from 'vscode';
 
-import { suggestTransforms } from '../ai/assistant.js';
+import { suggestTransforms, validateAISettings } from '../ai/assistant.js';
 import { findDbtProject } from '../dbt/context.js';
 import { buildDbtSql, DbtExportStyle } from '../dbt/export.js';
 import { DuckDBConnection } from '../duckdb/connection.js';
@@ -36,6 +37,10 @@ function getConfig(): DataWranglerConfig {
     autoLoadExtensions: config.get<string[]>('duckdb.autoLoadExtensions', []),
     pageSize: config.get<number>('display.pageSize', 100),
     maxRowsPreview: config.get<number>('display.maxRows', 10000),
+    loadingMode: config.get<'auto' | 'eager' | 'lazy'>('duckdb.loadingMode', 'auto'),
+    eagerFileSizeLimitMb: config.get<number>('duckdb.eagerFileSizeLimitMb', 64),
+    threads: config.get<number>('duckdb.threads', 0),
+    preserveInsertionOrder: config.get<boolean>('duckdb.preserveInsertionOrder', true),
   };
 }
 
@@ -46,19 +51,30 @@ let configuredExtensionUri: vscode.Uri | undefined;
 let extensionContext: vscode.ExtensionContext | undefined;
 let recentFilesChanged: (() => void) | undefined;
 const RECENT_FILES_KEY = 'quackwrangler.recentFiles';
+function newRelationName(): string {
+  return `qw_${randomBytes(8).toString('hex')}`;
+}
+
 interface PanelState {
   session: WranglingSession | null;
+  sessionId: string;
   customQuerySql: string | null;
   searchQuery: string;
-  dbtProjectRoot?: string;
+  relationName: string;
 }
 const panelStates = new WeakMap<DataWranglerPanel, PanelState>();
-const WEBVIEW_PROTOCOL_VERSION = 2;
+const WEBVIEW_PROTOCOL_VERSION = 3;
 
 function getPanelState(panel: DataWranglerPanel): PanelState {
   let state = panelStates.get(panel);
   if (!state) {
-    state = { session: null, customQuerySql: null, searchQuery: '' };
+    state = {
+      session: null,
+      sessionId: newRelationName(),
+      customQuerySql: null,
+      searchQuery: '',
+      relationName: newRelationName(),
+    };
     panelStates.set(panel, state);
   }
   return state;
@@ -128,9 +144,11 @@ async function postSession(
   panel: DataWranglerPanel,
   offset = 0,
   limit = getConfig().pageSize,
+  requestId?: string,
 ): Promise<void> {
-  const { session } = getPanelState(panel);
+  const { session, sessionId } = getPanelState(panel);
   if (!session) throw new Error('No active wrangling session');
+  const revision = session.getRevision();
   const state = await session.getPage(offset, limit);
   panel.postMessage({
     type: 'sessionUpdated',
@@ -139,17 +157,40 @@ async function postSession(
     result: state.result,
     history: session.getHistory(),
     page: state.page,
+    canUndo: session.canUndo(),
+    canRedo: session.canRedo(),
+    requestId,
+    sessionId,
+    revision,
   });
 }
 
-async function postCustomQuery(panel: DataWranglerPanel, offset = 0, limit = 100): Promise<void> {
-  const { session, customQuerySql } = getPanelState(panel);
+function getCustomQuerySource(session: WranglingSession, customQuerySql: string): string {
+  return `WITH current_data AS (${session.getSql()}) SELECT * FROM (${customQuerySql}) AS custom_query`;
+}
+
+function getActiveExportSql(state: PanelState): string {
+  if (!state.session) throw new Error('No active wrangling session');
+  return state.customQuerySql
+    ? getCustomQuerySource(state.session, state.customQuerySql)
+    : state.session.getSql();
+}
+
+async function postCustomQuery(
+  panel: DataWranglerPanel,
+  offset = 0,
+  limit = 100,
+  requestId?: string,
+): Promise<void> {
+  const { session, sessionId, customQuerySql } = getPanelState(panel);
   if (!session || !customQuerySql) throw new Error('No custom query is active');
+  const revision = session.getRevision();
+  const sourceSql = getCustomQuerySource(session, customQuerySql);
   const conn = await getConnection();
   const [result, count, described] = await Promise.all([
-    conn.query(`SELECT * FROM (${customQuerySql}) AS custom_query LIMIT ${limit} OFFSET ${offset}`),
-    conn.query(`SELECT COUNT(*) FROM (${customQuerySql}) AS custom_query_count`),
-    conn.query(`DESCRIBE SELECT * FROM (${customQuerySql}) AS custom_query_schema`),
+    conn.query(`SELECT * FROM (${sourceSql}) AS custom_query_page LIMIT ${limit} OFFSET ${offset}`),
+    conn.query(`SELECT COUNT(*) FROM (${sourceSql}) AS custom_query_count`),
+    conn.query(`DESCRIBE SELECT * FROM (${sourceSql}) AS custom_query_schema`),
   ]);
   const totalRows = Number(count.rows[0]?.[0] ?? 0);
   panel.postMessage({
@@ -165,6 +206,9 @@ async function postCustomQuery(panel: DataWranglerPanel, offset = 0, limit = 100
     },
     result,
     page: { offset, limit, totalRows },
+    requestId,
+    sessionId,
+    revision,
   });
 }
 
@@ -177,13 +221,13 @@ async function handleWebviewMessage(
   try {
     switch (message.type) {
       case 'ready':
-        if (session) await postSession(panel);
+        if (session) await postSession(panel, 0, getConfig().pageSize, message.requestId);
         return;
       case 'openFilePicker':
-        await selectFileIntoPanel(panel);
+        await selectFileIntoPanel(panel, message.requestId);
         return;
       case 'openFolderPicker':
-        await selectFolderFileIntoPanel(panel);
+        await selectFolderFileIntoPanel(panel, message.requestId);
         return;
       case 'selectSecondaryFile': {
         const selected = await vscode.window.showOpenDialog({
@@ -199,6 +243,7 @@ async function handleWebviewMessage(
           type: 'secondaryFileSelected',
           filePath: selected[0].fsPath,
           columns: metadata.columns,
+          requestId: message.requestId,
         });
         return;
       }
@@ -213,81 +258,125 @@ async function handleWebviewMessage(
           );
         }
         session.apply(message.transform.type, message.transform.params);
-        await postSession(panel);
+        await postSession(panel, 0, getConfig().pageSize, message.requestId);
         return;
       case 'undo':
         state.customQuerySql = null;
+        state.searchQuery = '';
         session?.undo();
-        await postSession(panel);
+        await postSession(panel, 0, getConfig().pageSize, message.requestId);
         return;
       case 'redo':
         state.customQuerySql = null;
+        state.searchQuery = '';
         session?.redo();
-        await postSession(panel);
+        await postSession(panel, 0, getConfig().pageSize, message.requestId);
         return;
       case 'removeTransform':
         state.customQuerySql = null;
+        state.searchQuery = '';
         session?.remove(message.id);
-        await postSession(panel);
+        await postSession(panel, 0, getConfig().pageSize, message.requestId);
         return;
       case 'reorderTransforms':
         state.customQuerySql = null;
+        state.searchQuery = '';
         session?.reorder(message.sourceId, message.targetId);
-        await postSession(panel);
+        await postSession(panel, 0, getConfig().pageSize, message.requestId);
         return;
       case 'pageChange':
-        if (state.customQuerySql) await postCustomQuery(panel, message.offset, message.limit);
+        if (state.customQuerySql)
+          await postCustomQuery(panel, message.offset, message.limit, message.requestId);
         else if (state.searchQuery && session) {
-          const searched = await session.search(state.searchQuery, message.offset, message.limit);
-          panel.postMessage({ type: 'searchResult', ...searched, query: state.searchQuery });
-        } else await postSession(panel, message.offset, message.limit);
+          const query = state.searchQuery;
+          const revision = session.getRevision();
+          const sessionId = state.sessionId;
+          const searched = await session.search(query, message.offset, message.limit);
+          panel.postMessage({
+            type: 'searchResult',
+            ...searched,
+            query,
+            requestId: message.requestId,
+            sessionId,
+            revision,
+          });
+        } else await postSession(panel, message.offset, message.limit, message.requestId);
         return;
       case 'searchRows':
         if (!session) throw new Error('Open a data file before searching');
         state.customQuerySql = null;
         state.searchQuery = message.query.trim();
         if (!state.searchQuery) {
-          await postSession(panel);
+          await postSession(panel, 0, getConfig().pageSize, message.requestId);
           return;
         }
         {
-          const searched = await session.search(state.searchQuery, 0, 100);
-          panel.postMessage({ type: 'searchResult', ...searched, query: state.searchQuery });
+          const query = state.searchQuery;
+          const revision = session.getRevision();
+          const sessionId = state.sessionId;
+          const searched = await session.search(query, 0, 100);
+          panel.postMessage({
+            type: 'searchResult',
+            ...searched,
+            query,
+            requestId: message.requestId,
+            sessionId,
+            revision,
+          });
         }
         return;
       case 'executeCustomQuery':
         if (!session) throw new Error('Open a data file before running a query');
         state.searchQuery = '';
         state.customQuerySql = normalizeReadOnlyQuery(message.sql);
-        await postCustomQuery(panel);
+        await postCustomQuery(panel, 0, 100, message.requestId);
         return;
       case 'clearCustomQuery':
         state.customQuerySql = null;
-        await postSession(panel);
+        await postSession(panel, 0, getConfig().pageSize, message.requestId);
         return;
       case 'refresh':
         if (!session?.getFilePath()) return;
         state.customQuerySql = null;
-        await loadDataIntoPanel(panel, session.getFilePath());
+        await loadDataIntoPanel(panel, session.getFilePath(), message.requestId);
         return;
       case 'getStats':
         if (!session) throw new Error('No active wrangling session');
         {
-          const stats = await session.getStatistics();
+          const requestedSession = session;
+          const sessionId = state.sessionId;
+          const revision = requestedSession.getRevision();
+          const sql = requestedSession.getSql();
+          const stats = await requestedSession.getStatistics();
+          const quality = await requestedSession.getQualitySummary(stats, sql);
           panel.postMessage({
             type: 'stats',
             stats,
-            quality: await session.getQualitySummary(stats),
+            quality,
+            requestId: message.requestId,
+            sessionId,
+            revision,
           });
         }
         return;
+      case 'generateAITransforms':
+        await generateAITransformsCommand(panel, message.requestId);
+        return;
       case 'requestChart':
         if (!session) throw new Error('No active wrangling session');
-        panel.postMessage({
-          type: 'chartResult',
-          chart: message.chart,
-          result: await session.getChartData(message.chart),
-        });
+        {
+          const revision = session.getRevision();
+          const sessionId = state.sessionId;
+          const result = await session.getChartData(message.chart);
+          panel.postMessage({
+            type: 'chartResult',
+            chart: message.chart,
+            result,
+            requestId: message.requestId,
+            sessionId,
+            revision,
+          });
+        }
         return;
       case 'exportData': {
         if (!session) throw new Error('Open a data file before exporting');
@@ -304,12 +393,22 @@ async function handleWebviewMessage(
               saveLabel: `Export ${message.format.toUpperCase()}`,
             });
         if (!target) {
-          panel.postMessage({ type: 'exportComplete', outputPath: '' });
+          panel.postMessage({
+            type: 'exportComplete',
+            outputPath: '',
+            status: 'cancelled',
+            requestId: message.requestId,
+          });
           return;
         }
         const conn = await getConnection();
-        await exportResults(conn, session.getSql(), target.fsPath, message.format);
-        panel.postMessage({ type: 'exportComplete', outputPath: target.fsPath });
+        await exportResults(conn, getActiveExportSql(state), target.fsPath, message.format);
+        panel.postMessage({
+          type: 'exportComplete',
+          outputPath: target.fsPath,
+          status: 'completed',
+          requestId: message.requestId,
+        });
         vscode.window.showInformationMessage(
           `Exported ${message.format.toUpperCase()} to ${target.fsPath}`,
         );
@@ -322,6 +421,7 @@ async function handleWebviewMessage(
     panel.postMessage({
       type: 'error',
       message: error instanceof Error ? error.message : String(error),
+      requestId: message.requestId,
     });
   }
 }
@@ -376,68 +476,126 @@ export async function openRemoteDataCommand(): Promise<void> {
 export async function configureAICommand(): Promise<void> {
   if (!extensionContext) throw new Error('Extension context is unavailable');
   const key = await vscode.window.showInputBox({
-    title: 'Configure OpenAI for QuackWrangler',
+    title: 'Configure AI provider for QuackWrangler',
     prompt: 'Stored in VS Code SecretStorage. Only schema metadata and your instruction are sent.',
     password: true,
     ignoreFocusOut: true,
   });
   if (key?.trim()) {
     await extensionContext.secrets.store('quackwrangler.openaiApiKey', key.trim());
-    vscode.window.showInformationMessage('QuackWrangler OpenAI key stored securely.');
+    vscode.window.showInformationMessage('QuackWrangler AI provider key stored securely.');
   }
 }
 
-export async function generateAITransformsCommand(): Promise<void> {
-  const panel = DataWranglerPanel.currentPanel;
-  const session = panel ? getPanelState(panel).session : null;
+// Track per-panel AI workflow to prevent overlapping requests.
+const panelAIInFlight = new WeakMap<DataWranglerPanel, boolean>();
+
+export async function generateAITransformsCommand(
+  sourcePanel = DataWranglerPanel.currentPanel,
+  requestId?: string,
+): Promise<void> {
+  const panel = sourcePanel;
+  const state = panel ? getPanelState(panel) : null;
+  const session = state?.session ?? null;
   if (!panel || !session || !extensionContext) throw new Error('Open a data file first');
-  let key = await extensionContext.secrets.get('quackwrangler.openaiApiKey');
-  if (!key) {
-    await configureAICommand();
-    key = await extensionContext.secrets.get('quackwrangler.openaiApiKey');
-  }
-  if (!key) return;
-  const goal = await vscode.window.showInputBox({
-    title: 'Generate visual transforms',
-    prompt: 'Describe the desired result. No row values will be sent.',
-    placeHolder: 'Remove duplicates and keep active customers after 2025',
-  });
-  if (!goal) return;
-  const schema = (await session.getPage(0, 1)).schema;
-  const model = vscode.workspace
-    .getConfiguration('quackwrangler')
-    .get<string>('ai.model', 'gpt-5.6-luna');
-  const suggestions = await vscode.window.withProgress(
-    {
-      location: vscode.ProgressLocation.Notification,
-      title: 'Generating schema-only transform plan…',
-    },
-    () => suggestTransforms(key!, model, goal, schema.columns),
-  );
-  if (!suggestions.length) {
-    vscode.window.showInformationMessage('No transforms were suggested.');
+
+  // Only one AI workflow per panel at a time.
+  if (panelAIInFlight.get(panel)) {
+    vscode.window.showInformationMessage('An AI plan is already in progress for this editor.');
+    panel.postMessage({ type: 'aiComplete', status: 'discarded', requestId });
     return;
   }
-  const preview = suggestions
-    .map((item, index) => `${index + 1}. ${item.type} ${JSON.stringify(item.params)}`)
-    .join('\n');
-  const approval = await vscode.window.showInformationMessage(
-    `Apply this AI-generated plan?\n${preview}`,
-    { modal: true },
-    'Apply transforms',
-  );
-  if (approval !== 'Apply transforms') return;
-  let applied = 0;
+  panelAIInFlight.set(panel, true);
+
   try {
-    for (const suggestion of suggestions) {
-      session.apply(suggestion.type, suggestion.params);
-      applied += 1;
+    let key = await extensionContext.secrets.get('quackwrangler.openaiApiKey');
+    if (!key) {
+      await configureAICommand();
+      key = await extensionContext.secrets.get('quackwrangler.openaiApiKey');
     }
-  } catch (error) {
-    while (applied-- > 0) session.undo();
-    throw error;
+    if (!key) {
+      panel.postMessage({ type: 'aiComplete', status: 'cancelled', requestId });
+      return;
+    }
+    const goal = await vscode.window.showInputBox({
+      title: 'Generate visual transforms',
+      prompt: 'Describe the desired result. No row values will be sent.',
+      placeHolder: 'Remove duplicates and keep active customers after 2025',
+    });
+    if (!goal) {
+      panel.postMessage({ type: 'aiComplete', status: 'cancelled', requestId });
+      return;
+    }
+
+    // Capture the session identity and revision before any await so we can
+    // detect if the user modified the pipeline while the AI was running.
+    const capturedSession = state!.session;
+    const capturedRevision = capturedSession!.getRevision();
+
+    const schema = (await session.getPage(0, 1)).schema;
+    const config = vscode.workspace.getConfiguration('quackwrangler');
+    const ai = validateAISettings(
+      config.get<string>('ai.provider', 'openai'),
+      config.get<string>('ai.model', 'gpt-4o-mini'),
+      config.get<string>('ai.baseUrl', ''),
+      config.get<number>('ai.timeoutSeconds', 60),
+    );
+    const suggestions = await vscode.window.withProgress(
+      {
+        location: vscode.ProgressLocation.Notification,
+        title: 'Generating schema-only transform plan…',
+      },
+      () =>
+        suggestTransforms(key!, ai.model, goal, schema.columns, {
+          baseUrl: ai.baseUrl,
+          timeoutMs: ai.timeoutMs,
+          history: session.getHistory(),
+        }),
+    );
+    if (!suggestions.length) {
+      vscode.window.showInformationMessage('No transforms were suggested.');
+      panel.postMessage({ type: 'aiComplete', status: 'empty', requestId });
+      return;
+    }
+
+    // Reject the plan if the panel's session or pipeline changed while waiting.
+    const currentSession = state!.session;
+    const currentRevision = currentSession?.getRevision();
+    if (currentSession !== capturedSession || currentRevision !== capturedRevision) {
+      vscode.window.showWarningMessage(
+        'The data was changed while the AI plan was loading. Discarded to avoid applying to a different dataset.',
+      );
+      panel.postMessage({ type: 'aiComplete', status: 'discarded', requestId });
+      return;
+    }
+
+    const preview = suggestions
+      .map((item, index) => `${index + 1}. ${item.type} ${JSON.stringify(item.params)}`)
+      .join('\n');
+    const approval = await vscode.window.showInformationMessage(
+      `Apply this AI-generated plan?\n${preview}`,
+      { modal: true },
+      'Apply transforms',
+    );
+    if (approval !== 'Apply transforms') {
+      panel.postMessage({ type: 'aiComplete', status: 'cancelled', requestId });
+      return;
+    }
+    let applied = 0;
+    try {
+      for (const suggestion of suggestions) {
+        session.apply(suggestion.type, suggestion.params);
+        applied += 1;
+      }
+    } catch (error) {
+      while (applied-- > 0) session.undo();
+      throw error;
+    }
+    await postSession(panel, 0, getConfig().pageSize, requestId);
+    panel.postMessage({ type: 'aiComplete', status: 'applied', requestId });
+  } finally {
+    panelAIInFlight.delete(panel);
   }
-  await postSession(panel);
 }
 
 async function collectDataFiles(
@@ -490,61 +648,89 @@ export async function compareSchemasCommand(folderMode = false): Promise<void> {
   await vscode.window.showTextDocument(document, { preview: false });
 }
 
-async function loadDataIntoPanel(panel: DataWranglerPanel, filePath: string): Promise<void> {
+async function loadDataIntoPanel(
+  panel: DataWranglerPanel,
+  filePath: string,
+  requestId?: string,
+): Promise<void> {
   panel.setMessageHandler((message) => handleWebviewMessage(panel, message));
   const state = getPanelState(panel);
-  state.session = null;
+  // Preserve the existing session so a failed reload doesn't break the current view.
+  const previousSession = state.session;
+  const previousSessionId = state.sessionId;
   state.customQuerySql = null;
   state.searchQuery = '';
-  state.dbtProjectRoot = undefined;
   await vscode.commands.executeCommand('setContext', 'quackwrangler.dbtDetected', false);
 
   try {
     const remote = isRemoteDataSource(filePath);
     const progress = createRemoteProgressReporter(filePath, (stage) =>
-      panel.postMessage({ type: 'loadingProgress', ...stage }),
+      panel.postMessage({ type: 'loadingProgress', ...stage, requestId }),
     );
     progress(REMOTE_LOAD_STAGES.connecting);
     const conn = await getConnection();
     progress(REMOTE_LOAD_STAGES.preparing);
     if (remote) await prepareDataFileReader(conn, filePath);
     progress(REMOTE_LOAD_STAGES.reading);
-    await loadFile(conn, filePath);
+    const config = getConfig();
+    // Each panel loads into its own uniquely named DuckDB relation so multiple
+    // open editors never cross-contaminate each other's data.
+    await loadFile(
+      conn,
+      filePath,
+      config.loadingMode,
+      config.eagerFileSizeLimitMb,
+      state.relationName,
+    );
     progress(REMOTE_LOAD_STAGES.previewing);
-    state.session = new WranglingSession(conn);
+    state.session = new WranglingSession(conn, state.relationName);
+    state.sessionId = newRelationName();
     state.session.load(filePath);
+    // Store dbt state on the panel directly so each editor maintains independent context.
+    panel.dbtProjectRoot = undefined;
     if (!remote) {
       const workspaceRoot = vscode.workspace.getWorkspaceFolder(vscode.Uri.file(filePath))?.uri
         .fsPath;
-      state.dbtProjectRoot = await findDbtProject(filePath, workspaceRoot);
-      await vscode.commands.executeCommand(
-        'setContext',
-        'quackwrangler.dbtDetected',
-        Boolean(state.dbtProjectRoot),
-      );
+      panel.dbtProjectRoot = await findDbtProject(filePath, workspaceRoot);
+      // Only update context if this panel is the currently active one.
+      if (DataWranglerPanel.currentPanel === panel) {
+        await vscode.commands.executeCommand(
+          'setContext',
+          'quackwrangler.dbtDetected',
+          Boolean(panel.dbtProjectRoot),
+        );
+      }
     }
     await rememberRecentFile(filePath);
-    const config = getConfig();
     progress(REMOTE_LOAD_STAGES.ready);
-    await postSession(panel, 0, Math.min(config.maxRowsPreview, config.pageSize));
+    await postSession(panel, 0, Math.min(config.maxRowsPreview, config.pageSize), requestId);
   } catch (error) {
+    // Restore the previous session so an already-loaded panel remains usable.
+    state.session = previousSession;
+    state.sessionId = previousSessionId;
+    if (previousSession) {
+      await postSession(panel, 0, getConfig().pageSize, requestId).catch(() => undefined);
+    }
     const message = error instanceof Error ? error.message : String(error);
     vscode.window.showErrorMessage(`Failed to load file: ${message}`);
-    panel.postMessage({ type: 'error', message });
+    panel.postMessage({ type: 'error', message, requestId });
   }
 }
 
-async function selectFileIntoPanel(panel: DataWranglerPanel): Promise<void> {
+async function selectFileIntoPanel(panel: DataWranglerPanel, requestId?: string): Promise<void> {
   const selected = await vscode.window.showOpenDialog({
     canSelectFiles: true,
     canSelectMany: false,
     filters: DATA_FILE_FILTER,
     openLabel: 'Open in QuackWrangler',
   });
-  if (selected?.[0]) await loadDataIntoPanel(panel, selected[0].fsPath);
+  if (selected?.[0]) await loadDataIntoPanel(panel, selected[0].fsPath, requestId);
 }
 
-async function selectFolderFileIntoPanel(panel: DataWranglerPanel): Promise<void> {
+async function selectFolderFileIntoPanel(
+  panel: DataWranglerPanel,
+  requestId?: string,
+): Promise<void> {
   const folder = (
     await vscode.window.showOpenDialog({
       canSelectFolders: true,
@@ -570,7 +756,7 @@ async function selectFolderFileIntoPanel(panel: DataWranglerPanel): Promise<void
       })),
     { placeHolder: 'Select a data file to open in this QuackWrangler tab' },
   );
-  if (selected) await loadDataIntoPanel(panel, selected.uri.fsPath);
+  if (selected) await loadDataIntoPanel(panel, selected.uri.fsPath, requestId);
 }
 
 interface SavedWorkspace {
@@ -680,8 +866,8 @@ export async function openFile(uri?: vscode.Uri | string): Promise<void> {
 
 export async function copyDbtSqlCommand(): Promise<void> {
   const panel = DataWranglerPanel.currentPanel;
-  const state = panel ? getPanelState(panel) : undefined;
-  if (!state?.session || !state.dbtProjectRoot) {
+  const session = panel ? getPanelState(panel).session : null;
+  if (!panel || !session || !panel.dbtProjectRoot) {
     vscode.window.showWarningMessage('Open a data file inside a dbt project first.');
     return;
   }
@@ -691,11 +877,11 @@ export async function copyDbtSqlCommand(): Promise<void> {
       { label: 'Copy dbt model SQL', description: 'Complete model query', style: 'model' },
       { label: 'Copy dbt CTEs', description: 'CTE snippet for an existing model', style: 'cte' },
     ] as Array<{ label: string; description: string; style: DbtExportStyle }>,
-    { placeHolder: `dbt project: ${basename(state.dbtProjectRoot)}` },
+    { placeHolder: `dbt project: ${basename(panel.dbtProjectRoot)}` },
   );
   if (!choice) return;
 
-  const defaultModel = basename(state.session.getFilePath())
+  const defaultModel = basename(session.getFilePath())
     .replace(/\.[^.]+$/, '')
     .replace(/\W/g, '_');
   const upstreamModel = await vscode.window.showInputBox({
@@ -709,10 +895,15 @@ export async function copyDbtSqlCommand(): Promise<void> {
   });
   if (!upstreamModel) return;
 
-  await vscode.env.clipboard.writeText(
-    buildDbtSql(state.session.getHistory(), upstreamModel, choice.style),
-  );
-  vscode.window.showInformationMessage(`${choice.label} copied to the clipboard.`);
+  try {
+    await vscode.env.clipboard.writeText(
+      buildDbtSql(session.getHistory(), upstreamModel, choice.style),
+    );
+    vscode.window.showInformationMessage(`${choice.label} copied to the clipboard.`);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    vscode.window.showErrorMessage(`dbt SQL export failed: ${message}`);
+  }
 }
 
 export async function exportDataCommand(): Promise<void> {
@@ -742,10 +933,10 @@ export async function exportDataCommand(): Promise<void> {
   try {
     const conn = await getConnection();
     const panel = DataWranglerPanel.currentPanel;
-    const activeSession = panel ? getPanelState(panel).session : null;
+    const activeState = panel ? getPanelState(panel) : null;
     await exportResults(
       conn,
-      activeSession?.getSql() ?? 'SELECT * FROM current_data',
+      activeState?.session ? getActiveExportSql(activeState) : 'SELECT * FROM current_data',
       uri.fsPath,
       format as 'parquet' | 'csv' | 'json',
     );
@@ -771,11 +962,16 @@ export async function summarizeFileCommand(): Promise<void> {
   }
 
   try {
+    const state = getPanelState(panel);
+    const revision = activeSession.getRevision();
+    const sql = activeSession.getSql();
     const stats = await activeSession.getStatistics();
     panel.postMessage({
       type: 'stats',
       stats,
-      quality: await activeSession.getQualitySummary(stats),
+      quality: await activeSession.getQualitySummary(stats, sql),
+      sessionId: state.sessionId,
+      revision,
     });
     vscode.window.showInformationMessage(
       `Summarized ${stats.length} columns in ${activeSession.getFilePath().split(/[\\/]/).pop()}`,

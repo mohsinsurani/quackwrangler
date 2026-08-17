@@ -122,11 +122,11 @@ export function activate(context: vscode.ExtensionContext): void {
 
   context.subscriptions.push(
     vscode.commands.registerCommand('quackwrangler.openDataWrangler', () => {
-      openDataWrangler();
+      return openDataWrangler();
     }),
 
     vscode.commands.registerCommand('quackwrangler.openFile', (uri?: vscode.Uri | string) => {
-      openFile(uri);
+      return openFile(uri);
     }),
 
     vscode.commands.registerCommand('quackwrangler.openFolder', async () => {
@@ -138,19 +138,19 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
 
     vscode.commands.registerCommand('quackwrangler.exportData', () => {
-      exportDataCommand();
+      return exportDataCommand();
     }),
 
     vscode.commands.registerCommand('quackwrangler.summarizeFile', () => {
-      summarizeFileCommand();
+      return summarizeFileCommand();
     }),
 
     vscode.commands.registerCommand('quackwrangler.saveWorkspace', () => {
-      saveWorkspaceCommand();
+      return saveWorkspaceCommand();
     }),
 
     vscode.commands.registerCommand('quackwrangler.openWorkspace', (uri?: vscode.Uri) => {
-      openWorkspaceCommand(uri);
+      return openWorkspaceCommand(uri);
     }),
     vscode.commands.registerCommand('quackwrangler.openRemoteData', () => openRemoteDataCommand()),
     vscode.commands.registerCommand('quackwrangler.configureAI', () => configureAICommand()),

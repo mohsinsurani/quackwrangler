@@ -29,4 +29,49 @@ describe('dbt SQL export', () => {
       'dbt model names',
     );
   });
+
+  it('rejects histories containing join_file or union_file as non-portable', () => {
+    const joinHistory: TransformOperation[] = [
+      {
+        id: '2',
+        type: 'join_file',
+        params: { filePath: '/local/other.csv', leftColumn: 'id', rightColumn: 'id', joinType: 'INNER' },
+        sql: '',
+        description: 'Join',
+      },
+    ];
+    const unionHistory: TransformOperation[] = [
+      {
+        id: '3',
+        type: 'union_file',
+        params: { filePath: '/local/other.csv' },
+        sql: '',
+        description: 'Union',
+      },
+    ];
+    expect(() => buildDbtSql(joinHistory, 'stg_orders', 'model')).toThrow(
+      "join_file",
+    );
+    expect(() => buildDbtSql(unionHistory, 'stg_orders', 'cte')).toThrow(
+      "union_file",
+    );
+  });
+
+  it.each(['add_column', 'addColumn'])('rejects raw %s expressions as non-portable', (type) => {
+    expect(() =>
+      buildDbtSql(
+        [
+          {
+            id: 'raw-expression',
+            type,
+            params: { name: 'unsafe', expression: 'adapter_specific(value)' },
+            sql: 'SELECT *, adapter_specific(value) AS "unsafe" FROM current_data',
+            description: 'Raw expression',
+          },
+        ],
+        'stg_orders',
+        'model',
+      ),
+    ).toThrow('Formula Builder');
+  });
 });

@@ -2,7 +2,7 @@
 
 QuackWrangler treats local datasets as sensitive. File parsing, queries, profiling, transforms, visualizations, and exports run locally in the VS Code extension host with DuckDB. The extension does not intentionally upload file contents to QuackWrangler-operated services.
 
-The optional AI transform planner is disabled until a user configures an OpenAI API key. When invoked, it sends the user's instruction and schema metadata (column names, DuckDB types, and nullability) to OpenAI. It does not send rows, cell values, samples, or file contents. Proposed operations require user approval and pass through the same local validation as visual operations.
+The optional AI transform planner is disabled until a user configures an AI provider API key. When invoked, it sends the user's instruction, schema metadata (column names, DuckDB types, and nullability), and redacted visual-transform history to OpenAI or the configured HTTPS OpenAI-compatible provider. It does not send rows, cell values, samples, file contents, file paths, expressions, or literal transform values. Proposed operations require user approval and pass through the same local validation as visual operations.
 
 OpenAI API keys are stored with VS Code `SecretStorage`. They must never be placed in settings, workspace files, logs, issues, or source control.
 
@@ -14,8 +14,8 @@ Security updates are provided for the latest Marketplace release only.
 
 | Version | Supported |
 | ------- | --------- |
-| 0.1.5   | ✅        |
-| < 0.1.5 | ❌        |
+| 0.2.0   | Yes       |
+| < 0.2.0 | No        |
 
 Users should update to the latest version available from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=quackwrangler.quackwrangler).
 

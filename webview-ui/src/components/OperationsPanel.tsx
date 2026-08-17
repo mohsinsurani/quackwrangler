@@ -5,6 +5,8 @@ import type { TransformStep, ColumnInfo } from '../types';
 interface OperationsPanelProps {
   columns: ColumnInfo[];
   transformSteps: TransformStep[];
+  canUndo: boolean;
+  canRedo: boolean;
   onTransform: (type: string, params: Record<string, unknown>) => void;
   onExport: (format: 'parquet' | 'csv' | 'json') => void;
   onRemoveStep: (stepId: string) => void;
@@ -418,6 +420,8 @@ export const OperationsPanel: React.FC<OperationsPanelProps> = React.memo(
   ({
     columns,
     transformSteps,
+    canUndo,
+    canRedo,
     onTransform,
     onExport,
     onRemoveStep,
@@ -558,6 +562,33 @@ export const OperationsPanel: React.FC<OperationsPanelProps> = React.memo(
       setFormError('');
     }, []);
 
+    React.useEffect(() => {
+      if (!selectedOp) return;
+      const handleShortcut = (event: KeyboardEvent) => {
+        if (event.defaultPrevented) return;
+        if (event.key === 'Escape') {
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          handleCancel();
+          return;
+        }
+        if (event.key !== 'Enter' || event.shiftKey || event.isComposing) return;
+        const target = event.target;
+        if (!(target instanceof HTMLElement) || !target.closest('.operation-form')) return;
+        if (
+          target.closest('button') ||
+          target instanceof HTMLSelectElement ||
+          target instanceof HTMLTextAreaElement
+        )
+          return;
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        handleSubmit();
+      };
+      window.addEventListener('keydown', handleShortcut);
+      return () => window.removeEventListener('keydown', handleShortcut);
+    }, [selectedOp, handleCancel, handleSubmit]);
+
     const handleDragStart = useCallback((stepId: string, e: React.DragEvent) => {
       setDraggedStep(stepId);
       e.dataTransfer.effectAllowed = 'move';
@@ -600,12 +631,19 @@ export const OperationsPanel: React.FC<OperationsPanelProps> = React.memo(
             <button
               className="undo-btn"
               onClick={onUndo}
-              disabled={transformSteps.length === 0}
+              disabled={!canUndo || transformSteps.length === 0}
               title="Undo last transform"
+              aria-label="Undo last transform"
             >
               ↶
             </button>
-            <button className="redo-btn" onClick={onRedo} title="Redo">
+            <button
+              className="redo-btn"
+              onClick={onRedo}
+              disabled={!canRedo}
+              title="Redo last undo"
+              aria-label="Redo last undo"
+            >
               ↷
             </button>
           </div>
@@ -630,7 +668,8 @@ export const OperationsPanel: React.FC<OperationsPanelProps> = React.memo(
                   <button
                     className="chip-remove"
                     onClick={() => onRemoveStep(step.id)}
-                    title="Remove transform"
+                    title={`Remove ${step.name}`}
+                    aria-label={`Remove ${step.name} transform`}
                   >
                     ×
                   </button>
@@ -643,7 +682,11 @@ export const OperationsPanel: React.FC<OperationsPanelProps> = React.memo(
         <div className="operations-categories">
           {OPERATION_CATEGORIES.map((category) => (
             <div key={category.name} className="operation-category">
-              <button className="category-header" onClick={() => toggleCategory(category.name)}>
+              <button
+                className="category-header"
+                onClick={() => toggleCategory(category.name)}
+                aria-expanded={expandedCategories.has(category.name)}
+              >
                 <span className="category-icon">{category.icon}</span>
                 <span className="category-name">{category.name}</span>
                 <span
@@ -675,7 +718,11 @@ export const OperationsPanel: React.FC<OperationsPanelProps> = React.memo(
             <div className="form-header">
               <span className="form-icon">{selectedOp.icon}</span>
               <span className="form-title">{selectedOp.name}</span>
-              <button className="form-close" onClick={handleCancel}>
+              <button
+                className="form-close"
+                onClick={handleCancel}
+                aria-label={`Close ${selectedOp.name} form`}
+              >
                 ×
               </button>
             </div>
@@ -712,76 +759,84 @@ export const OperationsPanel: React.FC<OperationsPanelProps> = React.memo(
                     }
                     return true;
                   })
-                  .map((param) => (
-                    <div key={param.name} className="param-group">
-                      <label className="param-label">
-                        {param.label}
-                        {param.required && <span className="required">*</span>}
-                      </label>
-                      {param.type === 'file' ? (
-                        <div className="file-param">
+                  .map((param) => {
+                    const inputId = `form-param-${selectedOp.id}-${param.name}`;
+                    return (
+                      <div key={param.name} className="param-group">
+                        <label className="param-label" htmlFor={inputId}>
+                          {param.label}
+                          {param.required && <span className="required">*</span>}
+                        </label>
+                        {param.type === 'file' ? (
+                          <div className="file-param">
+                            <input
+                              id={inputId}
+                              className="param-input"
+                              type="text"
+                              readOnly
+                              value={String(formData[param.name] || '')}
+                              placeholder="No file selected"
+                            />
+                            <button type="button" onClick={onSelectSecondaryFile}>
+                              Choose…
+                            </button>
+                          </div>
+                        ) : param.type === 'select' && param.options ? (
+                          <select
+                            id={inputId}
+                            className="param-select"
+                            value={String(formData[param.name] || '')}
+                            onChange={(e) => handleParamChange(param.name, e.target.value)}
+                          >
+                            <option value="">Select...</option>
+                            {param.options.map((opt) => (
+                              <option key={opt.value} value={opt.value}>
+                                {opt.label}
+                              </option>
+                            ))}
+                          </select>
+                        ) : param.type === 'column' || param.type === 'secondary-column' ? (
+                          <select
+                            id={inputId}
+                            className="param-select"
+                            value={String(formData[param.name] || '')}
+                            onChange={(e) => handleParamChange(param.name, e.target.value)}
+                          >
+                            <option value="">Select column...</option>
+                            {(param.type === 'secondary-column'
+                              ? (secondaryFile?.columns ?? []).map((name) => ({
+                                  name,
+                                  displayName: name,
+                                }))
+                              : columns
+                            ).map((col) => (
+                              <option key={col.name} value={col.name}>
+                                {col.displayName}
+                              </option>
+                            ))}
+                          </select>
+                        ) : param.type === 'number' ? (
                           <input
+                            id={inputId}
+                            className="param-input"
+                            type="number"
+                            value={String(formData[param.name] || '')}
+                            onChange={(e) => handleParamChange(param.name, Number(e.target.value))}
+                            placeholder={`Enter ${param.label.toLowerCase()}...`}
+                          />
+                        ) : (
+                          <input
+                            id={inputId}
                             className="param-input"
                             type="text"
-                            readOnly
                             value={String(formData[param.name] || '')}
-                            placeholder="No file selected"
+                            onChange={(e) => handleParamChange(param.name, e.target.value)}
+                            placeholder={`Enter ${param.label.toLowerCase()}...`}
                           />
-                          <button type="button" onClick={onSelectSecondaryFile}>
-                            Choose…
-                          </button>
-                        </div>
-                      ) : param.type === 'select' && param.options ? (
-                        <select
-                          className="param-select"
-                          value={String(formData[param.name] || '')}
-                          onChange={(e) => handleParamChange(param.name, e.target.value)}
-                        >
-                          <option value="">Select...</option>
-                          {param.options.map((opt) => (
-                            <option key={opt.value} value={opt.value}>
-                              {opt.label}
-                            </option>
-                          ))}
-                        </select>
-                      ) : param.type === 'column' || param.type === 'secondary-column' ? (
-                        <select
-                          className="param-select"
-                          value={String(formData[param.name] || '')}
-                          onChange={(e) => handleParamChange(param.name, e.target.value)}
-                        >
-                          <option value="">Select column...</option>
-                          {(param.type === 'secondary-column'
-                            ? (secondaryFile?.columns ?? []).map((name) => ({
-                                name,
-                                displayName: name,
-                              }))
-                            : columns
-                          ).map((col) => (
-                            <option key={col.name} value={col.name}>
-                              {col.displayName}
-                            </option>
-                          ))}
-                        </select>
-                      ) : param.type === 'number' ? (
-                        <input
-                          className="param-input"
-                          type="number"
-                          value={String(formData[param.name] || '')}
-                          onChange={(e) => handleParamChange(param.name, Number(e.target.value))}
-                          placeholder={`Enter ${param.label.toLowerCase()}...`}
-                        />
-                      ) : (
-                        <input
-                          className="param-input"
-                          type="text"
-                          value={String(formData[param.name] || '')}
-                          onChange={(e) => handleParamChange(param.name, e.target.value)}
-                          placeholder={`Enter ${param.label.toLowerCase()}...`}
-                        />
-                      )}
-                    </div>
-                  ))
+                        )}
+                      </div>
+                    );
+                  })
               )}
             </div>
             <div className="form-actions">

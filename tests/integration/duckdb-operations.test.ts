@@ -1,7 +1,11 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { DuckDBInstance } from '@duckdb/node-api';
+import { randomUUID } from 'node:crypto';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { WranglingSession } from '../../src/transforms/pipeline';
 import { normalizeReadOnlyQuery } from '../../src/duckdb/query-engine';
+import { loadFile } from '../../src/duckdb/parquet-loader';
 
 let database: DuckDBInstance;
 
@@ -18,6 +22,31 @@ function createAdapter() {
           rowCount: rows.length,
           duration: 0,
         };
+      } finally {
+        connection.closeSync();
+      }
+    },
+    transaction: async <T>(callback: (transaction: { query: (sql: string) => Promise<unknown> }) => Promise<T>) => {
+      const connection = await database.connect();
+      await connection.run('BEGIN TRANSACTION');
+      try {
+        const value = await callback({
+          query: async (sql: string) => {
+            const result = await connection.run(sql);
+            const rows = await result.getRowsJson();
+            return {
+              columns: result.columnNames(),
+              rows,
+              rowCount: rows.length,
+              duration: 0,
+            };
+          },
+        });
+        await connection.run('COMMIT');
+        return value;
+      } catch (error) {
+        await connection.run('ROLLBACK');
+        throw error;
       } finally {
         connection.closeSync();
       }
@@ -55,6 +84,41 @@ beforeAll(async () => {
       (2, 'alphabet', 30, 'east', NULL)
   `);
   connection.closeSync();
+});
+
+describe('transactional file promotion', () => {
+  it('keeps the previous relation when promotion fails after dropping it', async () => {
+    const source = join(tmpdir(), `quackwrangler-loader-${randomUUID()}.parquet`);
+    const writer = await database.connect();
+    await writer.run(`COPY (SELECT 42 AS value) TO '${source}' (FORMAT PARQUET)`);
+    writer.closeSync();
+
+    const adapter = createAdapter();
+    await loadFile(adapter as never, source, 'eager', 64, 'loader_test_data');
+    const before = await adapter.query('SELECT * FROM loader_test_data');
+    expect(before.rows).toEqual([[42]]);
+
+    const failingAdapter = {
+      ...adapter,
+      transaction: async <T>(
+        callback: (transaction: { query: (sql: string) => Promise<unknown> }) => Promise<T>,
+      ) =>
+        adapter.transaction((transaction) =>
+          callback({
+            query: async (sql: string) => {
+              if (sql.startsWith('ALTER TABLE')) throw new Error('injected promotion failure');
+              return transaction.query(sql);
+            },
+          }),
+        ),
+    };
+
+    await expect(
+      loadFile(failingAdapter as never, source, 'eager', 64, 'loader_test_data'),
+    ).rejects.toThrow('injected promotion failure');
+    const after = await adapter.query('SELECT * FROM loader_test_data');
+    expect(after.rows).toEqual([[42]]);
+  });
 });
 
 describe('displayed filter operations execute in DuckDB', () => {

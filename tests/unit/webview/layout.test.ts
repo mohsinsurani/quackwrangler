@@ -32,6 +32,10 @@ const previewSource = fs.readFileSync(
   path.join(projectRoot, 'webview-ui/src/main.tsx'),
   'utf8',
 );
+const headerSource = fs.readFileSync(
+  path.join(projectRoot, 'webview-ui/src/components/Header.tsx'),
+  'utf8',
+);
 
 function rule(selector: string): string {
   const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -219,5 +223,134 @@ describe('webview layout contracts', () => {
     expect(previewSource).toContain("{ source: 'preview'");
     expect(previewSource).toContain("kind: 'nulls'");
     expect(previewSource).toContain("kind: 'outliers'");
+  });
+
+  it('disables undo and redo based on the reported session state', () => {
+    expect(operationsSource).toContain('canUndo');
+    expect(operationsSource).toContain('canRedo');
+    expect(operationsSource).toContain('disabled={!canUndo || transformSteps.length === 0}');
+    expect(operationsSource).toContain('disabled={!canRedo}');
+    expect(appSource).toContain('setCanUndo(update.canUndo ?? history.length > 0)');
+  });
+
+  it('surfaces a labeled AI plan action in the header', () => {
+    expect(headerSource).toContain('ai-plan-btn');
+    expect(headerSource).toContain('AI plan');
+    expect(headerSource).not.toContain('engine-selector');
+  });
+
+  it('shows a transient success toast after a transform is applied', () => {
+    expect(appSource).toContain('className="success-toast"');
+    expect(appSource).toContain('role="status"');
+    expect(appSource).toContain('Applied');
+    expect(appSource).toContain("type.replaceAll('_', ' ')");
+    expect(rule('.success-toast')).toContain('position: fixed');
+  });
+
+  it('scopes form shortcuts and dismisses only the active grid surface', () => {
+    expect(operationsSource).toContain("target.closest('.operation-form')");
+    expect(operationsSource).toContain('target instanceof HTMLSelectElement');
+    expect(operationsSource).toContain('event.stopImmediatePropagation()');
+    expect(gridSource).toContain('if (quickFilterMenu)');
+    expect(gridSource).toContain('else if (inspectedCell)');
+    expect(appSource).not.toContain("document.querySelector<HTMLButtonElement>(\n        '.operations-panel .form-close'");
+  });
+
+  it('blocks repeated history and transform requests while loading', () => {
+    expect(appSource).toContain('loading || pendingTransform.current');
+    expect(appSource).toContain('if (pendingTransform.current) return');
+    expect(appSource).toContain('canUndo={canUndo && !loading}');
+    expect(appSource).toContain('canRedo={canRedo && !loading}');
+  });
+
+  it('propagates AI loading state to the header and disables the button', () => {
+    expect(appSource).toContain('aiLoading');
+    expect(appSource).toContain('setAiLoading(true)');
+    expect(headerSource).toContain('aiLoading');
+    expect(headerSource).toContain('disabled={isLoading || aiLoading}');
+    expect(headerSource).toContain('aria-busy={aiLoading}');
+  });
+
+  it('does not clear global loading when stats arrive (stats is independent)', () => {
+    const statsBlock = appSource.slice(
+      appSource.indexOf("message.type === 'stats'"),
+      appSource.indexOf("} else if", appSource.indexOf("message.type === 'stats'")),
+    );
+    expect(statsBlock).not.toContain('setLoading(false)');
+  });
+
+  it('correlates asynchronous grid, stats, chart, export, and AI responses', () => {
+    expect(appSource).toContain("type RequestSurface = 'grid' | 'stats' | 'chart' | 'export' | 'ai'");
+    expect(appSource).toContain('latestRequests.current.stats');
+    expect(appSource).toContain('message.requestId !== latestRequests.current.chart');
+    expect(appSource).toContain('message.sessionId !== sessionContext.current.sessionId');
+    expect(appSource).toContain("message.type === 'aiComplete'");
+  });
+
+  it('accepts unsolicited host stats pushes that carry no request ID', () => {
+    expect(appSource).toContain(
+      'if (message.requestId && message.requestId !== latestRequests.current.stats) return',
+    );
+  });
+
+  it('keeps row selection valid when loaded rows change', () => {
+    expect(gridSource).toContain('if (!onRowSelect) setLocalSelectedRows(new Set())');
+    expect(gridSource).toContain('selectedRowIndexes.length === rows.length');
+    expect(gridSource).toContain('onClick={() => toggleRowSelection(rowIndex)}');
+  });
+
+  it('guards remove and reorder against firing while loading', () => {
+    expect(appSource).toContain('onRemoveStep={(id) => {');
+    expect(appSource).toContain('onReorderSteps={(sourceId, targetId) => {');
+    const removeBlock = appSource.slice(
+      appSource.indexOf('onRemoveStep={(id) => {'),
+      appSource.indexOf('}', appSource.indexOf('onRemoveStep={(id) => {')),
+    );
+    expect(removeBlock).toContain('if (loading) return');
+  });
+
+  it('associates form labels with their controls using htmlFor', () => {
+    expect(operationsSource).toContain('htmlFor={inputId}');
+    expect(operationsSource).toContain('id={inputId}');
+    expect(operationsSource).toContain('form-param-');
+  });
+
+  it('adds aria-expanded to category disclosure buttons', () => {
+    expect(operationsSource).toContain('aria-expanded={expandedCategories.has(category.name)}');
+  });
+
+  it('labels the form close and chip remove buttons', () => {
+    expect(operationsSource).toContain('aria-label={`Close ${selectedOp.name} form`}');
+    expect(operationsSource).toContain('aria-label={`Remove ${step.name} transform`}');
+  });
+
+  it('marks error banner as alert role', () => {
+    expect(appSource).toContain('role="alert"');
+  });
+
+  it('makes column headers keyboard-focusable for sorting', () => {
+    expect(gridSource).toContain('role="columnheader"');
+    expect(gridSource).toContain('aria-sort=');
+    expect(gridSource).toContain("event.key === 'Enter' || event.key === ' '");
+  });
+
+  it('fixes responsive layout so operations-collapsed applies inside the narrow breakpoint', () => {
+    expect(themeSource).toContain('.app-layout.operations-collapsed');
+    const mediaBlock = themeSource.slice(
+      themeSource.indexOf('@media (max-width: 640px)'),
+      themeSource.indexOf('}', themeSource.lastIndexOf('@media (max-width: 640px)') + 200) + 1,
+    );
+    expect(mediaBlock).toContain('.app-layout.operations-collapsed');
+  });
+
+  it('includes a development preview message responder', () => {
+    expect(previewSource).toContain("window.addEventListener('message'");
+    expect(previewSource).toContain('applyTransform');
+    expect(previewSource).toContain('replySession');
+  });
+
+  it('orients first-time users in the empty state', () => {
+    expect(appSource).toContain('empty-state-hint');
+    expect(appSource).toContain('Filter, sort, transform, profile, and chart your data visually');
   });
 });

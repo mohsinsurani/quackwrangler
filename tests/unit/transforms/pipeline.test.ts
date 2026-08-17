@@ -17,16 +17,55 @@ describe('WranglingSession', () => {
     session.load('/tmp/data.csv');
     session.apply('drop_column', { column: 'secret' });
     const [step] = session.getHistory();
+    expect(session.canUndo()).toBe(true);
+    expect(session.canRedo()).toBe(false);
     session.undo();
     expect(session.getHistory()).toHaveLength(0);
+    expect(session.canUndo()).toBe(false);
+    expect(session.canRedo()).toBe(true);
     session.redo();
     expect(session.getHistory()).toHaveLength(1);
+    expect(session.canUndo()).toBe(true);
+    expect(session.canRedo()).toBe(false);
     session.remove(step.id);
     expect(session.getHistory()).toHaveLength(0);
   });
 
   it('returns a direct source query for an empty pipeline', () => {
     expect(buildPipelineSQL([])).toBe('SELECT * FROM current_data');
+  });
+
+  it('caches page schema and row count until the pipeline changes', async () => {
+    const query = vi.fn(async (sql: string) => {
+      if (sql.startsWith('DESCRIBE')) return { rows: [['id', 'BIGINT', 'NO']] };
+      if (sql.startsWith('SELECT COUNT')) return { rows: [[2]] };
+      return { columns: ['id'], rows: [[1]], rowCount: 1, duration: 0 };
+    });
+    const session = new WranglingSession({ query } as never);
+    session.load('/tmp/data.csv');
+    await session.getPage(0, 100);
+    await session.getPage(100, 100);
+    expect(query.mock.calls.filter(([sql]) => String(sql).startsWith('DESCRIBE'))).toHaveLength(1);
+    expect(query.mock.calls.filter(([sql]) => String(sql).startsWith('SELECT COUNT'))).toHaveLength(1);
+    session.apply('drop_column', { column: 'unused' });
+    await session.getPage(0, 100);
+    expect(query.mock.calls.filter(([sql]) => String(sql).startsWith('DESCRIBE'))).toHaveLength(2);
+  });
+
+  it('caches statistics and combines search rows with their total count', async () => {
+    const query = vi
+      .fn()
+      .mockResolvedValueOnce({ rows: [['name', 'VARCHAR', 'YES']] })
+      .mockResolvedValueOnce({ rows: [[0, 2, 'alpha', 'omega']] })
+      .mockResolvedValueOnce({ columns: ['name', '__qw_total_rows'], rows: [['alpha', 2]], rowCount: 1 });
+    const session = new WranglingSession({ query } as never);
+    session.load('/tmp/data.csv');
+    const first = await session.getStatistics();
+    expect(await session.getStatistics()).toBe(first);
+    const searched = await session.search('alpha', 0, 100);
+    expect(searched.page.totalRows).toBe(2);
+    expect(searched.result).toMatchObject({ columns: ['name'], rows: [['alpha']], rowCount: 1 });
+    expect(query).toHaveBeenCalledTimes(3);
   });
 
   it('rejects unsupported cast types', () => {
@@ -323,5 +362,69 @@ describe('pipeline ordering and reshape transforms', () => {
       valueColumn: 'metric_value',
     });
     expect(unpivot.getSql()).toContain('UNPIVOT current_data ON "id", "amount"');
+  });
+
+  it('accepts numeric, boolean, and string values for fill_nulls', () => {
+    const session = new WranglingSession({} as never);
+    session.load('/tmp/data.csv');
+    session.apply('fill_nulls', { column: 'amount', value: 0 });
+    expect(session.getSql()).toContain('COALESCE("amount", 0)');
+    const session2 = new WranglingSession({} as never);
+    session2.load('/tmp/data.csv');
+    session2.apply('fill_nulls', { column: 'active', value: false });
+    expect(session2.getSql()).toContain('COALESCE("active", false)');
+    const session3 = new WranglingSession({} as never);
+    session3.load('/tmp/data.csv');
+    session3.apply('fill_nulls', { column: 'name', value: 'N/A' });
+    expect(session3.getSql()).toContain("COALESCE(\"name\", 'N/A')");
+  });
+
+  it('uses a custom relation name as the pipeline source', () => {
+    const session = new WranglingSession({} as never, 'qw_abc123');
+    session.load('/tmp/data.csv');
+    expect(session.getSql()).toBe('SELECT * FROM qw_abc123');
+    session.apply('sort_rows', { column: 'id', direction: 'ASC' });
+    expect(session.getSql()).toContain('FROM qw_abc123 ORDER BY "id" ASC');
+  });
+
+  it('exposes a monotonically increasing revision after each mutation', () => {
+    const session = new WranglingSession({} as never);
+    session.load('/tmp/data.csv');
+    const r0 = session.getRevision();
+    session.apply('sort_rows', { column: 'id', direction: 'ASC' });
+    const r1 = session.getRevision();
+    expect(r1).toBeGreaterThan(r0);
+    session.undo();
+    const r2 = session.getRevision();
+    expect(r2).toBeGreaterThan(r1);
+    session.redo();
+    expect(session.getRevision()).toBeGreaterThan(r2);
+  });
+
+  it('does not cache stale results when the revision changes during a query', async () => {
+    let resolveDescribe!: (value: unknown) => void;
+    const describePromise = new Promise((r) => (resolveDescribe = r));
+    const query = vi.fn(async (sql: string) => {
+      if (sql.startsWith('DESCRIBE')) return describePromise;
+      if (sql.startsWith('SELECT COUNT')) return { rows: [[3]] };
+      return { columns: [], rows: [], rowCount: 0, duration: 0 };
+    });
+    const session = new WranglingSession({ query } as never);
+    session.load('/tmp/data.csv');
+
+    // Start a page request that will block on DESCRIBE.
+    const pagePromise = session.getPage(0, 100);
+    // Mutate the pipeline while DESCRIBE is still in-flight.
+    session.apply('sort_rows', { column: 'id', direction: 'ASC' });
+    // Now resolve the old DESCRIBE result.
+    resolveDescribe({ rows: [['id', 'BIGINT', 'NO']] });
+    await pagePromise;
+
+    // The stale DESCRIBE result must not have been cached for the new revision.
+    query.mockClear();
+    query.mockResolvedValue({ rows: [['name', 'VARCHAR', 'YES']] });
+    await session.getPage(0, 100);
+    const describeCalls = query.mock.calls.filter(([sql]) => String(sql).startsWith('DESCRIBE'));
+    expect(describeCalls).toHaveLength(1);
   });
 });

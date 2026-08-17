@@ -16,6 +16,7 @@ const mocks = vi.hoisted(() => {
     showWarningMessage: vi.fn(),
     readDirectory: vi.fn(),
     loadFile: vi.fn().mockResolvedValue(undefined),
+    exportResults: vi.fn().mockResolvedValue(undefined),
     attach: vi.fn(() => panel),
   };
 });
@@ -57,7 +58,21 @@ vi.mock('../../../src/duckdb/connection.js', () => ({
       return true;
     }
     async connect(): Promise<void> {}
+    async query(sql: string): Promise<unknown> {
+      if (sql.startsWith('DESCRIBE')) {
+        return { columns: [], rows: [['value', 'BIGINT', 'NO']], rowCount: 1, duration: 0 };
+      }
+      if (sql.includes('COUNT(*)')) {
+        return { columns: ['count'], rows: [[1]], rowCount: 1, duration: 0 };
+      }
+      return { columns: ['value'], rows: [[1]], rowCount: 1, duration: 0 };
+    }
   },
+}));
+
+vi.mock('../../../src/duckdb/query-engine.js', () => ({
+  normalizeReadOnlyQuery: (sql: string) => sql.trim(),
+  exportResults: mocks.exportResults,
 }));
 
 vi.mock('../../../src/duckdb/parquet-loader.js', () => ({
@@ -76,6 +91,21 @@ vi.mock('../../../src/transforms/pipeline.js', () => ({
     }
     getHistory(): unknown[] {
       return [];
+    }
+    canUndo(): boolean {
+      return false;
+    }
+    canRedo(): boolean {
+      return false;
+    }
+    getRevision(): number {
+      return 1;
+    }
+    getSql(): string {
+      return 'SELECT * FROM "panel_relation"';
+    }
+    getFilePath(): string {
+      return this.filePath;
     }
     async getPage(offset: number, limit: number): Promise<unknown> {
       return {
@@ -100,7 +130,7 @@ vi.mock('../../../src/webview/provider.js', () => ({
 
 import { configureCommands, openDataWranglerCustomEditor } from '../../../src/commands';
 
-function latestMessageHandler(): (message: { type: string }) => Promise<void> {
+function latestMessageHandler(): (message: Record<string, unknown> & { type: string }) => Promise<void> {
   const callback = mocks.panel.setMessageHandler.mock.calls.at(-1)?.[0];
   if (!callback) throw new Error('Expected the panel message handler to be registered');
   return callback;
@@ -126,7 +156,13 @@ describe('custom-editor file opening flow', () => {
       {} as never,
     );
 
-    expect(mocks.loadFile).toHaveBeenCalledWith(expect.anything(), '/data/direct.parquet');
+    expect(mocks.loadFile).toHaveBeenCalledWith(
+      expect.anything(),
+      '/data/direct.parquet',
+      'auto',
+      64,
+      expect.stringMatching(/^qw_[0-9a-f]{16}$/),
+    );
     expect(mocks.posted).toContainEqual(
       expect.objectContaining({
         type: 'sessionUpdated',
@@ -147,7 +183,13 @@ describe('custom-editor file opening flow', () => {
 
     await latestMessageHandler()({ type: 'openFilePicker' });
 
-    expect(mocks.loadFile).toHaveBeenLastCalledWith(expect.anything(), '/data/chosen.parquet');
+    expect(mocks.loadFile).toHaveBeenLastCalledWith(
+      expect.anything(),
+      '/data/chosen.parquet',
+      'auto',
+      64,
+      expect.stringMatching(/^qw_[0-9a-f]{16}$/),
+    );
     expect(mocks.posted.at(-1)).toEqual(
       expect.objectContaining({
         type: 'sessionUpdated',
@@ -198,6 +240,9 @@ describe('custom-editor file opening flow', () => {
     expect(mocks.loadFile).toHaveBeenLastCalledWith(
       expect.anything(),
       '/datasets/nested/chosen.parquet',
+      'auto',
+      64,
+      expect.stringMatching(/^qw_[0-9a-f]{16}$/),
     );
     expect(mocks.posted.at(-1)).toEqual(
       expect.objectContaining({
@@ -218,5 +263,31 @@ describe('custom-editor file opening flow', () => {
     expect(mocks.showWarningMessage).toHaveBeenCalledWith(
       'No supported data files were found in this folder.',
     );
+  });
+
+  it('exports the active custom query scoped to the panel pipeline', async () => {
+    await openDataWranglerCustomEditor({ fsPath: '/data/initial.parquet' } as never, {} as never);
+    const handler = latestMessageHandler();
+
+    await handler({ type: 'executeCustomQuery', sql: 'SELECT value FROM current_data WHERE value > 0' });
+    await handler({
+      type: 'exportData',
+      format: 'csv',
+      outputPath: '/tmp/custom-query.csv',
+      requestId: 'export-1',
+    });
+
+    expect(mocks.exportResults).toHaveBeenCalledWith(
+      expect.anything(),
+      'WITH current_data AS (SELECT * FROM "panel_relation") SELECT * FROM (SELECT value FROM current_data WHERE value > 0) AS custom_query',
+      '/tmp/custom-query.csv',
+      'csv',
+    );
+    expect(mocks.posted).toContainEqual({
+      type: 'exportComplete',
+      outputPath: '/tmp/custom-query.csv',
+      status: 'completed',
+      requestId: 'export-1',
+    });
   });
 });

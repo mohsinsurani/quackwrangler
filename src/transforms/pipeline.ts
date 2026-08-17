@@ -229,7 +229,12 @@ function operationSql(type: string, params: Record<string, unknown>): string {
     case 'fillMissing':
     case 'fill_nulls': {
       const column = requiredString(params, 'column');
-      const rawValue = requiredString(params, 'value');
+      // Accept string, number, boolean values from both visual UI and AI contracts.
+      const rawParam = params.value;
+      if (rawParam === null || rawParam === undefined || rawParam === '') {
+        throw new Error('value is required for fill_nulls');
+      }
+      const rawValue = String(rawParam);
       const value = /^-?\d+(\.\d+)?$|^(true|false|null)$/i.test(rawValue)
         ? rawValue
         : quoteLiteral(rawValue);
@@ -311,13 +316,53 @@ export class WranglingSession {
   private history: TransformOperation[] = [];
   private redoStack: TransformOperation[] = [];
   private filePath = '';
+  private revision = 0;
+  private schemaCache?: { revision: number; columns: ColumnInfo[] };
+  private rowCountCache?: { revision: number; value: number };
+  private statisticsCache?: { revision: number; value: ColumnStatistics[] };
 
-  constructor(private readonly connection: DuckDBConnection) {}
+  constructor(
+    private readonly connection: DuckDBConnection,
+    readonly relationName = 'current_data',
+  ) {}
 
   load(filePath: string): void {
     this.filePath = filePath;
     this.history = [];
     this.redoStack = [];
+    this.invalidateCaches();
+  }
+
+  private invalidateCaches(): void {
+    this.revision += 1;
+    this.schemaCache = undefined;
+    this.rowCountCache = undefined;
+    this.statisticsCache = undefined;
+  }
+
+  private async getColumns(sql = this.getSql()): Promise<ColumnInfo[]> {
+    const revision = this.revision;
+    if (this.schemaCache?.revision === revision) return this.schemaCache.columns;
+    const described = await this.connection.query(
+      `DESCRIBE SELECT * FROM (${sql}) AS pipeline_schema`,
+    );
+    const columns = described.rows.map((row) => ({
+      name: String(row[0]),
+      type: String(row[1]),
+      nullable: String(row[2]).toUpperCase() === 'YES',
+    }));
+    // Only cache if the pipeline hasn't changed while we were querying.
+    if (this.revision === revision) this.schemaCache = { revision, columns };
+    return columns;
+  }
+
+  private async getRowCount(sql = this.getSql()): Promise<number> {
+    const revision = this.revision;
+    if (this.rowCountCache?.revision === revision) return this.rowCountCache.value;
+    const count = await this.connection.query(`SELECT COUNT(*) FROM (${sql}) AS pipeline_count`);
+    const value = Number(count.rows[0]?.[0] ?? 0);
+    if (this.revision === revision) this.rowCountCache = { revision, value };
+    return value;
   }
 
   apply(type: string, params: Record<string, unknown>): void {
@@ -330,21 +375,30 @@ export class WranglingSession {
       description: descriptionFor(type, params),
     });
     this.redoStack = [];
+    this.invalidateCaches();
   }
 
   undo(): void {
     const step = this.history.pop();
-    if (step) this.redoStack.push(step);
+    if (step) {
+      this.redoStack.push(step);
+      this.invalidateCaches();
+    }
   }
 
   redo(): void {
     const step = this.redoStack.pop();
-    if (step) this.history.push(step);
+    if (step) {
+      this.history.push(step);
+      this.invalidateCaches();
+    }
   }
 
   remove(id: string): void {
+    const previousLength = this.history.length;
     this.history = this.history.filter((step) => step.id !== id);
     this.redoStack = [];
+    if (this.history.length !== previousLength) this.invalidateCaches();
   }
 
   reorder(sourceId: string, targetId: string): void {
@@ -354,6 +408,7 @@ export class WranglingSession {
     const [step] = this.history.splice(sourceIndex, 1);
     this.history.splice(targetIndex, 0, step);
     this.redoStack = [];
+    this.invalidateCaches();
   }
 
   getFilePath(): string {
@@ -362,13 +417,23 @@ export class WranglingSession {
   getHistory(): TransformOperation[] {
     return [...this.history];
   }
+  getRevision(): number {
+    return this.revision;
+  }
+  canUndo(): boolean {
+    return this.history.length > 0;
+  }
+  canRedo(): boolean {
+    return this.redoStack.length > 0;
+  }
   restore(history: Array<Pick<TransformOperation, 'type' | 'params'>>): void {
     this.history = [];
     this.redoStack = [];
+    this.invalidateCaches();
     for (const step of history) this.apply(step.type, step.params);
   }
   getSql(): string {
-    return buildPipelineSQL(this.history);
+    return buildPipelineSQL(this.history, this.relationName);
   }
 
   async getPage(
@@ -376,19 +441,13 @@ export class WranglingSession {
     limit: number,
   ): Promise<{ schema: TableSchema; result: QueryResult; page: PageInfo }> {
     const sql = this.getSql();
-    const [result, count, described] = await Promise.all([
+    const [result, totalRows, columns] = await Promise.all([
       this.connection.query(
         `SELECT * FROM (${sql}) AS pipeline_result LIMIT ${limit} OFFSET ${offset}`,
       ),
-      this.connection.query(`SELECT COUNT(*) FROM (${sql}) AS pipeline_count`),
-      this.connection.query(`DESCRIBE SELECT * FROM (${sql}) AS pipeline_schema`),
+      this.getRowCount(sql),
+      this.getColumns(sql),
     ]);
-    const totalRows = Number(count.rows[0]?.[0] ?? 0);
-    const columns: ColumnInfo[] = described.rows.map((row) => ({
-      name: String(row[0]),
-      type: String(row[1]),
-      nullable: String(row[2]).toUpperCase() === 'YES',
-    }));
     return {
       schema: { columns, rowCount: totalRows, filePath: this.filePath },
       result,
@@ -402,14 +461,7 @@ export class WranglingSession {
     limit: number,
   ): Promise<{ schema: TableSchema; result: QueryResult; page: PageInfo }> {
     const sql = this.getSql();
-    const described = await this.connection.query(
-      `DESCRIBE SELECT * FROM (${sql}) AS pipeline_schema`,
-    );
-    const columns: ColumnInfo[] = described.rows.map((row) => ({
-      name: String(row[0]),
-      type: String(row[1]),
-      nullable: String(row[2]).toUpperCase() === 'YES',
-    }));
+    const columns = await this.getColumns(sql);
     const escaped = query.replace(/'/g, "''");
     const predicate = columns
       .map(
@@ -418,11 +470,19 @@ export class WranglingSession {
       )
       .join(' OR ');
     const searchedSql = `SELECT * FROM (${sql}) AS pipeline_search WHERE ${predicate || 'FALSE'}`;
-    const [result, count] = await Promise.all([
-      this.connection.query(`${searchedSql} LIMIT ${limit} OFFSET ${offset}`),
-      this.connection.query(`SELECT COUNT(*) FROM (${searchedSql}) AS pipeline_search_count`),
-    ]);
-    const totalRows = Number(count.rows[0]?.[0] ?? 0);
+    const result = await this.connection.query(
+      `SELECT *, COUNT(*) OVER () AS __qw_total_rows FROM (${searchedSql}) AS pipeline_search_page LIMIT ${limit} OFFSET ${offset}`,
+    );
+    let totalRows = Number(result.rows[0]?.[result.columns.length - 1] ?? 0);
+    result.columns = result.columns.slice(0, -1);
+    result.rows = result.rows.map((row) => row.slice(0, -1));
+    result.rowCount = result.rows.length;
+    if (result.rows.length === 0 && offset > 0) {
+      const count = await this.connection.query(
+        `SELECT COUNT(*) FROM (${searchedSql}) AS pipeline_search_count`,
+      );
+      totalRows = Number(count.rows[0]?.[0] ?? 0);
+    }
     return {
       schema: { columns, rowCount: totalRows, filePath: this.filePath },
       result,
@@ -431,65 +491,76 @@ export class WranglingSession {
   }
 
   async getStatistics(): Promise<ColumnStatistics[]> {
+    const revision = this.revision;
+    if (this.statisticsCache?.revision === revision) return this.statisticsCache.value;
     const sql = this.getSql();
-    const described = await this.connection.query(
-      `DESCRIBE SELECT * FROM (${sql}) AS pipeline_schema`,
-    );
-    return Promise.all(
-      described.rows.map(async (row) => {
-        const name = String(row[0]);
-        const type = String(row[1]);
-        const id = quoteIdentifier(name);
-        const normalizedType = type.toUpperCase().trim();
-        const numeric =
-          /^(?:U?TINYINT|U?SMALLINT|U?INTEGER|U?BIGINT|UHUGEINT|HUGEINT|FLOAT|REAL|DOUBLE|DECIMAL(?:\([^)]*\))?)$/.test(
-            normalizedType,
+    const columns = await this.getColumns(sql);
+
+    // Bound concurrency to avoid exhausting DuckDB connections on wide schemas.
+    const CONCURRENCY = 8;
+    const results: ColumnStatistics[] = [];
+    for (let i = 0; i < columns.length; i += CONCURRENCY) {
+      const batch = columns.slice(i, i + CONCURRENCY);
+      const batchResults = await Promise.all(
+        batch.map(async ({ name, type }) => {
+          const id = quoteIdentifier(name);
+          const normalizedType = type.toUpperCase().trim();
+          const numeric =
+            /^(?:U?TINYINT|U?SMALLINT|U?INTEGER|U?BIGINT|UHUGEINT|HUGEINT|FLOAT|REAL|DOUBLE|DECIMAL(?:\([^)]*\))?)$/.test(
+              normalizedType,
+            );
+          const orderedScalar =
+            numeric ||
+            /^(?:VARCHAR|CHAR(?:\([^)]*\))?|BPCHAR|BOOLEAN|DATE|TIME(?: WITH TIME ZONE)?|TIMESTAMP(?: WITH TIME ZONE)?|TIMESTAMP_[A-Z]+|UUID)$/.test(
+              normalizedType,
+            );
+          const aggregates = [
+            `COUNT(*) - COUNT(${id})`,
+            `COUNT(DISTINCT ${id})`,
+            ...(orderedScalar ? [`MIN(${id})`, `MAX(${id})`] : []),
+            ...(numeric
+              ? [
+                  `AVG(${id})`,
+                  `QUANTILE_CONT(${id}, 0.5)`,
+                  `QUANTILE_CONT(${id}, 0.9)`,
+                  `QUANTILE_CONT(${id}, 0.99)`,
+                ]
+              : []),
+          ];
+          const result = await this.connection.query(
+            `SELECT ${aggregates.join(', ')} FROM (${sql}) AS pipeline_stats`,
           );
-        const orderedScalar =
-          numeric ||
-          /^(?:VARCHAR|CHAR(?:\([^)]*\))?|BPCHAR|BOOLEAN|DATE|TIME(?: WITH TIME ZONE)?|TIMESTAMP(?: WITH TIME ZONE)?|TIMESTAMP_[A-Z]+|UUID)$/.test(
-            normalizedType,
-          );
-        const aggregates = [
-          `COUNT(*) - COUNT(${id})`,
-          `COUNT(DISTINCT ${id})`,
-          ...(orderedScalar ? [`MIN(${id})`, `MAX(${id})`] : []),
-          ...(numeric
-            ? [
-                `AVG(${id})`,
-                `QUANTILE_CONT(${id}, 0.5)`,
-                `QUANTILE_CONT(${id}, 0.9)`,
-                `QUANTILE_CONT(${id}, 0.99)`,
-              ]
-            : []),
-        ];
-        const result = await this.connection.query(
-          `SELECT ${aggregates.join(', ')} FROM (${sql}) AS pipeline_stats`,
-        );
-        const values = result.rows[0] ?? [];
-        const numberAt = (index: number): number | undefined => {
-          if (values[index] === null || values[index] === undefined) return undefined;
-          const value = Number(values[index]);
-          return Number.isFinite(value) ? value : undefined;
-        };
-        return {
-          name,
-          type,
-          nullCount: Number(values[0] ?? 0),
-          distinctCount: Number(values[1] ?? 0),
-          min: orderedScalar ? values[2] : undefined,
-          max: orderedScalar ? values[3] : undefined,
-          mean: numeric ? numberAt(4) : undefined,
-          p50: numeric ? numberAt(5) : undefined,
-          p90: numeric ? numberAt(6) : undefined,
-          p99: numeric ? numberAt(7) : undefined,
-        };
-      }),
-    );
+          const values = result.rows[0] ?? [];
+          const numberAt = (index: number): number | undefined => {
+            if (values[index] === null || values[index] === undefined) return undefined;
+            const v = Number(values[index]);
+            return Number.isFinite(v) ? v : undefined;
+          };
+          return {
+            name,
+            type,
+            nullCount: Number(values[0] ?? 0),
+            distinctCount: Number(values[1] ?? 0),
+            min: orderedScalar ? values[2] : undefined,
+            max: orderedScalar ? values[3] : undefined,
+            mean: numeric ? numberAt(4) : undefined,
+            p50: numeric ? numberAt(5) : undefined,
+            p90: numeric ? numberAt(6) : undefined,
+            p99: numeric ? numberAt(7) : undefined,
+          };
+        }),
+      );
+      results.push(...batchResults);
+    }
+    // Only cache if the pipeline hasn't changed while we were computing.
+    if (this.revision === revision) this.statisticsCache = { revision, value: results };
+    return results;
   }
 
-  async getQualitySummary(stats: ColumnStatistics[]): Promise<DataQualitySummary> {
-    const sql = this.getSql();
+  async getQualitySummary(
+    stats: ColumnStatistics[],
+    sql = this.getSql(),
+  ): Promise<DataQualitySummary> {
     const duplicateResult = await this.connection.query(
       `SELECT (SELECT COUNT(*) FROM (${sql}) AS all_rows) - (SELECT COUNT(*) FROM (SELECT DISTINCT * FROM (${sql}) AS distinct_source) AS distinct_rows)`,
     );

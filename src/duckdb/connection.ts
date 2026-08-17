@@ -3,6 +3,10 @@ import * as vscode from 'vscode';
 
 import { QueryResult, DataWranglerConfig } from '../types/index.js';
 
+export interface DuckDBTransaction {
+  query(sql: string): Promise<QueryResult>;
+}
+
 let outputChannel: vscode.OutputChannel;
 
 function log(message: string): void {
@@ -57,6 +61,19 @@ export class DuckDBConnection {
         log(`Maximum temp directory size set to ${this.config.maxTempDirectorySize}`);
       }
 
+      if (this.config.threads > 0) {
+        const conn = await this.instance.connect();
+        await conn.run(`SET threads=${Math.floor(this.config.threads)}`);
+        conn.closeSync();
+        log(`Worker threads set to ${Math.floor(this.config.threads)}`);
+      }
+
+      const conn = await this.instance.connect();
+      await conn.run(
+        `SET preserve_insertion_order=${this.config.preserveInsertionOrder ? 'true' : 'false'}`,
+      );
+      conn.closeSync();
+
       const configuredExtensions = Array.isArray(this.config.autoLoadExtensions)
         ? this.config.autoLoadExtensions
         : this.config.autoLoadExtensions
@@ -90,19 +107,7 @@ export class DuckDBConnection {
       log(`Executing query: ${sql.substring(0, 200)}...`);
       const conn = await this.instance.connect();
       try {
-        const result = await conn.run(sql);
-        const rows = await result.getRowsJson();
-        const columns = result.columnNames();
-        const duration = Date.now() - startTime;
-
-        log(`Query completed in ${duration}ms, returned ${rows.length} rows`);
-
-        return {
-          columns,
-          rows,
-          rowCount: rows.length,
-          duration,
-        };
+        return await this.runQuery(conn, sql, startTime);
       } finally {
         conn.closeSync();
       }
@@ -110,6 +115,44 @@ export class DuckDBConnection {
       logError('Query execution failed', error);
       throw error;
     }
+  }
+
+  async transaction<T>(callback: (transaction: DuckDBTransaction) => Promise<T>): Promise<T> {
+    if (!this.instance) {
+      throw new Error('DuckDB not connected. Call connect() first.');
+    }
+    const conn = await this.instance.connect();
+    try {
+      await conn.run('BEGIN TRANSACTION');
+      const value = await callback({
+        query: (sql) => this.runQuery(conn, sql, Date.now()),
+      });
+      await conn.run('COMMIT');
+      return value;
+    } catch (error) {
+      try {
+        await conn.run('ROLLBACK');
+      } catch (rollbackError) {
+        logError('Transaction rollback failed', rollbackError);
+      }
+      throw error;
+    } finally {
+      conn.closeSync();
+    }
+  }
+
+  private async runQuery(
+    conn: Awaited<ReturnType<DuckDBInstance['connect']>>,
+    sql: string,
+    startTime: number,
+  ): Promise<QueryResult> {
+    log(`Executing query: ${sql.substring(0, 200)}...`);
+    const result = await conn.run(sql);
+    const rows = await result.getRowsJson();
+    const columns = result.columnNames();
+    const duration = Date.now() - startTime;
+    log(`Query completed in ${duration}ms, returned ${rows.length} rows`);
+    return { columns, rows, rowCount: rows.length, duration };
   }
 
   async getSchema(filePath: string): Promise<{ columns: string[]; types: string[] }> {

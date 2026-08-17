@@ -5,11 +5,13 @@ interface HeaderProps {
   rowCount: number;
   columnCount: number;
   isLoading: boolean;
+  aiLoading?: boolean;
   onRefresh: () => void;
+  onGenerateAI: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = React.memo(
-  ({ fileName, rowCount, columnCount, isLoading, onRefresh }) => {
+  ({ fileName, rowCount, columnCount, isLoading, aiLoading = false, onRefresh, onGenerateAI }) => {
     return (
       <header className="header">
         <div className="header-top">
@@ -25,13 +27,26 @@ export const Header: React.FC<HeaderProps> = React.memo(
             )}
           </div>
           <div className="header-actions">
-            <div className="engine-selector">
-              <div className="engine-btn active" title="Powered by DuckDB">
-                <span className="engine-icon">🦆</span>
-                <span className="engine-label">DuckDB</span>
-              </div>
-            </div>
             {isLoading && <div className="loading-spinner" aria-label="Loading" />}
+            {fileName && (
+              <button
+                className="ai-plan-btn"
+                onClick={onGenerateAI}
+                disabled={isLoading || aiLoading}
+                title={
+                  aiLoading
+                    ? 'AI plan in progress…'
+                    : 'Describe a goal and let AI plan visual transforms'
+                }
+                aria-label={
+                  aiLoading ? 'AI plan in progress' : 'Generate visual transforms with AI'
+                }
+                aria-busy={aiLoading}
+              >
+                <span className="ai-plan-icon">{aiLoading ? '⏳' : '✦'}</span>
+                <span>{aiLoading ? 'AI planning…' : 'AI plan'}</span>
+              </button>
+            )}
             <button
               className="refresh-btn"
               onClick={onRefresh}

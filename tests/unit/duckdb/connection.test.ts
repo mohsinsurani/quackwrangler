@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
     getRowsJson: vi.fn().mockResolvedValue([[1]]),
     columnNames: vi.fn().mockReturnValue(['id']),
   }),
+  closeSync: vi.fn(),
 }));
 
 vi.mock('vscode', () => ({
@@ -24,7 +25,7 @@ vi.mock('@duckdb/node-api', () => ({
       connect: vi.fn().mockResolvedValue({
         all: vi.fn().mockResolvedValue([]),
         run: mocks.run,
-        closeSync: vi.fn(),
+        closeSync: mocks.closeSync,
       }),
     }),
   },
@@ -44,6 +45,11 @@ describe('DuckDBConnection', () => {
         maxTempDirectorySize: '15GB',
         autoLoadExtensions: false,
         pageSize: 100,
+        maxRowsPreview: 10000,
+        loadingMode: 'auto',
+        eagerFileSizeLimitMb: 64,
+        threads: 0,
+        preserveInsertionOrder: false,
       },
       {
         appendLine: mocks.appendLine,
@@ -58,6 +64,7 @@ describe('DuckDBConnection', () => {
       await connection.connect();
       expect(connection.isConnected()).toBe(true);
       expect(mocks.run).toHaveBeenCalledWith("SET max_temp_directory_size='15GB'");
+      expect(mocks.run).toHaveBeenCalledWith('SET preserve_insertion_order=false');
     });
 
     it('escapes a configured temporary directory before applying the DuckDB setting', async () => {
@@ -69,6 +76,10 @@ describe('DuckDBConnection', () => {
           autoLoadExtensions: false,
           pageSize: 100,
           maxRowsPreview: 10000,
+          loadingMode: 'auto',
+          eagerFileSizeLimitMb: 64,
+          threads: 4,
+          preserveInsertionOrder: true,
         },
         { appendLine: mocks.appendLine } as never,
       );
@@ -76,6 +87,8 @@ describe('DuckDBConnection', () => {
       await connection.connect();
 
       expect(mocks.run).toHaveBeenCalledWith("SET temp_directory='/tmp/quack''s-spill'");
+      expect(mocks.run).toHaveBeenCalledWith('SET threads=4');
+      expect(mocks.run).toHaveBeenCalledWith('SET preserve_insertion_order=true');
     });
   });
 
@@ -88,6 +101,39 @@ describe('DuckDBConnection', () => {
 
     it('should throw error if not connected', async () => {
       await expect(connection.query('SELECT 1')).rejects.toThrow('DuckDB not connected');
+    });
+  });
+
+  describe('transaction', () => {
+    it('commits callback queries on one native connection', async () => {
+      await connection.connect();
+      mocks.run.mockClear();
+
+      await connection.transaction(async (transaction) => {
+        await transaction.query('DROP VIEW IF EXISTS "current_data"');
+      });
+
+      expect(mocks.run.mock.calls.map(([sql]) => sql)).toEqual([
+        'BEGIN TRANSACTION',
+        'DROP VIEW IF EXISTS "current_data"',
+        'COMMIT',
+      ]);
+    });
+
+    it('rolls back and preserves the operation error', async () => {
+      await connection.connect();
+      mocks.run.mockClear();
+      mocks.run.mockImplementationOnce(async () => ({
+        getRowsJson: vi.fn().mockResolvedValue([]),
+        columnNames: vi.fn().mockReturnValue([]),
+      }));
+
+      await expect(
+        connection.transaction(async () => {
+          throw new Error('promotion failed');
+        }),
+      ).rejects.toThrow('promotion failed');
+      expect(mocks.run).toHaveBeenCalledWith('ROLLBACK');
     });
   });
 

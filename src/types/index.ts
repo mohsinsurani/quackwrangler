@@ -73,47 +73,94 @@ export interface DataWranglerConfig {
   autoLoadExtensions: boolean | string[];
   pageSize: number;
   maxRowsPreview: number;
+  loadingMode: 'auto' | 'eager' | 'lazy';
+  eagerFileSizeLimitMb: number;
+  threads: number;
+  preserveInsertionOrder: boolean;
+}
+
+interface RequestMessage {
+  requestId?: string;
 }
 
 export type WebviewMessage =
-  | { type: 'executeCustomQuery'; sql: string }
-  | { type: 'clearCustomQuery' }
-  | { type: 'applyTransform'; transform: TransformOperation }
-  | { type: 'exportData'; format: 'parquet' | 'csv' | 'json'; outputPath?: string }
-  | { type: 'undo' }
-  | { type: 'redo' }
-  | { type: 'pageChange'; offset: number; limit: number }
-  | { type: 'openFilePicker' }
-  | { type: 'openFolderPicker' }
-  | { type: 'selectSecondaryFile' }
-  | { type: 'refresh' }
-  | { type: 'removeTransform'; id: string }
-  | { type: 'reorderTransforms'; sourceId: string; targetId: string }
-  | { type: 'searchRows'; query: string }
-  | { type: 'requestChart'; chart: ChartRequest }
-  | { type: 'getStats' }
-  | { type: 'ready' };
+  | ({ type: 'executeCustomQuery'; sql: string } & RequestMessage)
+  | ({ type: 'clearCustomQuery' } & RequestMessage)
+  | ({ type: 'applyTransform'; transform: TransformOperation } & RequestMessage)
+  | ({
+      type: 'exportData';
+      format: 'parquet' | 'csv' | 'json';
+      outputPath?: string;
+    } & RequestMessage)
+  | ({ type: 'undo' } & RequestMessage)
+  | ({ type: 'redo' } & RequestMessage)
+  | ({ type: 'pageChange'; offset: number; limit: number } & RequestMessage)
+  | ({ type: 'openFilePicker' } & RequestMessage)
+  | ({ type: 'openFolderPicker' } & RequestMessage)
+  | ({ type: 'selectSecondaryFile' } & RequestMessage)
+  | ({ type: 'refresh' } & RequestMessage)
+  | ({ type: 'removeTransform'; id: string } & RequestMessage)
+  | ({ type: 'reorderTransforms'; sourceId: string; targetId: string } & RequestMessage)
+  | ({ type: 'searchRows'; query: string } & RequestMessage)
+  | ({ type: 'requestChart'; chart: ChartRequest } & RequestMessage)
+  | ({ type: 'getStats' } & RequestMessage)
+  | ({ type: 'generateAITransforms' } & RequestMessage)
+  | ({ type: 'ready' } & RequestMessage);
+
+interface ResponseContext {
+  requestId?: string;
+}
+
+interface SessionContext {
+  sessionId: string;
+  revision: number;
+}
 
 export type ExtensionMessage =
-  | { type: 'loadingProgress'; percent: number; message: string; source: string }
-  | { type: 'customQueryResult'; schema: TableSchema; result: QueryResult; page: PageInfo }
-  | {
+  | ({
+      type: 'loadingProgress';
+      percent: number;
+      message: string;
+      source: string;
+    } & ResponseContext)
+  | ({
+      type: 'customQueryResult';
+      schema: TableSchema;
+      result: QueryResult;
+      page: PageInfo;
+    } & ResponseContext &
+      SessionContext)
+  | ({
       type: 'searchResult';
       schema: TableSchema;
       result: QueryResult;
       page: PageInfo;
       query: string;
-    }
-  | { type: 'error'; message: string }
-  | { type: 'exportComplete'; outputPath: string }
-  | {
+    } & ResponseContext &
+      SessionContext)
+  | ({ type: 'error'; message: string } & ResponseContext)
+  | ({
+      type: 'exportComplete';
+      outputPath: string;
+      status: 'completed' | 'cancelled';
+    } & ResponseContext)
+  | ({
+      type: 'aiComplete';
+      status: 'applied' | 'cancelled' | 'discarded' | 'empty';
+    } & ResponseContext)
+  | ({
       type: 'sessionUpdated';
       protocolVersion: number;
       schema: TableSchema;
       result: QueryResult;
       history: TransformOperation[];
       page: PageInfo;
-    }
-  | { type: 'stats'; stats: ColumnStatistics[]; quality: DataQualitySummary }
-  | { type: 'chartResult'; chart: ChartRequest; result: QueryResult }
-  | { type: 'secondaryFileSelected'; filePath: string; columns: ColumnInfo[] };
+      canUndo: boolean;
+      canRedo: boolean;
+    } & ResponseContext &
+      SessionContext)
+  | ({ type: 'stats'; stats: ColumnStatistics[]; quality: DataQualitySummary } & ResponseContext &
+      SessionContext)
+  | ({ type: 'chartResult'; chart: ChartRequest; result: QueryResult } & ResponseContext &
+      SessionContext)
+  | ({ type: 'secondaryFileSelected'; filePath: string; columns: ColumnInfo[] } & ResponseContext);

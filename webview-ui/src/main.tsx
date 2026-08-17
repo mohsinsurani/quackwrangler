@@ -7,6 +7,15 @@ import './styles/theme.css';
 declare const acquireVsCodeApi: (() => unknown) | undefined;
 
 const rootElement = document.getElementById('root');
+const isDevelopment = (import.meta as ImportMeta & { env: { DEV: boolean } }).env.DEV;
+
+if (isDevelopment && typeof acquireVsCodeApi === 'undefined') {
+  (globalThis as typeof globalThis & { acquireVsCodeApi?: () => unknown }).acquireVsCodeApi =
+    () => ({
+      postMessage: (message: unknown) =>
+        window.postMessage({ ...(message as object), __fromWebview: true }, window.location.origin),
+    });
+}
 
 if (!rootElement) {
   throw new Error('Root element not found');
@@ -18,9 +27,9 @@ ReactDOM.createRoot(rootElement).render(
   </React.StrictMode>,
 );
 
-const isDevelopment = (import.meta as ImportMeta & { env: { DEV: boolean } }).env.DEV;
-
-if (isDevelopment && typeof acquireVsCodeApi === 'undefined') {
+if (isDevelopment) {
+  const sessionId = 'preview-session';
+  const revision = 1;
   const columns = [
     { name: 'country', type: 'VARCHAR', nullable: false },
     { name: 'year', type: 'INTEGER', nullable: false },
@@ -42,7 +51,9 @@ if (isDevelopment && typeof acquireVsCodeApi === 'undefined') {
     window.postMessage(
       {
         type: 'sessionUpdated',
-        protocolVersion: 2,
+        protocolVersion: 3,
+        sessionId,
+        revision,
         schema: { columns, rowCount: 12_450, filePath: '/preview/world_cup.csv' },
         result: { rows },
         history: [
@@ -71,62 +82,158 @@ if (isDevelopment && typeof acquireVsCodeApi === 'undefined') {
       },
       '*',
     );
-    window.postMessage(
-      {
-        type: 'stats',
-        stats: columns.map((column, index) => ({
-          name: column.name,
-          type: column.type,
-          nullCount: index < 2 ? 0 : index * 17,
-          distinctCount: 20 + index * 31,
-          min: /INT|DOUBLE/.test(column.type) ? index : 'Argentina',
-          max: /INT|DOUBLE/.test(column.type) ? 125_000 + index : 'Stadium 99',
-          mean: /INT|DOUBLE/.test(column.type) ? 42_000 + index : undefined,
-          p50: /INT|DOUBLE/.test(column.type) ? 35_000 : undefined,
-          p90: /INT|DOUBLE/.test(column.type) ? 91_000 : undefined,
-          p99: /INT|DOUBLE/.test(column.type) ? 119_000 : undefined,
-        })),
-        quality: {
-          issues: [
-            {
-              severity: 'warning',
-              kind: 'nulls',
-              message: 'attendance contains 34 null values',
-              column: 'attendance',
-              count: 34,
-            },
-            {
-              severity: 'info',
-              kind: 'outliers',
-              message: 'revenue contains 12 potential outliers',
-              column: 'revenue',
-              count: 12,
-            },
-          ],
-        },
-      },
-      '*',
-    );
-    window.postMessage(
-      {
-        type: 'chartResult',
-        chart: {
-          type: 'correlation',
-          xColumn: 'year',
-          columns: ['year', 'attendance', 'revenue'],
-        },
-        result: {
-          rows: [
-            ['year', 'year', 1],
-            ['year', 'attendance', 0.78],
-            ['year', 'revenue', 0.64],
-            ['attendance', 'attendance', 1],
-            ['attendance', 'revenue', 0.87],
-            ['revenue', 'revenue', 1],
-          ],
-        },
-      },
-      '*',
-    );
   }, 50);
+
+  // Respond to webview messages that the real extension host would handle,
+  // so interactive actions don't leave the preview stuck in a loading state.
+  window.addEventListener('message', (event: MessageEvent) => {
+    if (!event.data || typeof event.data.type !== 'string' || !event.data.__fromWebview) return;
+    const { type, requestId } = event.data as { type: string; requestId?: string };
+    const replySession = () =>
+      window.postMessage(
+        {
+          type: 'sessionUpdated',
+          protocolVersion: 3,
+          requestId,
+          sessionId,
+          revision,
+          schema: { columns, rowCount: 12_450, filePath: '/preview/world_cup.csv' },
+          result: { rows: rows.slice(0, 100) },
+          history: [],
+          page: { offset: 0, limit: 100, totalRows: 12_450 },
+          canUndo: false,
+          canRedo: false,
+        },
+        '*',
+      );
+    if (
+      [
+        'applyTransform',
+        'undo',
+        'redo',
+        'removeTransform',
+        'reorderTransforms',
+        'refresh',
+        'clearCustomQuery',
+      ].includes(type)
+    ) {
+      setTimeout(replySession, 80);
+    } else if (type === 'searchRows') {
+      setTimeout(
+        () =>
+          window.postMessage(
+            {
+              type: 'searchResult',
+              schema: { columns, rowCount: 0, filePath: '/preview/world_cup.csv' },
+              result: { rows: [] },
+              page: { offset: 0, limit: 100, totalRows: 0 },
+              query: event.data.query,
+              requestId,
+              sessionId,
+              revision,
+            },
+            '*',
+          ),
+        80,
+      );
+    } else if (type === 'executeCustomQuery') {
+      setTimeout(
+        () =>
+          window.postMessage(
+            {
+              type: 'customQueryResult',
+              schema: { columns, rowCount: 0, filePath: '/preview/world_cup.csv' },
+              result: { rows: [] },
+              page: { offset: 0, limit: 100, totalRows: 0 },
+              requestId,
+              sessionId,
+              revision,
+            },
+            '*',
+          ),
+        80,
+      );
+    } else if (type === 'exportData') {
+      setTimeout(
+        () =>
+          window.postMessage(
+            { type: 'exportComplete', outputPath: '', status: 'cancelled', requestId },
+            '*',
+          ),
+        80,
+      );
+    } else if (type === 'pageChange') {
+      setTimeout(replySession, 80);
+    } else if (type === 'getStats') {
+      setTimeout(
+        () =>
+          window.postMessage(
+            {
+              type: 'stats',
+              stats: columns.map((column, index) => ({
+                name: column.name,
+                type: column.type,
+                nullCount: index < 2 ? 0 : index * 17,
+                distinctCount: 20 + index * 31,
+              })),
+              quality: {
+                duplicateRows: 0,
+                issues: [
+                  {
+                    severity: 'warning',
+                    kind: 'nulls',
+                    message: 'attendance contains 34 null values',
+                    column: 'attendance',
+                    count: 34,
+                  },
+                  {
+                    severity: 'info',
+                    kind: 'outliers',
+                    message: 'revenue contains 12 potential outliers',
+                    column: 'revenue',
+                    count: 12,
+                  },
+                ],
+              },
+              requestId,
+              sessionId,
+              revision,
+            },
+            '*',
+          ),
+        80,
+      );
+    } else if (type === 'requestChart') {
+      setTimeout(
+        () =>
+          window.postMessage(
+            {
+              type: 'chartResult',
+              chart: event.data.chart ?? {
+                type: 'correlation',
+                xColumn: 'year',
+                columns: ['year', 'attendance', 'revenue'],
+              },
+              result: {
+                rows: [
+                  ['year', 'year', 1],
+                  ['year', 'attendance', 0.78],
+                  ['attendance', 'attendance', 1],
+                ],
+              },
+              requestId,
+              sessionId,
+              revision,
+            },
+            '*',
+          ),
+        80,
+      );
+    } else if (type === 'generateAITransforms') {
+      setTimeout(
+        () => window.postMessage({ type: 'aiComplete', status: 'cancelled', requestId }, '*'),
+        80,
+      );
+    }
+  });
 }

@@ -199,6 +199,10 @@ export const DataGrid: React.FC<DataGridProps> = ({
   }, []);
 
   useEffect(() => {
+    if (!onRowSelect) setLocalSelectedRows(new Set());
+  }, [rows, onRowSelect]);
+
+  useEffect(() => {
     if (!quickFilterMenu) return;
     const close = () => setQuickFilterMenu(null);
     window.addEventListener('click', close);
@@ -208,6 +212,23 @@ export const DataGrid: React.FC<DataGridProps> = ({
       window.removeEventListener('blur', close);
     };
   }, [quickFilterMenu]);
+
+  useEffect(() => {
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || event.defaultPrevented) return;
+      if (quickFilterMenu) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        setQuickFilterMenu(null);
+      } else if (inspectedCell) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        setInspectedCell(null);
+      }
+    };
+    window.addEventListener('keydown', handleEscape);
+    return () => window.removeEventListener('keydown', handleEscape);
+  }, [inspectedCell, quickFilterMenu]);
 
   const visibleRange = useMemo(() => {
     const bodyScrollTop = Math.max(
@@ -291,10 +312,10 @@ export const DataGrid: React.FC<DataGridProps> = ({
     [onRowSelect],
   );
 
-  const allRowsSelected = rows.length > 0 && effectiveSelectedRows.size === rows.length;
   const selectedRowIndexes = [...effectiveSelectedRows]
     .filter((index) => index >= 0 && index < rows.length)
     .sort((left, right) => left - right);
+  const allRowsSelected = rows.length > 0 && selectedRowIndexes.length === rows.length;
 
   const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
     setScrollTop(e.currentTarget.scrollTop);
@@ -392,7 +413,9 @@ export const DataGrid: React.FC<DataGridProps> = ({
                 onChange={() => {
                   if (onRowSelect) {
                     rows.forEach((_, index) => {
-                      if (allRowsSelected === selectedRows.has(index)) onRowSelect(index);
+                      if (allRowsSelected ? selectedRows.has(index) : !selectedRows.has(index)) {
+                        onRowSelect(index);
+                      }
                     });
                   } else {
                     setLocalSelectedRows(
@@ -408,6 +431,15 @@ export const DataGrid: React.FC<DataGridProps> = ({
               <div
                 key={col.name}
                 className={`data-grid-cell header-cell ${sortBy === col.name ? 'sorted' : ''}`}
+                role="columnheader"
+                tabIndex={onSort ? 0 : undefined}
+                aria-sort={
+                  sortBy === col.name
+                    ? sortDirection === 'asc'
+                      ? 'ascending'
+                      : 'descending'
+                    : 'none'
+                }
                 onClick={(event) => {
                   if (
                     resizingColumnRef.current ||
@@ -415,6 +447,16 @@ export const DataGrid: React.FC<DataGridProps> = ({
                   )
                     return;
                   onSort?.(col.name);
+                }}
+                onKeyDown={(event) => {
+                  if ((event.key === 'Enter' || event.key === ' ') && onSort) {
+                    event.preventDefault();
+                    if (
+                      !(event.target as HTMLElement).closest('.column-resizer, .column-autofit')
+                    ) {
+                      onSort(col.name);
+                    }
+                  }
                 }}
               >
                 <span className="column-name">{col.name}</span>
@@ -469,7 +511,7 @@ export const DataGrid: React.FC<DataGridProps> = ({
                     key={rowIndex}
                     className={`data-grid-row ${isSelected ? 'selected' : ''}`}
                     style={{ gridTemplateColumns, minWidth: gridMinWidth, height: rowHeight }}
-                    onClick={() => onRowSelect?.(rowIndex)}
+                    onClick={() => toggleRowSelection(rowIndex)}
                   >
                     <div className="data-grid-cell row-number">
                       <label className="row-selector">

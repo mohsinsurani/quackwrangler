@@ -4,7 +4,7 @@ import path from 'path';
 import { describe, expect, it } from 'vitest';
 
 describe('QuackWrangler custom editor contribution', () => {
-  it('registers only Parquet with default editor priority', () => {
+  it('registers Parquet, CSV, and XLSX with default editor priority', () => {
     const manifest = JSON.parse(
       fs.readFileSync(path.resolve(process.cwd(), 'package.json'), 'utf8'),
     ) as {
@@ -20,7 +20,11 @@ describe('QuackWrangler custom editor contribution', () => {
 
     expect(editor.viewType).toBe('quackwrangler.dataEditor');
     expect(editor.priority).toBe('default');
-    expect(editor.selector.map((item) => item.filenamePattern)).toEqual(['*.parquet']);
+    expect(editor.selector.map((item) => item.filenamePattern)).toEqual([
+      '*.parquet',
+      '*.csv',
+      '*.xlsx',
+    ]);
   });
 
   it('registers release-critical commands, formats, and privacy settings', () => {
@@ -35,7 +39,7 @@ describe('QuackWrangler custom editor contribution', () => {
       };
     };
     const commands = manifest.contributes.commands.map((item) => item.command);
-    expect(manifest.version).toBe('0.1.5');
+    expect(manifest.version).toBe('0.2.0');
     expect(commands).toEqual(
       expect.arrayContaining([
         'quackwrangler.openRemoteData',

@@ -19,13 +19,14 @@ export interface TransformStep {
 
 export type ExportFormat = 'parquet' | 'csv' | 'json';
 
-export type WebviewMessage =
+export type WebviewMessage = (
   | { type: 'ready' }
   | { type: 'openFilePicker' }
   | { type: 'openFolderPicker' }
   | { type: 'selectSecondaryFile' }
   | { type: 'refresh' }
   | { type: 'getStats' }
+  | { type: 'generateAITransforms' }
   | {
       type: 'applyTransform';
       transform: {
@@ -52,7 +53,8 @@ export type WebviewMessage =
         aggregation?: 'COUNT' | 'SUM' | 'AVG' | 'MIN' | 'MAX';
       };
     }
-  | { type: 'exportData'; format: ExportFormat; outputPath?: string };
+  | { type: 'exportData'; format: ExportFormat; outputPath?: string }
+) & { requestId?: string };
 
 export interface ExtensionMessage {
   type: string;

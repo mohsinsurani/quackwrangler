@@ -53,4 +53,17 @@ describe('Open in QuackWrangler', () => {
       DATA_EDITOR_VIEW_TYPE,
     );
   });
+
+  it.each(['/readonly/project/data.csv', '/readonly/project/data.xlsx'])(
+    'opens %s in the visual custom editor',
+    async (filePath) => {
+      await openFile(filePath);
+
+      expect(mocks.executeCommand).toHaveBeenCalledWith(
+        'vscode.openWith',
+        { fsPath: filePath },
+        DATA_EDITOR_VIEW_TYPE,
+      );
+    },
+  );
 });

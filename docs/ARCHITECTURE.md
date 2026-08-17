@@ -51,12 +51,12 @@ The webview never reads the file system. The extension host owns file dialogs, p
 
 1. A custom editor, command, recent-file item, or folder-tree item supplies a path.
 2. `parquet-loader.ts` maps its extension to one DuckDB reader.
-3. DuckDB materializes the source as `current_data` for a stable session boundary.
+3. Automatic loading materializes small local sources behind a panel-unique view; large and remote sources use a lazy panel-unique view over the reader. Users can force either mode. Reloads build a unique staging relation and promote it in one DuckDB transaction so failure preserves the previous relation.
 4. `WranglingSession` starts with empty transform history.
 5. The extension sends schema, one bounded result page, page metadata, and history.
 6. The webview requests profiles separately so the grid can appear first.
 
-Only Parquet is registered with default custom-editor priority. Local Parquet paths selected through QuackWrangler commands are routed through the same `vscode.openWith` custom-editor flow. Other supported formats keep their existing VS Code editor association and open visually only when the user invokes QuackWrangler.
+Parquet, CSV, and XLSX are registered with default custom-editor priority. Local paths in those formats selected through QuackWrangler commands are routed through the same `vscode.openWith` custom-editor flow. Other supported formats keep their existing VS Code editor association and open visually only when the user invokes QuackWrangler. Explicit user editor associations can still override these defaults.
 
 Supported extensions have one TypeScript source of truth in `DATA_FILE_EXTENSIONS`. The VS Code manifest must also be updated when a format is added because contribution points are declarative JSON.
 
@@ -81,7 +81,7 @@ Add unit and DuckDB integration coverage for both generation and execution.
 
 ## Paging and rendering
 
-DuckDB calculates against the full transformed relation. The extension sends 100-row pages by default. The grid virtualizes even that bounded page so row wrapping and large editor sizes remain responsive. Profiles, headers, and rows share one CSS grid template and horizontal scroll surface.
+DuckDB calculates against the full transformed relation. The extension sends 100-row pages by default. A session caches schema, transformed row count, and column statistics until transform history changes. Search uses a window count with its bounded result page rather than scanning the filtered relation twice in the common case. The grid virtualizes even that bounded page so row wrapping and large editor sizes remain responsive. Profiles, headers, and rows share one CSS grid template and horizontal scroll surface.
 
 Column profiling is type-aware. Numeric aggregates are never applied to struct, list, map, union, JSON, or other nested values. Chart queries are generated in the extension and return bounded aggregates or points.
 
@@ -89,13 +89,13 @@ Nested cells open in a recursive tree inside the grid inspector. The browser bui
 
 ## Queries and exports
 
-The custom query console accepts one `SELECT`, `WITH`, or `VALUES` statement. Mutation statements and multiple statements are rejected. Queries run against `current_data` and show their own paginated result state.
+The custom query console accepts one `SELECT`, `WITH`, or `VALUES` statement. Mutation statements and multiple statements are rejected. For each query, `current_data` is a scoped CTE over that panel's current transform pipeline. Queries show their own paginated result state, and exports use the active query while it is visible.
 
 Exports use DuckDB `COPY` over the full pipeline SQL, not the visible page. CSV, JSON, and Parquet are supported.
 
 ## DuckDB temporary storage
 
-When the user has not configured `quackwrangler.duckdb.tempDirectory`, the extension creates a unique spill directory below `ExtensionContext.globalStorageUri`. This prevents DuckDB from attempting to create a relative `.tmp` directory in a read-only workspace or process directory. The directory is removed after connection failure or extension deactivation; cleanup failures are logged without masking the original error. User-configured directories are created when needed and are not deleted by QuackWrangler.
+When the user has not configured `quackwrangler.duckdb.tempDirectory`, the extension creates a unique spill directory below `ExtensionContext.globalStorageUri`. This prevents DuckDB from attempting to create a relative `.tmp` directory in a read-only workspace or process directory. The directory is removed after connection failure or extension deactivation; cleanup failures are logged without masking the original error. User-configured directories are created when needed and are not deleted by QuackWrangler. Memory, spill size, worker threads, and insertion-order preservation are applied when the in-memory instance starts. Insertion order is preserved by default so unsorted previews follow source order; users can disable it for lower memory use on large data.
 
 ## Lightweight dbt context
 
@@ -105,7 +105,7 @@ Remote HTTPS and S3 paths flow through the same reader mapping as local files. T
 
 ## AI transform planning
 
-AI is command-driven and opt-in. The API key is stored in VS Code SecretStorage. The request contains the user instruction plus column name, DuckDB type, and nullability only. Structured output is constrained to an allow-list of visual operations, parsed and validated locally, displayed for confirmation, and then rebuilt through `WranglingSession.apply`. Raw SQL and automatic execution are not accepted. If any generated step fails validation, steps added by that plan are rolled back.
+AI is opt-in and can be triggered from the open editor or Command Palette. The API key is stored in VS Code SecretStorage. Provider, HTTPS base URL, model, and bounded timeout settings are validated before requests. The request contains the user instruction, current transform history, and column name, DuckDB type, and nullability only. Structured output uses strict per-operation parameter schemas, is validated again locally, displayed for confirmation, and then rebuilt through `WranglingSession.apply`. Raw SQL and automatic execution are not accepted. If any generated step fails validation, steps added by that plan are rolled back.
 
 ## Schema comparison
 
@@ -125,7 +125,7 @@ Join and union forms ask the extension host to select a second supported file. T
 
 `src/types/index.ts` is authoritative for extension-host messages. `webview-ui/src/types.ts` contains the webview-facing subset so the browser bundle does not import Node-oriented source.
 
-Main webview requests include `ready`, `applyTransform`, paging, search, chart requests, exports, file selection, and history actions. Main extension responses include `sessionUpdated`, remote loading progress, query/search/chart results, statistics, secondary-file metadata, export completion, and errors.
+Main webview requests include `ready`, `applyTransform`, paging, search, chart requests, exports, file selection, and history actions. Main extension responses include `sessionUpdated`, remote loading progress, query/search/chart results, statistics, secondary-file metadata, export completion, AI completion, and errors. Asynchronous requests carry an ID, and dataset-derived responses also carry a session ID and pipeline revision; the webview discards responses that no longer match the latest request and visible session.
 
 Extension-host messages are accepted only from the current webview origin. VS Code can relay those messages through an internal frame that is not the webview's immediate parent, so sender-frame identity is not used as a trust signal. Empty-state file and folder pickers load the selected file into their originating panel; choosing a folder recursively discovers supported files and asks the user which one to open.
 
@@ -149,9 +149,10 @@ DuckDB's Node binding contains platform-specific native libraries. QuackWrangler
 
 - Unit tests cover file detection, remote progress, SQL generation, connection setup, message/layout contracts, and grid serialization.
 - DuckDB integration tests execute every visible transform against an in-memory database.
-- `npm run typecheck`, `npm run lint`, `npm test`, and `npm run build` are required before review.
+- `npm run test:vscode` launches the installed VS Code executable with isolated user-data, extension, and workspace directories. It verifies real command registration, independent command-created panels, active-panel summarization, disposal, and reopening without mouse automation.
+- `npm run typecheck`, `npm run lint`, `npm test`, `npm run test:vscode`, and `npm run build` are required before review.
 
-The Operations panel starts as a labelled collapsed rail so the grid receives the maximum editor area while remaining discoverable. See `docs/QA_CHECKLIST.md` for the manual Extension Development Host checks that complement automated coverage.
+The Operations panel starts as a labelled collapsed rail so the grid receives the maximum editor area while remaining discoverable. Session updates include explicit undo/redo availability so controls and keyboard shortcuts reflect actual pipeline state. Successful visual transforms receive a bounded status toast; operation forms support Enter to apply and Escape to dismiss, while Escape also closes grid inspectors and quick-filter menus. The compact header exposes the labelled AI planning action without a non-interactive engine selector. See `docs/QA_CHECKLIST.md` for the manual Extension Development Host checks that complement automated coverage.
 
 ## Performance evidence
 

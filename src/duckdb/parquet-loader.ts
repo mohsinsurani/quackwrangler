@@ -1,9 +1,10 @@
+import { stat } from 'node:fs/promises';
 import * as path from 'path';
 
 import { TableSchema, ColumnInfo } from '../types/index.js';
 
 import { DuckDBConnection } from './connection.js';
-import { quoteLiteral } from './sql.js';
+import { quoteIdentifier, quoteLiteral } from './sql.js';
 
 export type FileType =
   | 'parquet'
@@ -17,6 +18,19 @@ export type FileType =
   | 'arrow'
   | 'orc'
   | 'unknown';
+
+export type LoadingMode = 'auto' | 'eager' | 'lazy';
+
+export async function resolveLoadingMode(
+  filePath: string,
+  mode: LoadingMode,
+  eagerFileSizeLimitMb: number,
+): Promise<'eager' | 'lazy'> {
+  if (mode !== 'auto') return mode;
+  if (/^(https?|s3):\/\//i.test(filePath)) return 'lazy';
+  const size = (await stat(filePath)).size;
+  return size <= eagerFileSizeLimitMb * 1024 * 1024 ? 'eager' : 'lazy';
+}
 
 const preparedExtensions = new WeakMap<DuckDBConnection, Set<string>>();
 
@@ -162,18 +176,49 @@ export async function getFileMetadata(
   };
 }
 
-export async function loadFile(connection: DuckDBConnection, filePath: string): Promise<void> {
+export async function loadFile(
+  connection: DuckDBConnection,
+  filePath: string,
+  mode: LoadingMode = 'auto',
+  eagerFileSizeLimitMb = 64,
+  relationName = 'current_data',
+): Promise<'eager' | 'lazy'> {
   const fileType = detectFileType(filePath);
   if (fileType === 'unknown') throw new Error(`Unsupported file type: ${filePath}`);
   if (/^(https?|s3):\/\//i.test(filePath)) await prepareRemoteReader(connection);
-  const tableName = 'current_data';
   await prepareFileReader(connection, fileType);
   const tableRef = getTableRef(filePath, fileType);
+  const resolvedMode = await resolveLoadingMode(filePath, mode, eagerFileSizeLimitMb);
+
+  const suffix = `${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
+  const stagingView = `${relationName}_staging_${suffix}`;
+  const stagingTable = `${relationName}_materialized_${suffix}`;
+  const finalTable = `${relationName}_materialized`;
+  const stagingViewId = quoteIdentifier(stagingView);
+  const stagingTableId = quoteIdentifier(stagingTable);
+  const finalViewId = quoteIdentifier(relationName);
+  const finalTableId = quoteIdentifier(finalTable);
 
   try {
-    await connection.query(`DROP TABLE IF EXISTS ${tableName}`);
-    await connection.query(`CREATE TABLE ${tableName} AS SELECT * FROM ${tableRef}`);
+    if (resolvedMode === 'eager') {
+      await connection.query(`CREATE TABLE ${stagingTableId} AS SELECT * FROM ${tableRef}`);
+    } else {
+      await connection.query(`CREATE VIEW ${stagingViewId} AS SELECT * FROM ${tableRef}`);
+    }
+    await connection.transaction(async (transaction) => {
+      await transaction.query(`DROP VIEW IF EXISTS ${finalViewId}`);
+      await transaction.query(`DROP TABLE IF EXISTS ${finalTableId}`);
+      if (resolvedMode === 'eager') {
+        await transaction.query(`ALTER TABLE ${stagingTableId} RENAME TO ${finalTableId}`);
+        await transaction.query(`CREATE VIEW ${finalViewId} AS SELECT * FROM ${finalTableId}`);
+      } else {
+        await transaction.query(`ALTER VIEW ${stagingViewId} RENAME TO ${finalViewId}`);
+      }
+    });
   } catch (error) {
+    await connection.query(`DROP VIEW IF EXISTS ${stagingViewId}`).catch(() => undefined);
+    await connection.query(`DROP TABLE IF EXISTS ${stagingTableId}`).catch(() => undefined);
     throw new Error(`Failed to load file ${filePath}: ${error}`);
   }
+  return resolvedMode;
 }

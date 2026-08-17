@@ -31,9 +31,28 @@ interface SessionMessage {
     description: string;
   }>;
   page: PageState;
+  canUndo?: boolean;
+  canRedo?: boolean;
+  requestId?: string;
+  sessionId: string;
+  revision: number;
 }
 
-const WEBVIEW_PROTOCOL_VERSION = 2;
+const WEBVIEW_PROTOCOL_VERSION = 3;
+type RequestSurface = 'grid' | 'stats' | 'chart' | 'export' | 'ai';
+
+function isEditableTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  return (
+    target.isContentEditable ||
+    Boolean(target.closest('input, textarea, select, [contenteditable]'))
+  );
+}
+
+function transformLabel(type: string): string {
+  const label = type.replaceAll('_', ' ');
+  return label.charAt(0).toUpperCase() + label.slice(1);
+}
 
 export const App: React.FC = () => {
   const { postMessage, onMessage } = useVSCodeAPI();
@@ -55,6 +74,11 @@ export const App: React.FC = () => {
   const [chartRows, setChartRows] = useState<unknown[][]>([]);
   const [chartLoading, setChartLoading] = useState(false);
   const [operationsCollapsed, setOperationsCollapsed] = useState(true);
+  const [canUndo, setCanUndo] = useState(false);
+  const [canRedo, setCanRedo] = useState(false);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [loadingProgress, setLoadingProgress] = useState<{
     percent: number;
     message: string;
@@ -62,11 +86,46 @@ export const App: React.FC = () => {
   }>();
   const [secondaryFile, setSecondaryFile] = useState<{ filePath: string; columns: string[] }>();
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const pendingTransform = useRef<string | null>(null);
+  const requestSequence = useRef(0);
+  const latestRequests = useRef<Partial<Record<RequestSurface, string>>>({});
+  const sessionContext = useRef<{ sessionId: string; revision: number } | undefined>(undefined);
+
+  const sendRequest = useCallback(
+    (surface: RequestSurface, message: Parameters<typeof postMessage>[0]) => {
+      const requestId = `${surface}-${++requestSequence.current}`;
+      latestRequests.current[surface] = requestId;
+      postMessage({ ...message, requestId });
+      return requestId;
+    },
+    [postMessage],
+  );
+
+  const showToast = useCallback((message: string) => {
+    setToast(message);
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => setToast(null), 2200);
+  }, []);
+
+  useEffect(
+    () => () => {
+      if (toastTimer.current) clearTimeout(toastTimer.current);
+    },
+    [],
+  );
 
   useEffect(() => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const unsubscribe = onMessage((message: any) => {
       if (message.type === 'sessionUpdated') {
         const update = message as SessionMessage & { type: string };
+        if (
+          update.requestId &&
+          latestRequests.current.grid &&
+          update.requestId !== latestRequests.current.grid &&
+          update.requestId !== latestRequests.current.ai
+        )
+          return;
         if (update.protocolVersion !== WEBVIEW_PROTOCOL_VERSION) {
           setLoading(false);
           setError(
@@ -75,6 +134,7 @@ export const App: React.FC = () => {
           return;
         }
         setFilePath(update.schema.filePath);
+        sessionContext.current = { sessionId: update.sessionId, revision: update.revision };
         setColumns(
           update.schema.columns.map((column) => ({
             name: column.name,
@@ -88,15 +148,18 @@ export const App: React.FC = () => {
           })) as ColumnInfo[],
         );
         setRows(update.result.rows);
-        setSteps(
-          update.history.map((item) => ({
-            id: item.id,
-            name: item.type,
-            description: item.description,
-            params: item.params,
-            timestamp: 0,
-          })),
-        );
+        const history = update.history.map((item) => ({
+          id: item.id,
+          name: item.type,
+          description: item.description,
+          params: item.params,
+          timestamp: 0,
+        }));
+        setSteps(history);
+        if (pendingTransform.current) {
+          showToast(`Applied ${transformLabel(pendingTransform.current)}`);
+          pendingTransform.current = null;
+        }
         setPage(update.page);
         setDatasetRowCount(update.schema.rowCount);
         setStats([]);
@@ -106,10 +169,20 @@ export const App: React.FC = () => {
         setLoading(false);
         setError(null);
         setSearchQuery('');
-        postMessage({ type: 'getStats' });
+        setCanUndo(update.canUndo ?? history.length > 0);
+        setCanRedo(update.canRedo ?? false);
+        sendRequest('stats', { type: 'getStats' });
         setCustomQueryActive(false);
         setLoadingProgress(undefined);
+        setAiLoading(false);
       } else if (message.type === 'customQueryResult') {
+        if (message.requestId !== latestRequests.current.grid) return;
+        if (
+          !sessionContext.current ||
+          message.sessionId !== sessionContext.current.sessionId ||
+          message.revision !== sessionContext.current.revision
+        )
+          return;
         setColumns(
           message.schema.columns.map(
             (column: { name: string; type: string; nullable: boolean }) => ({
@@ -131,6 +204,13 @@ export const App: React.FC = () => {
         setLoading(false);
         setError(null);
       } else if (message.type === 'searchResult') {
+        if (message.requestId !== latestRequests.current.grid) return;
+        if (
+          !sessionContext.current ||
+          message.sessionId !== sessionContext.current.sessionId ||
+          message.revision !== sessionContext.current.revision
+        )
+          return;
         setColumns(
           message.schema.columns.map(
             (column: { name: string; type: string; nullable: boolean }) => ({
@@ -151,10 +231,27 @@ export const App: React.FC = () => {
         setLoading(false);
         setError(null);
       } else if (message.type === 'stats') {
+        // An absent requestId marks an unsolicited host push (Summarize File),
+        // which is still validated against the visible session below.
+        if (message.requestId && message.requestId !== latestRequests.current.stats) return;
+        if (
+          !sessionContext.current ||
+          message.sessionId !== sessionContext.current.sessionId ||
+          message.revision !== sessionContext.current.revision
+        )
+          return;
         setStats(message.stats);
         setQualityIssues(message.quality?.issues ?? []);
-        setLoading(false);
+        // Stats is an independent background request — do not clear global loading,
+        // which may be for an unrelated transform or query that is still in flight.
       } else if (message.type === 'chartResult') {
+        if (message.requestId !== latestRequests.current.chart) return;
+        if (
+          !sessionContext.current ||
+          message.sessionId !== sessionContext.current.sessionId ||
+          message.revision !== sessionContext.current.revision
+        )
+          return;
         setChartConfig(message.chart);
         setChartRows(message.result.rows);
         setChartLoading(false);
@@ -164,14 +261,30 @@ export const App: React.FC = () => {
           columns: message.columns.map((column: { name: string }) => column.name),
         });
       } else if (message.type === 'exportComplete') {
+        if (message.requestId !== latestRequests.current.export) return;
         setLoading(false);
         setError(null);
+      } else if (message.type === 'aiComplete') {
+        if (message.requestId !== latestRequests.current.ai) return;
+        setAiLoading(false);
       } else if (message.type === 'error') {
+        if (message.requestId && !Object.values(latestRequests.current).includes(message.requestId))
+          return;
         setError(message.message);
-        setLoading(false);
-        setChartLoading(false);
-        setLoadingProgress(undefined);
+        if (!message.requestId || message.requestId === latestRequests.current.grid) {
+          pendingTransform.current = null;
+          setLoading(false);
+          setLoadingProgress(undefined);
+        }
+        if (!message.requestId || message.requestId === latestRequests.current.chart) {
+          setChartLoading(false);
+        }
+        if (!message.requestId || message.requestId === latestRequests.current.ai) {
+          setAiLoading(false);
+        }
+        if (message.requestId === latestRequests.current.export) setLoading(false);
       } else if (message.type === 'loadingProgress') {
+        if (message.requestId && message.requestId !== latestRequests.current.grid) return;
         setLoading(true);
         setError(null);
         setLoadingProgress({
@@ -181,9 +294,9 @@ export const App: React.FC = () => {
         });
       }
     });
-    postMessage({ type: 'ready' });
+    sendRequest('grid', { type: 'ready' });
     return unsubscribe;
-  }, [onMessage, postMessage]);
+  }, [onMessage, sendRequest, showToast]);
 
   useEffect(() => {
     const handleShortcut = (event: KeyboardEvent) => {
@@ -197,23 +310,56 @@ export const App: React.FC = () => {
     return () => window.removeEventListener('keydown', handleShortcut);
   }, [filePath]);
 
+  useEffect(() => {
+    if (!filePath) return;
+    const handleShortcut = (event: KeyboardEvent) => {
+      if (isEditableTarget(event.target) || loading || pendingTransform.current) return;
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'z') {
+        event.preventDefault();
+        event.stopPropagation();
+        if (event.shiftKey) {
+          if (canRedo) {
+            setLoading(true);
+            sendRequest('grid', { type: 'redo' });
+          }
+        } else if (canUndo) {
+          setLoading(true);
+          sendRequest('grid', { type: 'undo' });
+        }
+      } else if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'y' && canRedo) {
+        event.preventDefault();
+        event.stopPropagation();
+        setLoading(true);
+        sendRequest('grid', { type: 'redo' });
+      }
+    };
+    window.addEventListener('keydown', handleShortcut);
+    return () => window.removeEventListener('keydown', handleShortcut);
+  }, [filePath, canUndo, canRedo, loading, sendRequest]);
+
   const transform = useCallback(
     (type: string, params: Record<string, unknown>) => {
+      if (pendingTransform.current) return;
       setLoading(true);
-      postMessage({
+      pendingTransform.current = type;
+      sendRequest('grid', {
         type: 'applyTransform',
         transform: { id: '', type, params, sql: '', description: '' },
       });
     },
-    [postMessage],
+    [sendRequest],
   );
 
   const changePage = useCallback(
     (offset: number) => {
       setLoading(true);
-      postMessage({ type: 'pageChange', offset: Math.max(0, offset), limit: page.limit });
+      sendRequest('grid', {
+        type: 'pageChange',
+        offset: Math.max(0, offset),
+        limit: page.limit,
+      });
     },
-    [page.limit, postMessage],
+    [page.limit, sendRequest],
   );
 
   const fileName = useMemo(() => filePath.split(/[\\/]/).pop() ?? '', [filePath]);
@@ -225,12 +371,26 @@ export const App: React.FC = () => {
         rowCount={page.totalRows}
         columnCount={columns.length}
         isLoading={loading}
+        aiLoading={aiLoading}
         onRefresh={() => {
           setLoading(true);
-          postMessage({ type: 'refresh' });
+          sendRequest('grid', { type: 'refresh' });
+        }}
+        onGenerateAI={() => {
+          setAiLoading(true);
+          sendRequest('ai', { type: 'generateAITransforms' });
         }}
       />
-      {error && <div className="error-banner">{error}</div>}
+      {toast && (
+        <div className="success-toast" role="status" aria-live="polite">
+          {toast}
+        </div>
+      )}
+      {error && (
+        <div className="error-banner" role="alert">
+          {error}
+        </div>
+      )}
       {loadingProgress && (
         <div className="remote-progress" role="status" aria-live="polite">
           <div>
@@ -262,17 +422,32 @@ export const App: React.FC = () => {
             <OperationsPanel
               columns={columns}
               transformSteps={steps}
+              canUndo={canUndo && !loading}
+              canRedo={canRedo && !loading}
               onTransform={transform}
               onExport={(format) => {
+                if (loading) return;
                 setLoading(true);
-                postMessage({ type: 'exportData', format });
+                sendRequest('export', { type: 'exportData', format });
               }}
-              onRemoveStep={(id) => postMessage({ type: 'removeTransform', id })}
-              onReorderSteps={(sourceId, targetId) =>
-                postMessage({ type: 'reorderTransforms', sourceId, targetId })
-              }
-              onUndo={() => postMessage({ type: 'undo' })}
-              onRedo={() => postMessage({ type: 'redo' })}
+              onRemoveStep={(id) => {
+                if (loading) return;
+                setLoading(true);
+                sendRequest('grid', { type: 'removeTransform', id });
+              }}
+              onReorderSteps={(sourceId, targetId) => {
+                if (loading) return;
+                setLoading(true);
+                sendRequest('grid', { type: 'reorderTransforms', sourceId, targetId });
+              }}
+              onUndo={() => {
+                setLoading(true);
+                sendRequest('grid', { type: 'undo' });
+              }}
+              onRedo={() => {
+                setLoading(true);
+                sendRequest('grid', { type: 'redo' });
+              }}
               onCollapse={() => setOperationsCollapsed(true)}
               secondaryFile={secondaryFile}
               onSelectSecondaryFile={() => postMessage({ type: 'selectSecondaryFile' })}
@@ -288,11 +463,11 @@ export const App: React.FC = () => {
                   active={customQueryActive}
                   onRun={(sql) => {
                     setLoading(true);
-                    postMessage({ type: 'executeCustomQuery', sql });
+                    sendRequest('grid', { type: 'executeCustomQuery', sql });
                   }}
                   onClear={() => {
                     setLoading(true);
-                    postMessage({ type: 'clearCustomQuery' });
+                    sendRequest('grid', { type: 'clearCustomQuery' });
                   }}
                 />
                 {!customQueryActive && (
@@ -308,8 +483,9 @@ export const App: React.FC = () => {
                     rows={chartRows}
                     loading={chartLoading}
                     onRequest={(chart) => {
+                      if (loading) return;
                       setChartLoading(true);
-                      postMessage({ type: 'requestChart', chart });
+                      sendRequest('chart', { type: 'requestChart', chart });
                     }}
                   />
                 )}
@@ -319,7 +495,7 @@ export const App: React.FC = () => {
                 onSubmit={(event) => {
                   event.preventDefault();
                   setLoading(true);
-                  postMessage({ type: 'searchRows', query: searchQuery });
+                  sendRequest('grid', { type: 'searchRows', query: searchQuery });
                 }}
               >
                 <input
@@ -339,7 +515,7 @@ export const App: React.FC = () => {
                     onClick={() => {
                       setSearchQuery('');
                       setLoading(true);
-                      postMessage({ type: 'searchRows', query: '' });
+                      sendRequest('grid', { type: 'searchRows', query: '' });
                     }}
                   >
                     Clear
@@ -393,6 +569,10 @@ export const App: React.FC = () => {
               <p>
                 Open a supported file directly, or select a folder to browse its data files by
                 directory.
+              </p>
+              <p className="empty-state-hint">
+                Filter, sort, transform, profile, and chart your data visually — or describe what
+                you want and let AI plan the steps.
               </p>
               <div className="empty-actions">
                 <button

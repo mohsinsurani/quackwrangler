@@ -5,13 +5,13 @@
 </p>
 
 [![CI](https://github.com/mohsinsurani/quackwrangler/actions/workflows/ci.yml/badge.svg)](https://github.com/mohsinsurani/quackwrangler/actions/workflows/ci.yml)
-[![VS Code Marketplace](https://img.shields.io/badge/VS_Code_Marketplace-0.1.5-007ACC?logo=visualstudiocode)](https://marketplace.visualstudio.com/items?itemName=quackwrangler.quackwrangler)
+[![VS Code Marketplace](https://img.shields.io/badge/VS_Code_Marketplace-0.2.0-007ACC?logo=visualstudiocode)](https://marketplace.visualstudio.com/items?itemName=quackwrangler.quackwrangler)
 [![MIT License](https://img.shields.io/badge/license-MIT-yellow.svg)](LICENSE)
 [![VS Code 1.85+](https://img.shields.io/badge/VS%20Code-1.85%2B-blue.svg)](https://code.visualstudio.com/)
 
 **Open, clean, explore, and export data without leaving VS Code. Your files stay on your machine.**
 
-QuackWrangler does not upload rows or cell values. If you choose to use the optional AI transform planner, it sends only your instruction and the table schema—column names, types, and nullability—to OpenAI. It shows the proposed steps before changing anything.
+QuackWrangler does not upload rows or cell values. If you choose to use the optional AI transform planner, it sends only your instruction, table schema, and a redacted visual-transform history. Values, expressions, file paths, and literals are removed before the request. It shows the proposed steps before changing anything.
 
 QuackWrangler ships with DuckDB built in. Open CSV, Parquet, JSON, Excel, and ODS files directly—no Python environment, Jupyter kernel, or database setup required.
 
@@ -39,8 +39,17 @@ QuackWrangler ships with DuckDB built in. Open CSV, Parquet, JSON, Excel, and OD
 - **Work with nested data:** select a struct, list, map, or JSON cell to browse it as a tree, copy a JSON Pointer, extract a field, flatten an object, or explode an array into rows.
 - **Open cloud data:** run **QuackWrangler: Open Remote HTTPS/S3 Data** to query a supported remote file through DuckDB `httpfs`.
 - **Visible remote loading:** HTTPS/S3 opens show staged progress and surface actionable connection, authentication, and format errors in the editor.
-- **Generate a cleaning plan:** configure an OpenAI key in VS Code SecretStorage, then run **Generate Visual Transforms with AI**. Only column names/types/nullability and your instruction are sent; generated steps require approval and pass the normal transform validator.
+- **Generate a cleaning plan:** store an AI provider key in VS Code SecretStorage, then use **AI plan**. Only your instruction, schema metadata, and redacted visual-transform history are sent; generated steps require approval and pass the normal transform validator.
 - **Compare schemas:** select multiple files with **Compare File Schemas**, or recursively inspect up to 100 files with **Detect Folder Schema Drift**.
+
+## What's new in 0.2.0
+
+- Open Parquet, CSV, and XLSX directly in the QuackWrangler custom editor, with independent state for every open tab.
+- Use the more visible **AI plan** action with OpenAI or an HTTPS OpenAI-compatible Responses API; stale and overlapping plans are safely discarded.
+- Load small local sources eagerly and large or remote sources lazily, with configurable thresholds, DuckDB threads, and insertion-order behavior.
+- Keep custom SQL, charts, profiles, exports, and Command Palette actions scoped to the correct editor even when asynchronous responses arrive late.
+- Export the active custom-query result, use reliable row selection and Select All, and retain the previous dataset if a refresh or source promotion fails.
+- Target dbt export at the focused editor and reject local-file or raw-expression transforms that cannot produce portable dbt SQL.
 
 ## Why QuackWrangler?
 
@@ -61,11 +70,11 @@ On a deterministic one-million-row Parquet workload, QuackWrangler's production 
 
 | Engine                           | Load Parquet | Filter + aggregate + sort |        Total |
 | -------------------------------- | -----------: | ------------------------: | -----------: |
-| QuackWrangler (DuckDB 1.5.4-r.1) |     16.07 ms |               **6.89 ms** |     22.35 ms |
-| Polars 1.43.1                    |  **2.75 ms** |                   8.56 ms | **11.31 ms** |
-| Pandas 3.0.5                     |      8.89 ms |                  35.09 ms |     43.66 ms |
+| QuackWrangler (DuckDB 1.5.4-r.1) |     22.68 ms |               **8.82 ms** |     31.46 ms |
+| Polars 1.43.1                    |  **3.84 ms** |                  11.41 ms | **15.26 ms** |
+| Pandas 3.0.5                     |     12.31 ms |                  51.33 ms |     63.52 ms |
 
-These are medians of seven measured runs after two warmups on an Apple M3 Pro with 18 GB RAM, recorded August 1, 2026. Every engine ran equivalent eager operations and returned the same validated 20-row result. Lower is better.
+These are medians of seven measured runs after two warmups on an Apple M3 Pro with 18 GB RAM, recorded August 14, 2026. Every engine ran equivalent eager operations and returned the same validated 20-row result. Lower is better.
 
 ### Scaling and peak memory
 
@@ -73,19 +82,19 @@ Fresh-process measurements include each language runtime and its loaded librarie
 
 | Rows | QuackWrangler time / RSS |     Polars time / RSS |    Pandas time / RSS |
 | ---: | -----------------------: | --------------------: | -------------------: |
-|  10K |          4.61 ms / 91 MB |  **3.20 ms** / 134 MB |    34.24 ms / 126 MB |
-| 100K |    19.73 ms / **101 MB** |  **5.16 ms** / 147 MB |    38.83 ms / 143 MB |
-|   1M |    22.88 ms / **166 MB** | **15.82 ms** / 309 MB |    84.87 ms / 330 MB |
-|  10M |   **147.63 ms / 741 MB** |  242.48 ms / 1,693 MB | 572.01 ms / 1,877 MB |
+|  10K |          6.30 ms / 99 MB |  **4.45 ms** / 134 MB |    50.47 ms / 125 MB |
+| 100K |    28.18 ms / **109 MB** |  **6.68 ms** / 147 MB |    55.67 ms / 143 MB |
+|   1M |    27.47 ms / **175 MB** | **19.97 ms** / 311 MB |   120.42 ms / 327 MB |
+|  10M |   **203.16 ms / 743 MB** |  229.68 ms / 1,692 MB | 825.69 ms / 1,875 MB |
 
-At 10 million rows, QuackWrangler was 1.6× faster than Polars and 3.9× faster than Pandas in this workload, while its measured peak process RSS was 56% lower than Polars and 61% lower than Pandas. All engines completed successfully; no unmeasured OOM claim is made. See the [raw scalability results](benchmarks/results/scalability.json).
+At 10 million rows, QuackWrangler was 1.1× faster than Polars and 4.1× faster than Pandas in this workload, while its measured peak process RSS was 56% lower than Polars and 60% lower than Pandas. All engines completed successfully; no unmeasured OOM claim is made. See the [raw scalability results](benchmarks/results/scalability.json).
 
 ```text
 10M rows — total workflow time (lower is better)
 
-QuackWrangler  148 ms  ███████
-Polars         242 ms  ████████████
-Pandas         572 ms  █████████████████████████████
+QuackWrangler  203 ms  ██████████
+Polars         230 ms  ███████████
+Pandas         826 ms  █████████████████████████████████████████
 ```
 
 An exploratory single 50M-row run also completed for every engine:
@@ -100,7 +109,7 @@ This 50M result is one fresh-process sample rather than a multi-run median. Syst
 
 ### File-format loading
 
-For the same generated 100K-row dataset, DuckDB materialized Parquet in 13.98 ms, NDJSON in 50.62 ms, and CSV in 63.49 ms. Parquet was 4.5× faster to load than CSV and produced a much smaller file. See the [raw format results](benchmarks/results/formats.json).
+For the same generated 100K-row dataset, DuckDB materialized Parquet in 20.79 ms, NDJSON in 68.85 ms, and CSV in 90.08 ms. Parquet was 4.3× faster to load than CSV and produced a much smaller file. See the [raw format results](benchmarks/results/formats.json).
 
 This is a reproducible workload, not a universal engine ranking; results depend on hardware, versions, data shape, cache state, swap pressure, and query. Peak RSS is more defensible than an allocator delta but still includes different runtime overheads. Large runs remain opt-in because they can materially affect workstation responsiveness.
 
@@ -129,7 +138,7 @@ npm run benchmark:all # primary, scalability, and format suites
 - Custom read-only DuckDB SQL with results shown in the grid
 - Multi-row selection and spreadsheet-friendly TSV, CSV, pipe, or JSON copying
 - Full transformed-data export to Parquet, CSV, or JSON
-- Undo and redo for the transformation pipeline
+- Undo and redo for the transformation pipeline, with `Cmd/Ctrl+Z`, `Cmd+Shift+Z`, and `Ctrl+Y` shortcuts
 - Visual IF/date/regex/text formula builder
 - Multi-file joins and union-by-name
 - Shareable `.qw` workspaces and recent-file shortcuts
@@ -139,8 +148,6 @@ npm run benchmark:all # primary, scalability, and format suites
 ### Why DuckDB is the default engine
 
 The extension currently uses DuckDB because it can run analytical queries larger than the configured memory limit by spilling intermediate data to disk. An eager Polars DataFrame normally materializes its working data in RAM, which can use more memory on large files. Polars also has a streaming engine and can be very efficient, so this is not a claim that DuckDB always uses less memory; it describes QuackWrangler's current workload and the measured results above.
-
-For the next version after `0.1.2`, we plan to explore a hybrid engine: DuckDB for file access, SQL, and out-of-core work, with Polars available for operations where its expression engine or streaming execution is a better fit. That work will only ship after both engines follow the same transform history, output, packaging, and test contracts.
 
 ## Install
 
@@ -162,7 +169,7 @@ cd quackwrangler
 npm ci
 npm --prefix webview-ui ci
 npm run package
-code --install-extension quackwrangler-<version>.vsix
+code --install-extension quackwrangler-<platform>-<version>.vsix
 ```
 
 Alternatively, run **Extensions: Install from VSIX...** from the VS Code Command Palette and select the generated file.
@@ -173,13 +180,14 @@ Alternatively, run **Extensions: Install from VSIX...** from the VS Code Command
 2. Choose **Open data file** for one file, or **Open data folder** to scan a directory.
 3. The folder view preserves subdirectories, hides unsupported files and empty folders, and opens a data file when selected.
 4. You can also right-click a supported file in Explorer and choose **Open in QuackWrangler**.
-5. Clicking a Parquet file opens the QuackWrangler visual editor by default. Other supported formats remain available through **Open in QuackWrangler** without replacing their normal VS Code editor association.
+5. Clicking a Parquet, CSV, or XLSX file opens the QuackWrangler visual editor by default. Other supported formats remain available through **Open in QuackWrangler** without replacing their normal VS Code editor association.
 6. Inspect column profiles and values in the synchronized data grid.
-7. Select an operation in the left panel, enter its parameters, and apply it.
-8. Use **Custom DuckDB query** to run one read-only `SELECT`, `WITH`, or `VALUES` statement.
-9. Export the complete transformed dataset, or select rows and copy them as TSV, CSV, pipe-separated text, or JSON.
+7. Expand the labelled **Operations** rail, select an operation, enter its parameters, and apply it. Press `Enter` to apply an open form or `Escape` to close it.
+8. Use `Cmd/Ctrl+Z` to undo and `Cmd+Shift+Z` or `Ctrl+Y` to redo; the toolbar actions are enabled only when the corresponding history action is available.
+9. Use **AI plan** to describe a goal and preview a validated visual transform plan, or use **Custom DuckDB query** to run one read-only `SELECT`, `WITH`, or `VALUES` statement.
+10. Export the complete transformed dataset, or the active custom-query result when the query view is open. You can also select rows and copy them as TSV, CSV, pipe-separated text, or JSON.
 
-Custom queries run against `current_data`:
+Custom queries run against `current_data`, which is scoped to the current editor's transformed pipeline:
 
 ```sql
 SELECT country, COUNT(*) AS matches
@@ -228,7 +236,7 @@ Spreadsheet support can require DuckDB to download an extension the first time i
 
 ## AI privacy and configuration
 
-AI transform generation is disabled until you explicitly store an OpenAI API key using **QuackWrangler: Configure OpenAI API Key**. The key is kept in VS Code SecretStorage, never settings or `.qw` files. Requests contain your instruction and schema metadata only—no cell values or sampled rows. The proposed plan is shown for approval, cannot contain raw SQL, and is limited to the same validated operations available in the visual UI. Configure `quackwrangler.ai.model` to choose the model; the default is `gpt-4o-mini`.
+AI transform generation is disabled until you explicitly store an API key using **QuackWrangler: Configure AI Provider API Key**. The key is kept in VS Code SecretStorage, never settings or `.qw` files. Use the labelled **AI plan** action in an open data editor or the Command Palette to describe a goal. Requests contain your instruction, schema metadata, and redacted visual-transform history only—no rows, cell values, samples, file paths, expressions, or literals. The proposed plan is shown for approval, cannot contain raw SQL, and is strictly validated against the same operations available in the visual UI. OpenAI is the default provider; an HTTPS OpenAI-compatible Responses API can be selected with `quackwrangler.ai.provider` and `quackwrangler.ai.baseUrl`.
 
 When an opened local file is inside a workspace containing an ancestor `dbt_project.yml`, QuackWrangler reveals **Copy as dbt SQL** in the editor toolbar and Command Palette. It can copy a complete dbt model query or reusable CTEs built from the active validated transform history. QuackWrangler asks for the upstream model used by `ref()` and does not parse or modify the dbt project. Generated expressions retain DuckDB SQL semantics; review adapter compatibility when the dbt target is not DuckDB.
 
@@ -241,12 +249,22 @@ Open VS Code Settings and search for `QuackWrangler`, or configure values direct
   "quackwrangler.duckdb.memoryLimit": "1GB",
   "quackwrangler.duckdb.tempDirectory": "",
   "quackwrangler.duckdb.maxTempDirectorySize": "15GB",
+  "quackwrangler.duckdb.loadingMode": "auto",
+  "quackwrangler.duckdb.eagerFileSizeLimitMb": 64,
+  "quackwrangler.duckdb.threads": 0,
+  "quackwrangler.duckdb.preserveInsertionOrder": true,
   "quackwrangler.display.pageSize": 100,
-  "quackwrangler.display.maxRows": 10000
+  "quackwrangler.display.maxRows": 10000,
+  "quackwrangler.ai.provider": "openai",
+  "quackwrangler.ai.model": "gpt-4o-mini",
+  "quackwrangler.ai.baseUrl": "",
+  "quackwrangler.ai.timeoutSeconds": 60
 }
 ```
 
 When `duckdb.tempDirectory` is empty, spill files use a unique directory under VS Code's extension storage and are removed when QuackWrangler shuts down. A configured directory is created if needed and is never automatically deleted.
+
+Automatic loading materializes local files up to `duckdb.eagerFileSizeLimitMb` and keeps larger or remote sources lazy through a DuckDB view. Set `duckdb.loadingMode` to `eager` or `lazy` to override that choice. A `duckdb.threads` value of `0` leaves thread selection to DuckDB. Source row order is preserved by default for stable unsorted previews; disable `duckdb.preserveInsertionOrder` to reduce memory use on large data.
 
 ## Develop locally
 
@@ -267,6 +285,7 @@ Useful commands:
 ```bash
 npm run build          # type-check and build the extension and webview
 npm test               # unit and integration tests
+npm run test:vscode    # isolated VS Code Extension Host lifecycle tests
 npm run test:coverage  # coverage report
 npm run lint           # static checks
 npm run watch          # rebuild the extension while developing

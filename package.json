@@ -4,7 +4,7 @@
   "displayName": "QuackWrangler",
   "icon": "logo.png",
   "description": "Explore, transform, visualize, query, and export data with built-in DuckDB. No Python or Jupyter; file contents stay local.",
-  "version": "0.1.5",
+  "version": "0.2.0",
   "publisher": "quackwrangler",
   "license": "MIT",
   "repository": {
@@ -80,6 +80,12 @@
         "selector": [
           {
             "filenamePattern": "*.parquet"
+          },
+          {
+            "filenamePattern": "*.csv"
+          },
+          {
+            "filenamePattern": "*.xlsx"
           }
         ],
         "priority": "default"
@@ -133,7 +139,7 @@
       },
       {
         "command": "quackwrangler.configureAI",
-        "title": "QuackWrangler: Configure OpenAI API Key",
+        "title": "QuackWrangler: Configure AI Provider API Key",
         "icon": "$(key)"
       },
       {
@@ -237,6 +243,34 @@
           },
           "description": "DuckDB extensions to auto-install and load"
         },
+        "quackwrangler.duckdb.loadingMode": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "eager",
+            "lazy"
+          ],
+          "default": "auto",
+          "description": "Materialize small local files eagerly or query large and remote files lazily"
+        },
+        "quackwrangler.duckdb.eagerFileSizeLimitMb": {
+          "type": "number",
+          "default": 64,
+          "minimum": 1,
+          "maximum": 10240,
+          "description": "Largest local file in MB materialized when loading mode is auto"
+        },
+        "quackwrangler.duckdb.threads": {
+          "type": "number",
+          "default": 0,
+          "minimum": 0,
+          "description": "DuckDB worker threads (0 uses DuckDB's default)"
+        },
+        "quackwrangler.duckdb.preserveInsertionOrder": {
+          "type": "boolean",
+          "default": true,
+          "description": "Preserve source row order in unsorted previews; disable to reduce memory use on large data"
+        },
         "quackwrangler.display.pageSize": {
           "type": "number",
           "default": 100,
@@ -255,6 +289,27 @@
           "type": "string",
           "default": "gpt-4o-mini",
           "description": "OpenAI model used for opt-in schema-only visual transform generation"
+        },
+        "quackwrangler.ai.provider": {
+          "type": "string",
+          "enum": [
+            "openai",
+            "openai-compatible"
+          ],
+          "default": "openai",
+          "description": "AI Responses API provider"
+        },
+        "quackwrangler.ai.baseUrl": {
+          "type": "string",
+          "default": "",
+          "description": "HTTPS base URL for an OpenAI-compatible provider (ignored for OpenAI)"
+        },
+        "quackwrangler.ai.timeoutSeconds": {
+          "type": "number",
+          "default": 60,
+          "minimum": 5,
+          "maximum": 300,
+          "description": "AI provider request timeout in seconds"
         }
       }
     }
@@ -273,6 +328,7 @@
     "format:check": "prettier --check \"src/**/*.ts\" \"webview-ui/src/**/*.{ts,tsx}\"",
     "security:audit": "npm audit --omit=dev --audit-level=high && npm --prefix webview-ui audit --omit=dev --audit-level=high",
     "test": "vitest run",
+    "test:vscode": "npm run build && node scripts/run-vscode-tests.mjs",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p webview-ui/tsconfig.json",
