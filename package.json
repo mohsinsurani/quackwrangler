@@ -343,21 +343,21 @@
     "@duckdb/node-api": "^1.5.4-r.1"
   },
   "devDependencies": {
-    "@types/node": "^26.1.2",
-    "@types/vscode": "^1.85.0",
-    "@typescript-eslint/eslint-plugin": "^8.0.0",
+    "@types/node": "^26.6.2",
+    "@types/vscode": "^1.138.0",
+    "@typescript-eslint/eslint-plugin": "^8.70.0",
     "@typescript-eslint/parser": "^8.0.0",
-    "@vitest/coverage-v8": "^4.1.10",
-    "@vscode/vsce": "^3.9.2",
-    "esbuild": "^0.28.1",
-    "eslint": "^9.39.5",
+    "@vitest/coverage-v8": "^5.0.1",
+    "@vscode/vsce": "^4.0.0",
+    "esbuild": "^0.28.2",
+    "eslint": "^10.11.0",
     "eslint-plugin-import": "^2.31.0",
     "eslint-plugin-react-hooks": "^7.1.1",
     "husky": "^9.1.7",
-    "lint-staged": "^16.4.0",
-    "prettier": "^3.4.0",
-    "typescript": "^5.9.3",
-    "vitest": "^4.1.10"
+    "lint-staged": "^17.5.1",
+    "prettier": "^3.9.8",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.1"
   },
   "lint-staged": {
     "src/**/*.ts": [
