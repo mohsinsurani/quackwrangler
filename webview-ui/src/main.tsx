@@ -87,6 +87,8 @@ if (isDevelopment) {
   // Respond to webview messages that the real extension host would handle,
   // so interactive actions don't leave the preview stuck in a loading state.
   window.addEventListener('message', (event: MessageEvent) => {
+    const trustedOrigins = new Set([window.location.origin, 'null']);
+    if (!trustedOrigins.has(event.origin)) return;
     if (!event.data || typeof event.data.type !== 'string' || !event.data.__fromWebview) return;
     const { type, requestId } = event.data as { type: string; requestId?: string };
     const replySession = () =>
