@@ -5,7 +5,7 @@
 </p>
 
 [![CI](https://github.com/mohsinsurani/quackwrangler/actions/workflows/ci.yml/badge.svg)](https://github.com/mohsinsurani/quackwrangler/actions/workflows/ci.yml)
-[![VS Code Marketplace](https://img.shields.io/badge/VS_Code_Marketplace-0.2.0-007ACC?logo=visualstudiocode)](https://marketplace.visualstudio.com/items?itemName=quackwrangler.quackwrangler)
+[![VS Code Marketplace](https://img.shields.io/badge/VS_Code_Marketplace-0.2.1-007ACC?logo=visualstudiocode)](https://marketplace.visualstudio.com/items?itemName=quackwrangler.quackwrangler)
 [![MIT License](https://img.shields.io/badge/license-MIT-yellow.svg)](LICENSE)
 [![VS Code 1.85+](https://img.shields.io/badge/VS%20Code-1.85%2B-blue.svg)](https://code.visualstudio.com/)
 
@@ -42,7 +42,13 @@ QuackWrangler ships with DuckDB built in. Open CSV, Parquet, JSON, Excel, and OD
 - **Generate a cleaning plan:** store an AI provider key in VS Code SecretStorage, then use **AI plan**. Only your instruction, schema metadata, and redacted visual-transform history are sent; generated steps require approval and pass the normal transform validator.
 - **Compare schemas:** select multiple files with **Compare File Schemas**, or recursively inspect up to 100 files with **Detect Folder Schema Drift**.
 
-## What's new in 0.2.0
+## What's new in 0.2.1
+
+- Updated the embedded DuckDB runtime to 1.5.6-r.1.
+- Restored compatibility with older Explorer context menus that invoke the lowercase `quackwrangler.openfile` command.
+- Added staged file-open diagnostics and native error stacks under **View → Output → QuackWrangler**.
+
+## 0.2.0 highlights
 
 - Open Parquet, CSV, and XLSX directly in the QuackWrangler custom editor, with independent state for every open tab.
 - Use the more visible **AI plan** action with OpenAI or an HTTPS OpenAI-compatible Responses API; stale and overlapping plans are safely discarded.
