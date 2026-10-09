@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-08-14T11:30:08.301Z",
+  "generated_at": "2026-10-04T16:29:32.173Z",
   "machine": {
     "cpu": "Apple M3 Pro",
     "architecture": "arm64",
@@ -23,85 +23,85 @@
     {
       "rows": 10000,
       "engine": "QuackWrangler (DuckDB)",
-      "total_ms": 6.3,
-      "peak_rss_mb": 98.92,
+      "total_ms": 5.76,
+      "peak_rss_mb": 97.36,
       "status": "completed"
     },
     {
       "rows": 10000,
       "engine": "Polars",
-      "total_ms": 4.45,
-      "peak_rss_mb": 133.8,
+      "total_ms": 4.79,
+      "peak_rss_mb": 133.33,
       "status": "completed"
     },
     {
       "rows": 10000,
       "engine": "Pandas",
-      "total_ms": 50.47,
-      "peak_rss_mb": 125.48,
+      "total_ms": 75.84,
+      "peak_rss_mb": 125.86,
       "status": "completed"
     },
     {
       "rows": 100000,
       "engine": "QuackWrangler (DuckDB)",
-      "total_ms": 28.18,
-      "peak_rss_mb": 109.45,
+      "total_ms": 27.58,
+      "peak_rss_mb": 102.31,
       "status": "completed"
     },
     {
       "rows": 100000,
       "engine": "Polars",
-      "total_ms": 6.68,
-      "peak_rss_mb": 147.02,
+      "total_ms": 6.82,
+      "peak_rss_mb": 146.34,
       "status": "completed"
     },
     {
       "rows": 100000,
       "engine": "Pandas",
-      "total_ms": 55.67,
-      "peak_rss_mb": 142.95,
+      "total_ms": 52.17,
+      "peak_rss_mb": 143.48,
       "status": "completed"
     },
     {
       "rows": 1000000,
       "engine": "QuackWrangler (DuckDB)",
-      "total_ms": 27.47,
-      "peak_rss_mb": 174.75,
+      "total_ms": 44.66,
+      "peak_rss_mb": 171.38,
       "status": "completed"
     },
     {
       "rows": 1000000,
       "engine": "Polars",
-      "total_ms": 19.97,
-      "peak_rss_mb": 311.42,
+      "total_ms": 34.84,
+      "peak_rss_mb": 308.11,
       "status": "completed"
     },
     {
       "rows": 1000000,
       "engine": "Pandas",
-      "total_ms": 120.42,
-      "peak_rss_mb": 326.56,
+      "total_ms": 105.54,
+      "peak_rss_mb": 323.59,
       "status": "completed"
     },
     {
       "rows": 10000000,
       "engine": "QuackWrangler (DuckDB)",
-      "total_ms": 203.16,
-      "peak_rss_mb": 743.36,
+      "total_ms": 320.88,
+      "peak_rss_mb": 740.33,
       "status": "completed"
     },
     {
       "rows": 10000000,
       "engine": "Polars",
-      "total_ms": 229.68,
-      "peak_rss_mb": 1691.7,
+      "total_ms": 559.61,
+      "peak_rss_mb": 1224.28,
       "status": "completed"
     },
     {
       "rows": 10000000,
       "engine": "Pandas",
-      "total_ms": 825.69,
-      "peak_rss_mb": 1874.95,
+      "total_ms": 787.46,
+      "peak_rss_mb": 1627,
       "status": "completed"
     }
   ]
