@@ -49,6 +49,7 @@
   "activationEvents": [
     "onCommand:quackwrangler.openDataWrangler",
     "onCommand:quackwrangler.openFile",
+    "onCommand:quackwrangler.openfile",
     "onCommand:quackwrangler.openFolder",
     "onCommand:quackwrangler.exportData",
     "onCommand:quackwrangler.summarizeFile",

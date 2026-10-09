@@ -129,6 +129,11 @@ export function activate(context: vscode.ExtensionContext): void {
       return openFile(uri);
     }),
 
+    // Compatibility for older packages whose Explorer menu used a lowercase command ID.
+    vscode.commands.registerCommand('quackwrangler.openfile', (uri?: vscode.Uri | string) => {
+      return openFile(uri);
+    }),
+
     vscode.commands.registerCommand('quackwrangler.openFolder', async () => {
       await dataFilesProvider.selectFolder();
     }),

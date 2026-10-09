@@ -12,6 +12,7 @@ All notable changes to QuackWrangler are documented here using [Keep a Changelog
 
 - Added staged file-open diagnostics and native error stacks to the QuackWrangler output channel, with actionable log directions in load errors and troubleshooting documentation.
 - Removed duplicate DuckDB query-start entries from the output channel.
+- Restored the legacy lowercase `quackwrangler.openfile` command as a compatibility alias so Explorer context menus from older packages do not fail with “command not found.”
 
 ## [0.2.0] - 2026-08-17
 
