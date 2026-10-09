@@ -14,10 +14,13 @@ const mocks = vi.hoisted(() => {
     showOpenDialog: vi.fn(),
     showQuickPick: vi.fn(),
     showWarningMessage: vi.fn(),
+    showErrorMessage: vi.fn(),
     readDirectory: vi.fn(),
     loadFile: vi.fn().mockResolvedValue(undefined),
+    prepareDataFileReader: vi.fn().mockResolvedValue(undefined),
     exportResults: vi.fn().mockResolvedValue(undefined),
     attach: vi.fn(() => panel),
+    appendLine: vi.fn(),
   };
 });
 
@@ -34,7 +37,7 @@ vi.mock('vscode', () => ({
     showOpenDialog: mocks.showOpenDialog,
     showQuickPick: mocks.showQuickPick,
     showWarningMessage: mocks.showWarningMessage,
-    showErrorMessage: vi.fn(),
+    showErrorMessage: mocks.showErrorMessage,
   },
   workspace: {
     fs: { readDirectory: mocks.readDirectory },
@@ -77,7 +80,7 @@ vi.mock('../../../src/duckdb/query-engine.js', () => ({
 
 vi.mock('../../../src/duckdb/parquet-loader.js', () => ({
   loadFile: mocks.loadFile,
-  prepareDataFileReader: vi.fn(),
+  prepareDataFileReader: mocks.prepareDataFileReader,
   getFileMetadata: vi.fn(),
 }));
 
@@ -142,7 +145,7 @@ describe('custom-editor file opening flow', () => {
     mocks.posted.length = 0;
     configureCommands(
       { fsPath: '/extension' } as never,
-      { appendLine: vi.fn() } as never,
+      { appendLine: mocks.appendLine } as never,
       {
         globalStorageUri: { fsPath: '/writable/global-storage' },
         globalState: { get: vi.fn(() => []), update: vi.fn() },
@@ -174,6 +177,47 @@ describe('custom-editor file opening flow', () => {
     await latestMessageHandler()({ type: 'ready' });
     expect(mocks.posted).toContainEqual(
       expect.objectContaining({ type: 'sessionUpdated' }),
+    );
+  });
+
+  it('records the failed load stage and directs the user to the output channel', async () => {
+    mocks.loadFile.mockRejectedValueOnce(new Error('invalid CSV header'));
+
+    await openDataWranglerCustomEditor({ fsPath: '/data/broken.csv' } as never, {} as never);
+
+    expect(mocks.prepareDataFileReader).toHaveBeenCalledWith(
+      expect.anything(),
+      '/data/broken.csv',
+    );
+    expect(mocks.appendLine).toHaveBeenCalledWith(
+      expect.stringContaining(
+        '[Load ERROR] Failed while loading the source data: /data/broken.csv\nError: invalid CSV header',
+      ),
+    );
+    expect(mocks.showErrorMessage).toHaveBeenCalledWith(
+      'Failed to load file: invalid CSV header. See View > Output > QuackWrangler for details.',
+    );
+  });
+
+  it('can open CSV after XLSX reader preparation fails', async () => {
+    mocks.prepareDataFileReader.mockRejectedValueOnce(new Error('excel extension unavailable'));
+
+    await openDataWranglerCustomEditor({ fsPath: '/data/broken.xlsx' } as never, {} as never);
+    await openDataWranglerCustomEditor({ fsPath: '/data/recovery.csv' } as never, {} as never);
+
+    expect(mocks.loadFile).toHaveBeenCalledTimes(1);
+    expect(mocks.loadFile).toHaveBeenCalledWith(
+      expect.anything(),
+      '/data/recovery.csv',
+      'auto',
+      64,
+      expect.stringMatching(/^qw_[0-9a-f]{16}$/),
+    );
+    expect(mocks.posted).toContainEqual(
+      expect.objectContaining({
+        type: 'sessionUpdated',
+        schema: expect.objectContaining({ filePath: '/data/recovery.csv' }),
+      }),
     );
   });
 

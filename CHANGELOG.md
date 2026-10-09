@@ -8,6 +8,11 @@ All notable changes to QuackWrangler are documented here using [Keep a Changelog
 
 - Updated the embedded DuckDB Node API and native bindings from 1.5.4-r.1 to 1.5.6-r.1 for the latest 1.5-series correctness, security, and performance fixes.
 
+### Fixed
+
+- Added staged file-open diagnostics and native error stacks to the QuackWrangler output channel, with actionable log directions in load errors and troubleshooting documentation.
+- Removed duplicate DuckDB query-start entries from the output channel.
+
 ## [0.2.0] - 2026-08-17
 
 ### Added

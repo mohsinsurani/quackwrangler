@@ -661,6 +661,8 @@ async function loadDataIntoPanel(
   state.customQuerySql = null;
   state.searchQuery = '';
   await vscode.commands.executeCommand('setContext', 'quackwrangler.dbtDetected', false);
+  let stage = 'initializing';
+  outputChannel?.appendLine(`[Load] Opening ${filePath}`);
 
   try {
     const remote = isRemoteDataSource(filePath);
@@ -668,10 +670,13 @@ async function loadDataIntoPanel(
       panel.postMessage({ type: 'loadingProgress', ...stage, requestId }),
     );
     progress(REMOTE_LOAD_STAGES.connecting);
+    stage = 'connecting to DuckDB';
     const conn = await getConnection();
     progress(REMOTE_LOAD_STAGES.preparing);
-    if (remote) await prepareDataFileReader(conn, filePath);
+    stage = 'preparing the source reader';
+    await prepareDataFileReader(conn, filePath);
     progress(REMOTE_LOAD_STAGES.reading);
+    stage = 'loading the source data';
     const config = getConfig();
     // Each panel loads into its own uniquely named DuckDB relation so multiple
     // open editors never cross-contaminate each other's data.
@@ -683,6 +688,7 @@ async function loadDataIntoPanel(
       state.relationName,
     );
     progress(REMOTE_LOAD_STAGES.previewing);
+    stage = 'building the initial preview';
     state.session = new WranglingSession(conn, state.relationName);
     state.sessionId = newRelationName();
     state.session.load(filePath);
@@ -704,6 +710,7 @@ async function loadDataIntoPanel(
     await rememberRecentFile(filePath);
     progress(REMOTE_LOAD_STAGES.ready);
     await postSession(panel, 0, Math.min(config.maxRowsPreview, config.pageSize), requestId);
+    outputChannel?.appendLine(`[Load] Ready: ${filePath}`);
   } catch (error) {
     // Restore the previous session so an already-loaded panel remains usable.
     state.session = previousSession;
@@ -712,7 +719,11 @@ async function loadDataIntoPanel(
       await postSession(panel, 0, getConfig().pageSize, requestId).catch(() => undefined);
     }
     const message = error instanceof Error ? error.message : String(error);
-    vscode.window.showErrorMessage(`Failed to load file: ${message}`);
+    const details = error instanceof Error ? (error.stack ?? error.message) : String(error);
+    outputChannel?.appendLine(`[Load ERROR] Failed while ${stage}: ${filePath}\n${details}`);
+    vscode.window.showErrorMessage(
+      `Failed to load file: ${message}. See View > Output > QuackWrangler for details.`,
+    );
     panel.postMessage({ type: 'error', message, requestId });
   }
 }

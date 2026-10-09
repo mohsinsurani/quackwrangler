@@ -234,6 +234,12 @@ ORC files are detected and produce an actionable compatibility message, but they
 
 Spreadsheet support can require DuckDB to download an extension the first time it is used. Legacy `.xls` files are not currently supported.
 
+### Troubleshooting file loading
+
+If a file does not open, choose **View → Output** and select **QuackWrangler** from the channel menu. The log records the source path, whether the failure occurred while connecting to DuckDB, preparing a format reader, loading data, or building the preview, and the native error stack. This is particularly useful for first-time XLSX/ODS/Arrow opens, which may need to download a DuckDB extension.
+
+For extension activation failures that happen before the QuackWrangler channel appears, run **Developer: Show Logs…** from the Command Palette and open **Extension Host**, or choose **Help → Toggle Developer Tools** and inspect the Console. Include the QuackWrangler version, operating system, CPU architecture, the failing file type, and the relevant error block when reporting a problem; review paths and data values before sharing logs publicly.
+
 ## AI privacy and configuration
 
 AI transform generation is disabled until you explicitly store an API key using **QuackWrangler: Configure AI Provider API Key**. The key is kept in VS Code SecretStorage, never settings or `.qw` files. Use the labelled **AI plan** action in an open data editor or the Command Palette to describe a goal. Requests contain your instruction, schema metadata, and redacted visual-transform history only—no rows, cell values, samples, file paths, expressions, or literals. The proposed plan is shown for approval, cannot contain raw SQL, and is strictly validated against the same operations available in the visual UI. OpenAI is the default provider; an HTTPS OpenAI-compatible Responses API can be selected with `quackwrangler.ai.provider` and `quackwrangler.ai.baseUrl`.

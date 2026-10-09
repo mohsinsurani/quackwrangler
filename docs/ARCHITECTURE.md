@@ -56,6 +56,8 @@ The webview never reads the file system. The extension host owns file dialogs, p
 5. The extension sends schema, one bounded result page, page metadata, and history.
 6. The webview requests profiles separately so the grid can appear first.
 
+File-open diagnostics are written to the **QuackWrangler** VS Code output channel. Each attempt records its source path and terminal stage; failures include the native error stack so reader-extension failures can be distinguished from import and preview failures.
+
 Parquet, CSV, and XLSX are registered with default custom-editor priority. Local paths in those formats selected through QuackWrangler commands are routed through the same `vscode.openWith` custom-editor flow. Other supported formats keep their existing VS Code editor association and open visually only when the user invokes QuackWrangler. Explicit user editor associations can still override these defaults.
 
 Supported extensions have one TypeScript source of truth in `DATA_FILE_EXTENSIONS`. The VS Code manifest must also be updated when a format is added because contribution points are declarative JSON.
