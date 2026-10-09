@@ -39,7 +39,7 @@ describe('QuackWrangler custom editor contribution', () => {
       };
     };
     const commands = manifest.contributes.commands.map((item) => item.command);
-    expect(manifest.version).toBe('0.2.0');
+    expect(manifest.version).toBe('0.2.1');
     expect(commands).toEqual(
       expect.arrayContaining([
         'quackwrangler.openRemoteData',
