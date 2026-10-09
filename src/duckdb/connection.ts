@@ -10,12 +10,12 @@ export interface DuckDBTransaction {
 let outputChannel: vscode.OutputChannel;
 
 function log(message: string): void {
-  outputChannel.appendLine(`[DuckDB] ${message}`);
+  outputChannel?.appendLine(`[DuckDB] ${message}`);
 }
 
 function logError(message: string, error?: unknown): void {
-  const errMsg = error instanceof Error ? error.message : String(error);
-  outputChannel.appendLine(`[DuckDB ERROR] ${message}: ${errMsg}`);
+  const details = error instanceof Error ? (error.stack ?? error.message) : String(error);
+  outputChannel?.appendLine(`[DuckDB ERROR] ${message}: ${details}`);
 }
 
 function quoteSetting(value: string): string {
@@ -104,7 +104,6 @@ export class DuckDBConnection {
 
     const startTime = Date.now();
     try {
-      log(`Executing query: ${sql.substring(0, 200)}...`);
       const conn = await this.instance.connect();
       try {
         return await this.runQuery(conn, sql, startTime);

@@ -52,6 +52,7 @@ describe('QuackWrangler custom editor contribution', () => {
     );
     expect(manifest.activationEvents).toEqual(
       expect.arrayContaining([
+        'onCommand:quackwrangler.openfile',
         'workspaceContains:**/*.arrow',
         'workspaceContains:**/*.orc',
         'onCustomEditor:quackwrangler.dataEditor',

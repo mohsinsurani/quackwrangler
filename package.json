@@ -49,6 +49,7 @@
   "activationEvents": [
     "onCommand:quackwrangler.openDataWrangler",
     "onCommand:quackwrangler.openFile",
+    "onCommand:quackwrangler.openfile",
     "onCommand:quackwrangler.openFolder",
     "onCommand:quackwrangler.exportData",
     "onCommand:quackwrangler.summarizeFile",
@@ -340,11 +341,11 @@
     "prepare": "husky"
   },
   "dependencies": {
-    "@duckdb/node-api": "^1.5.4-r.1"
+    "@duckdb/node-api": "^1.5.6-r.1"
   },
   "devDependencies": {
     "@types/node": "^26.6.3",
-    "@types/vscode": "^1.138.0",
+    "@types/vscode": "1.85.0",
     "@typescript-eslint/eslint-plugin": "^8.71.0",
     "@typescript-eslint/parser": "^8.0.0",
     "@vitest/coverage-v8": "^5.0.3",

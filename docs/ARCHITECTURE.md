@@ -56,6 +56,8 @@ The webview never reads the file system. The extension host owns file dialogs, p
 5. The extension sends schema, one bounded result page, page metadata, and history.
 6. The webview requests profiles separately so the grid can appear first.
 
+File-open diagnostics are written to the **QuackWrangler** VS Code output channel. Each attempt records its source path and terminal stage; failures include the native error stack so reader-extension failures can be distinguished from import and preview failures.
+
 Parquet, CSV, and XLSX are registered with default custom-editor priority. Local paths in those formats selected through QuackWrangler commands are routed through the same `vscode.openWith` custom-editor flow. Other supported formats keep their existing VS Code editor association and open visually only when the user invokes QuackWrangler. Explicit user editor associations can still override these defaults.
 
 Supported extensions have one TypeScript source of truth in `DATA_FILE_EXTENSIONS`. The VS Code manifest must also be updated when a format is added because contribution points are declarative JSON.
@@ -141,7 +143,7 @@ Increment `WEBVIEW_PROTOCOL_VERSION` when a `sessionUpdated` payload changes inc
 
 ## Native distribution
 
-DuckDB's Node binding contains platform-specific native libraries. QuackWrangler therefore publishes separate VSIX packages for Windows, Linux, Alpine Linux, and macOS on x64 and ARM64 under one Marketplace version. VS Code selects the matching target automatically. There is no un-targeted fallback package because a VSIX containing only the maintainer's local DuckDB binary would fail on other systems.
+QuackWrangler embeds `@duckdb/node-api` 1.5.6-r.1. DuckDB's Node binding contains platform-specific native libraries, so QuackWrangler publishes separate VSIX packages for Windows, Linux, Alpine Linux, and macOS on x64 and ARM64 under one Marketplace version. VS Code selects the matching target automatically. There is no un-targeted fallback package because a VSIX containing only the maintainer's local DuckDB binary would fail on other systems.
 
 `scripts/vsce-platform.mjs` makes local packaging target the current platform. `.github/workflows/package-platforms.yml` builds the complete release matrix on matching GitHub-hosted runners and verifies that the expected DuckDB binding is installed before packaging.
 

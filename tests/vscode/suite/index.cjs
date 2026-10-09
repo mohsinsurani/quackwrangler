@@ -60,12 +60,22 @@ async function run() {
   const commands = await vscode.commands.getCommands(true);
   for (const command of [
     'quackwrangler.openFile',
+    'quackwrangler.openfile',
     'quackwrangler.summarizeFile',
     'quackwrangler.copyDbtSql',
   ]) {
     assert.ok(commands.includes(command), `${command} should be registered`);
   }
 
+  await closeAllEditors();
+
+  const root = vscode.workspace.workspaceFolders?.[0]?.uri;
+  assert.ok(root, 'The Extension Host test workspace must be open');
+  await vscode.commands.executeCommand(
+    'quackwrangler.openfile',
+    vscode.Uri.joinPath(root, 'first.csv'),
+  );
+  await waitFor('the legacy lowercase command to open a panel', () => dataEditorTabs().length === 1);
   await closeAllEditors();
 
   await openFixture('first.csv');

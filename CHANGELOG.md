@@ -4,7 +4,7 @@ All notable changes to QuackWrangler are documented here using [Keep a Changelog
 
 ## [Unreleased]
 
-## [0.2.0] - 2026-08-17
+## [0.2.0] - 2026-10-09
 
 ### Added
 
@@ -14,6 +14,7 @@ All notable changes to QuackWrangler are documented here using [Keep a Changelog
 
 ### Changed
 
+- Updated the embedded DuckDB Node API and native bindings from 1.5.4-r.1 to 1.5.6-r.1 for the latest 1.5-series correctness, security, and performance fixes.
 - Registered CSV and XLSX alongside Parquet as default QuackWrangler custom-editor formats; explicit user editor associations can still override the defaults.
 - Simplified the editor header and empty state, made AI planning easier to discover, added transform feedback and keyboard shortcuts, and accurately enabled undo/redo controls.
 - Cached transformed schema, row counts, and statistics until pipeline changes, and combined search paging with its total count in the common case.
@@ -21,6 +22,9 @@ All notable changes to QuackWrangler are documented here using [Keep a Changelog
 
 ### Fixed
 
+- Added staged file-open diagnostics and native error stacks to the QuackWrangler output channel, with actionable log directions in load errors and troubleshooting documentation.
+- Removed duplicate DuckDB query-start entries from the output channel.
+- Restored the legacy lowercase `quackwrangler.openfile` command as a compatibility alias so Explorer context menus from older packages do not fail with “command not found.”
 - Each open editor now uses a unique DuckDB relation so loading or refreshing one panel does not silently replace another's data; failed reloads leave the prior session intact.
 - Schema, row-count, and statistics caches no longer store stale results when the pipeline changes while a query is in flight.
 - Bounded statistics queries to eight concurrent columns to prevent resource exhaustion on wide schemas.

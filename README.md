@@ -66,15 +66,15 @@ QuackWrangler sits between a basic file preview and a full notebook. It gives yo
 
 ## Performance benchmark
 
-On a deterministic one-million-row Parquet workload, QuackWrangler's production Node DuckDB engine completed the analytical transform faster than both comparison engines. Polars loaded the file faster and had the lowest end-to-end time; QuackWrangler finished the complete workflow about 2× faster than Pandas.
+On a deterministic one-million-row Parquet workload, QuackWrangler's production Node DuckDB engine completed the analytical transform faster than both comparison engines. Polars loaded the file faster and had the lowest end-to-end time; QuackWrangler finished the complete workflow about 1.7× faster than Pandas.
 
 | Engine                           | Load Parquet | Filter + aggregate + sort |        Total |
 | -------------------------------- | -----------: | ------------------------: | -----------: |
-| QuackWrangler (DuckDB 1.5.4-r.1) |     22.68 ms |               **8.82 ms** |     31.46 ms |
-| Polars 1.43.1                    |  **3.84 ms** |                  11.41 ms | **15.26 ms** |
-| Pandas 3.0.5                     |     12.31 ms |                  51.33 ms |     63.52 ms |
+| QuackWrangler (DuckDB 1.5.6-r.1) |     21.36 ms |               **8.18 ms** |     29.68 ms |
+| Polars 1.43.1                    |  **5.69 ms** |                  21.48 ms | **26.24 ms** |
+| Pandas 3.0.5                     |     11.25 ms |                  39.72 ms |     50.69 ms |
 
-These are medians of seven measured runs after two warmups on an Apple M3 Pro with 18 GB RAM, recorded August 14, 2026. Every engine ran equivalent eager operations and returned the same validated 20-row result. Lower is better.
+These are medians of seven measured runs after two warmups on an Apple M3 Pro with 18 GB RAM, recorded October 4, 2026. Every engine ran equivalent eager operations and returned the same validated 20-row result. Lower is better.
 
 ### Scaling and peak memory
 
@@ -82,19 +82,19 @@ Fresh-process measurements include each language runtime and its loaded librarie
 
 | Rows | QuackWrangler time / RSS |     Polars time / RSS |    Pandas time / RSS |
 | ---: | -----------------------: | --------------------: | -------------------: |
-|  10K |          6.30 ms / 99 MB |  **4.45 ms** / 134 MB |    50.47 ms / 125 MB |
-| 100K |    28.18 ms / **109 MB** |  **6.68 ms** / 147 MB |    55.67 ms / 143 MB |
-|   1M |    27.47 ms / **175 MB** | **19.97 ms** / 311 MB |   120.42 ms / 327 MB |
-|  10M |   **203.16 ms / 743 MB** |  229.68 ms / 1,692 MB | 825.69 ms / 1,875 MB |
+|  10K |          5.76 ms / 97 MB |  **4.79 ms** / 133 MB |    75.84 ms / 126 MB |
+| 100K |    27.58 ms / **102 MB** |  **6.82 ms** / 146 MB |    52.17 ms / 143 MB |
+|   1M |    44.66 ms / **171 MB** | **34.84 ms** / 308 MB |   105.54 ms / 324 MB |
+|  10M |   **320.88 ms / 740 MB** | 559.61 ms / 1,224 MB | 787.46 ms / 1,627 MB |
 
-At 10 million rows, QuackWrangler was 1.1× faster than Polars and 4.1× faster than Pandas in this workload, while its measured peak process RSS was 56% lower than Polars and 60% lower than Pandas. All engines completed successfully; no unmeasured OOM claim is made. See the [raw scalability results](benchmarks/results/scalability.json).
+At 10 million rows, QuackWrangler was 1.7× faster than Polars and 2.5× faster than Pandas in this workload, while its measured peak process RSS was 40% lower than Polars and 54% lower than Pandas. All engines completed successfully; no unmeasured OOM claim is made. See the [raw scalability results](benchmarks/results/scalability.json).
 
 ```text
 10M rows — total workflow time (lower is better)
 
-QuackWrangler  203 ms  ██████████
-Polars         230 ms  ███████████
-Pandas         826 ms  █████████████████████████████████████████
+QuackWrangler  321 ms  ██████████
+Polars         560 ms  █████████████████
+Pandas         787 ms  ████████████████████████
 ```
 
 An exploratory single 50M-row run also completed for every engine:
@@ -109,7 +109,7 @@ This 50M result is one fresh-process sample rather than a multi-run median. Syst
 
 ### File-format loading
 
-For the same generated 100K-row dataset, DuckDB materialized Parquet in 20.79 ms, NDJSON in 68.85 ms, and CSV in 90.08 ms. Parquet was 4.3× faster to load than CSV and produced a much smaller file. See the [raw format results](benchmarks/results/formats.json).
+For the same generated 100K-row dataset, DuckDB materialized Parquet in 20.04 ms, NDJSON in 59.99 ms, and CSV in 77.13 ms. Parquet was 3.8× faster to load than CSV and produced a much smaller file. See the [raw format results](benchmarks/results/formats.json).
 
 This is a reproducible workload, not a universal engine ranking; results depend on hardware, versions, data shape, cache state, swap pressure, and query. Peak RSS is more defensible than an allocator delta but still includes different runtime overheads. Large runs remain opt-in because they can materially affect workstation responsiveness.
 
@@ -233,6 +233,12 @@ HTTPS and S3 URLs are supported for formats handled by the corresponding DuckDB 
 ORC files are detected and produce an actionable compatibility message, but they are not advertised as readable: the embedded DuckDB 1.5 runtime does not currently expose a supported ORC reader. Convert ORC to Parquet or CSV before opening it. QuackWrangler will enable native ORC loading only when a supported, testable DuckDB reader is available.
 
 Spreadsheet support can require DuckDB to download an extension the first time it is used. Legacy `.xls` files are not currently supported.
+
+### Troubleshooting file loading
+
+If a file does not open, choose **View → Output** and select **QuackWrangler** from the channel menu. The log records the source path, whether the failure occurred while connecting to DuckDB, preparing a format reader, loading data, or building the preview, and the native error stack. This is particularly useful for first-time XLSX/ODS/Arrow opens, which may need to download a DuckDB extension.
+
+For extension activation failures that happen before the QuackWrangler channel appears, run **Developer: Show Logs…** from the Command Palette and open **Extension Host**, or choose **Help → Toggle Developer Tools** and inspect the Console. Include the QuackWrangler version, operating system, CPU architecture, the failing file type, and the relevant error block when reporting a problem; review paths and data values before sharing logs publicly.
 
 ## AI privacy and configuration
 
