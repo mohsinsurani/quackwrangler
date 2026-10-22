@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-10-04T16:28:52.061Z",
+  "generated_at": "2026-10-22T10:57:49.279Z",
   "machine": {
     "os": "Darwin 25.5.0",
     "architecture": "arm64",
@@ -21,24 +21,24 @@
   "results": [
     {
       "engine": "QuackWrangler (DuckDB)",
-      "version": "1.5.6-r.1",
-      "load_ms": 21.36,
-      "transform_ms": 8.18,
-      "total_ms": 29.68
+      "version": "2.0.0-r.1",
+      "load_ms": 14.67,
+      "transform_ms": 6.98,
+      "total_ms": 21.62
     },
     {
       "engine": "Polars",
       "version": "1.43.1",
-      "load_ms": 5.69,
-      "transform_ms": 21.48,
-      "total_ms": 26.24
+      "load_ms": 2.76,
+      "transform_ms": 8.49,
+      "total_ms": 11.25
     },
     {
       "engine": "Pandas",
       "version": "3.0.5",
-      "load_ms": 11.25,
-      "transform_ms": 39.72,
-      "total_ms": 50.69
+      "load_ms": 9.34,
+      "transform_ms": 42.45,
+      "total_ms": 51.49
     }
   ]
 }

@@ -4,6 +4,7 @@ import * as path from 'path';
 import { TableSchema, ColumnInfo } from '../types/index.js';
 
 import { DuckDBConnection } from './connection.js';
+import { CsvColumnType, csvTypesOption, resolveCsvColumnTypes } from './csv-schema.js';
 import { quoteIdentifier, quoteLiteral } from './sql.js';
 
 export type FileType =
@@ -71,7 +72,7 @@ function getReadFunction(fileType: FileType): string {
       return 'read_parquet';
     case 'csv':
     case 'tsv':
-      return 'read_csv_auto';
+      return 'read_csv';
     case 'json':
     case 'jsonl':
     case 'ndjson':
@@ -89,10 +90,76 @@ function getReadFunction(fileType: FileType): string {
   }
 }
 
-export function getTableRef(filePath: string, fileType?: FileType): string {
+function isCsvLike(fileType: FileType): boolean {
+  return fileType === 'csv' || fileType === 'tsv';
+}
+
+/**
+ * Column types resolved once per source, keyed by connection then path, so a
+ * reader reference can be rebuilt synchronously without re-running detection.
+ */
+const resolvedCsvSchemas = new WeakMap<DuckDBConnection, Map<string, CsvColumnType[]>>();
+
+export function cacheCsvColumnTypes(
+  connection: DuckDBConnection,
+  filePath: string,
+  columns: CsvColumnType[],
+): void {
+  const cache = resolvedCsvSchemas.get(connection) ?? new Map<string, CsvColumnType[]>();
+  resolvedCsvSchemas.set(connection, cache);
+  cache.set(filePath, columns);
+}
+
+export function getCachedCsvColumnTypes(
+  connection: DuckDBConnection,
+  filePath: string,
+): CsvColumnType[] | undefined {
+  return resolvedCsvSchemas.get(connection)?.get(filePath);
+}
+
+/**
+ * Resolves and caches CSV/TSV types for a source. Non-CSV formats carry their
+ * types in the file itself and need no detection pass.
+ */
+export async function prepareSourceSchema(
+  connection: DuckDBConnection,
+  filePath: string,
+  fileType?: FileType,
+): Promise<void> {
+  const type = fileType || detectFileType(filePath);
+  if (!isCsvLike(type)) return;
+  if (getCachedCsvColumnTypes(connection, filePath)) return;
+  const columns = await resolveCsvColumnTypes(connection, filePath);
+  if (columns.length > 0) cacheCsvColumnTypes(connection, filePath, columns);
+}
+
+export function getTableRef(
+  filePath: string,
+  fileType?: FileType,
+  csvColumns?: CsvColumnType[],
+): string {
   const type = fileType || detectFileType(filePath);
   const readFn = getReadFunction(type);
+  if (isCsvLike(type)) {
+    // Pin the resolved schema so no query repeats type detection. Without a
+    // resolved schema, fall back to DuckDB's own auto-detection.
+    if (csvColumns && csvColumns.length > 0) {
+      return `${readFn}(${quoteLiteral(filePath)}, ${csvTypesOption(csvColumns)})`;
+    }
+    return `read_csv_auto(${quoteLiteral(filePath)})`;
+  }
   return `${readFn}(${quoteLiteral(filePath)})`;
+}
+
+/**
+ * Builds a reader reference using any schema already resolved for `connection`.
+ */
+export function getConnectionTableRef(
+  connection: DuckDBConnection,
+  filePath: string,
+  fileType?: FileType,
+): string {
+  return getTableRef(filePath, fileType, getCachedCsvColumnTypes(connection, filePath));
 }
 
 async function prepareFileReader(connection: DuckDBConnection, fileType: FileType): Promise<void> {
@@ -131,7 +198,9 @@ export async function prepareDataFileReader(
   filePath: string,
 ): Promise<void> {
   if (/^(https?|s3):\/\//i.test(filePath)) await prepareRemoteReader(connection);
-  await prepareFileReader(connection, detectFileType(filePath));
+  const fileType = detectFileType(filePath);
+  await prepareFileReader(connection, fileType);
+  await prepareSourceSchema(connection, filePath, fileType);
 }
 
 export async function prepareRemoteReader(connection: DuckDBConnection): Promise<void> {
@@ -155,7 +224,8 @@ export async function getFileMetadata(
   if (fileType === 'unknown') throw new Error('Unsupported or missing remote file extension');
   if (/^(https?|s3):\/\//i.test(filePath)) await prepareRemoteReader(connection);
   await prepareFileReader(connection, fileType);
-  const tableRef = getTableRef(filePath, fileType);
+  await prepareSourceSchema(connection, filePath, fileType);
+  const tableRef = getConnectionTableRef(connection, filePath, fileType);
 
   const countResult = await connection.query(`SELECT COUNT(*) as cnt FROM ${tableRef}`);
   const rowCount = (countResult.rows[0]?.[0] as number) ?? 0;
@@ -187,7 +257,8 @@ export async function loadFile(
   if (fileType === 'unknown') throw new Error(`Unsupported file type: ${filePath}`);
   if (/^(https?|s3):\/\//i.test(filePath)) await prepareRemoteReader(connection);
   await prepareFileReader(connection, fileType);
-  const tableRef = getTableRef(filePath, fileType);
+  await prepareSourceSchema(connection, filePath, fileType);
+  const tableRef = getConnectionTableRef(connection, filePath, fileType);
   const resolvedMode = await resolveLoadingMode(filePath, mode, eagerFileSizeLimitMb);
 
   const suffix = `${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;

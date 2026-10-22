@@ -31,7 +31,7 @@ const DATA_FILE_FILTER = { 'Data Files': [...DATA_FILE_EXTENSIONS] };
 function getConfig(): DataWranglerConfig {
   const config = vscode.workspace.getConfiguration('quackwrangler');
   return {
-    memoryLimit: config.get<string>('duckdb.memoryLimit', '1GB'),
+    memoryLimit: config.get<string>('duckdb.memoryLimit', '80%'),
     tempDirectory: config.get<string>('duckdb.tempDirectory', ''),
     maxTempDirectorySize: config.get<string>('duckdb.maxTempDirectorySize', '15GB'),
     autoLoadExtensions: config.get<string[]>('duckdb.autoLoadExtensions', []),
@@ -44,8 +44,12 @@ function getConfig(): DataWranglerConfig {
   };
 }
 
-let connection: DuckDBConnection | null = null;
-let managedTempDirectory: ManagedTempDirectory | undefined;
+// Shared connection used only for panel-independent commands (schema compare,
+// drift detection, global export). It must not be used for panel queries because
+// preserve_insertion_order and threads are instance-global — setting them on the
+// shared instance would race with every open panel.
+let sharedConnection: DuckDBConnection | null = null;
+let sharedManagedTempDirectory: ManagedTempDirectory | undefined;
 let outputChannel: vscode.OutputChannel;
 let configuredExtensionUri: vscode.Uri | undefined;
 let extensionContext: vscode.ExtensionContext | undefined;
@@ -61,6 +65,10 @@ interface PanelState {
   customQuerySql: string | null;
   searchQuery: string;
   relationName: string;
+  // Each panel owns its DuckDBConnection so preserve_insertion_order and other
+  // instance-global settings cannot bleed between panels.
+  connection: DuckDBConnection | null;
+  managedTempDir: ManagedTempDirectory | undefined;
 }
 const panelStates = new WeakMap<DataWranglerPanel, PanelState>();
 const WEBVIEW_PROTOCOL_VERSION = 3;
@@ -74,6 +82,8 @@ function getPanelState(panel: DataWranglerPanel): PanelState {
       customQuerySql: null,
       searchQuery: '',
       relationName: newRelationName(),
+      connection: null,
+      managedTempDir: undefined,
     };
     panelStates.set(panel, state);
   }
@@ -103,33 +113,31 @@ async function rememberRecentFile(filePath: string): Promise<void> {
   recentFilesChanged?.();
 }
 
-async function getConnection(): Promise<DuckDBConnection> {
-  if (!connection || !connection.isConnected()) {
-    outputChannel ??= vscode.window.createOutputChannel('QuackWrangler');
-    const config = getConfig();
-    if (config.tempDirectory) {
-      await mkdir(config.tempDirectory, { recursive: true });
-    } else {
-      const storageRoot =
-        extensionContext?.globalStorageUri.fsPath ?? join(tmpdir(), 'quackwrangler');
-      managedTempDirectory = await createManagedTempDirectory(storageRoot);
-      config.tempDirectory = managedTempDirectory.path;
-    }
-    connection = new DuckDBConnection(config, outputChannel);
-    try {
-      await connection.connect();
-    } catch (error) {
-      await cleanupManagedTempDirectory();
-      connection = null;
-      throw error;
-    }
+async function createConnection(config: DataWranglerConfig): Promise<{
+  connection: DuckDBConnection;
+  managedTempDir: ManagedTempDirectory | undefined;
+}> {
+  outputChannel ??= vscode.window.createOutputChannel('QuackWrangler');
+  let managedTempDir: ManagedTempDirectory | undefined;
+  if (config.tempDirectory) {
+    await mkdir(config.tempDirectory, { recursive: true });
+  } else {
+    const storageRoot =
+      extensionContext?.globalStorageUri.fsPath ?? join(tmpdir(), 'quackwrangler');
+    managedTempDir = await createManagedTempDirectory(storageRoot);
+    config.tempDirectory = managedTempDir.path;
   }
-  return connection;
+  const conn = new DuckDBConnection(config, outputChannel);
+  try {
+    await conn.connect();
+  } catch (error) {
+    await cleanupDirectory(managedTempDir);
+    throw error;
+  }
+  return { connection: conn, managedTempDir };
 }
 
-async function cleanupManagedTempDirectory(): Promise<void> {
-  const directory = managedTempDirectory;
-  managedTempDirectory = undefined;
+async function cleanupDirectory(directory: ManagedTempDirectory | undefined): Promise<void> {
   if (!directory) return;
   try {
     await directory.cleanup();
@@ -138,6 +146,42 @@ async function cleanupManagedTempDirectory(): Promise<void> {
       `[DuckDB] Could not remove temporary directory ${directory.path}: ${error instanceof Error ? error.message : String(error)}`,
     );
   }
+}
+
+/** Returns the shared connection used by panel-independent commands. */
+async function getSharedConnection(): Promise<DuckDBConnection> {
+  if (!sharedConnection || !sharedConnection.isConnected()) {
+    const { connection, managedTempDir } = await createConnection(getConfig());
+    sharedConnection = connection;
+    sharedManagedTempDirectory = managedTempDir;
+  }
+  return sharedConnection;
+}
+
+/**
+ * Returns the per-panel DuckDB connection, creating it if needed.
+ *
+ * Each panel owns its own DuckDBInstance so that preserve_insertion_order and
+ * other instance-global settings are isolated and cannot bleed between panels
+ * open at the same time.
+ */
+async function getPanelConnection(panel: DataWranglerPanel): Promise<DuckDBConnection> {
+  const state = getPanelState(panel);
+  if (!state.connection || !state.connection.isConnected()) {
+    const { connection, managedTempDir } = await createConnection(getConfig());
+    state.connection = connection;
+    state.managedTempDir = managedTempDir;
+  }
+  return state.connection;
+}
+
+async function closePanelConnection(panel: DataWranglerPanel): Promise<void> {
+  const state = panelStates.get(panel);
+  if (!state) return;
+  await state.connection?.close();
+  state.connection = null;
+  await cleanupDirectory(state.managedTempDir);
+  state.managedTempDir = undefined;
 }
 
 async function postSession(
@@ -186,7 +230,7 @@ async function postCustomQuery(
   if (!session || !customQuerySql) throw new Error('No custom query is active');
   const revision = session.getRevision();
   const sourceSql = getCustomQuerySource(session, customQuerySql);
-  const conn = await getConnection();
+  const conn = await getPanelConnection(panel);
   const [result, count, described] = await Promise.all([
     conn.query(`SELECT * FROM (${sourceSql}) AS custom_query_page LIMIT ${limit} OFFSET ${offset}`),
     conn.query(`SELECT COUNT(*) FROM (${sourceSql}) AS custom_query_count`),
@@ -237,7 +281,7 @@ async function handleWebviewMessage(
           openLabel: 'Select file to join or union',
         });
         if (!selected?.[0]) return;
-        const conn = await getConnection();
+        const conn = await getPanelConnection(panel);
         const metadata = await getFileMetadata(conn, selected[0].fsPath);
         panel.postMessage({
           type: 'secondaryFileSelected',
@@ -253,7 +297,7 @@ async function handleWebviewMessage(
         state.searchQuery = '';
         if (['join_file', 'union_file'].includes(message.transform.type)) {
           await prepareDataFileReader(
-            await getConnection(),
+            await getPanelConnection(panel),
             String(message.transform.params.filePath ?? ''),
           );
         }
@@ -401,7 +445,7 @@ async function handleWebviewMessage(
           });
           return;
         }
-        const conn = await getConnection();
+        const conn = await getPanelConnection(panel);
         await exportResults(conn, getActiveExportSql(state), target.fsPath, message.format);
         panel.postMessage({
           type: 'exportComplete',
@@ -638,7 +682,7 @@ export async function compareSchemasCommand(folderMode = false): Promise<void> {
       })) ?? [];
   }
   if (files.length < 2) throw new Error('Select a folder or at least two supported files');
-  const conn = await getConnection();
+  const conn = await getSharedConnection();
   const schemas = [];
   for (const file of files.slice(0, 100)) schemas.push(await getFileMetadata(conn, file.fsPath));
   const document = await vscode.workspace.openTextDocument({
@@ -654,6 +698,12 @@ async function loadDataIntoPanel(
   requestId?: string,
 ): Promise<void> {
   panel.setMessageHandler((message) => handleWebviewMessage(panel, message));
+  // Register cleanup exactly once per panel. Registering after setMessageHandler
+  // means it fires after the message disposable, so no in-flight queries can
+  // arrive on a closed connection.
+  if (!getPanelState(panel).connection) {
+    panel.onDispose(() => void closePanelConnection(panel));
+  }
   const state = getPanelState(panel);
   // Preserve the existing session so a failed reload doesn't break the current view.
   const previousSession = state.session;
@@ -671,7 +721,7 @@ async function loadDataIntoPanel(
     );
     progress(REMOTE_LOAD_STAGES.connecting);
     stage = 'connecting to DuckDB';
-    const conn = await getConnection();
+    const conn = await getPanelConnection(panel);
     progress(REMOTE_LOAD_STAGES.preparing);
     stage = 'preparing the source reader';
     await prepareDataFileReader(conn, filePath);
@@ -942,9 +992,9 @@ export async function exportDataCommand(): Promise<void> {
   }
 
   try {
-    const conn = await getConnection();
     const panel = DataWranglerPanel.currentPanel;
     const activeState = panel ? getPanelState(panel) : null;
+    const conn = activeState ? await getPanelConnection(panel!) : await getSharedConnection();
     await exportResults(
       conn,
       activeState?.session ? getActiveExportSql(activeState) : 'SELECT * FROM current_data',
@@ -959,9 +1009,10 @@ export async function exportDataCommand(): Promise<void> {
 }
 
 export async function disposeCommands(): Promise<void> {
-  await connection?.close();
-  connection = null;
-  await cleanupManagedTempDirectory();
+  await sharedConnection?.close();
+  sharedConnection = null;
+  await cleanupDirectory(sharedManagedTempDirectory);
+  sharedManagedTempDirectory = undefined;
 }
 
 export async function summarizeFileCommand(): Promise<void> {

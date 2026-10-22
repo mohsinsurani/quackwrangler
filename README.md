@@ -5,7 +5,7 @@
 </p>
 
 [![CI](https://github.com/mohsinsurani/quackwrangler/actions/workflows/ci.yml/badge.svg)](https://github.com/mohsinsurani/quackwrangler/actions/workflows/ci.yml)
-[![VS Code Marketplace](https://img.shields.io/badge/VS_Code_Marketplace-0.2.1-007ACC?logo=visualstudiocode)](https://marketplace.visualstudio.com/items?itemName=quackwrangler.quackwrangler)
+[![VS Code Marketplace](https://img.shields.io/badge/VS_Code_Marketplace-0.3.0-007ACC?logo=visualstudiocode)](https://marketplace.visualstudio.com/items?itemName=quackwrangler.quackwrangler)
 [![MIT License](https://img.shields.io/badge/license-MIT-yellow.svg)](LICENSE)
 [![VS Code 1.85+](https://img.shields.io/badge/VS%20Code-1.85%2B-blue.svg)](https://code.visualstudio.com/)
 
@@ -42,9 +42,13 @@ QuackWrangler ships with DuckDB built in. Open CSV, Parquet, JSON, Excel, and OD
 - **Generate a cleaning plan:** store an AI provider key in VS Code SecretStorage, then use **AI plan**. Only your instruction, schema metadata, and redacted visual-transform history are sent; generated steps require approval and pass the normal transform validator.
 - **Compare schemas:** select multiple files with **Compare File Schemas**, or recursively inspect up to 100 files with **Detect Folder Schema Drift**.
 
-## What's new in 0.2.1
+## What's new in 0.3.0
 
-- Updated the embedded DuckDB runtime to 1.5.6-r.1.
+- Updated the embedded DuckDB runtime to 2.0.0-r.1 and refreshed project dependencies.
+- Fixed CSV loading failures on columns that look numeric but contain later text such as `ALL`, resolving types once per source so interactive queries stay fast.
+- Open editors now use independent DuckDB instances, so settings and data cannot bleed between panels.
+- Raised the default memory limit to 80% and added spill diagnostics for out-of-memory errors on large sources.
+- Refreshed the benchmark results for DuckDB 2.0.
 - Restored compatibility with older Explorer context menus that invoke the lowercase `quackwrangler.openfile` command.
 - Added staged file-open diagnostics and native error stacks under **View → Output → QuackWrangler**.
 
@@ -72,15 +76,15 @@ QuackWrangler sits between a basic file preview and a full notebook. It gives yo
 
 ## Performance benchmark
 
-On a deterministic one-million-row Parquet workload, QuackWrangler's production Node DuckDB engine completed the analytical transform faster than both comparison engines. Polars loaded the file faster and had the lowest end-to-end time; QuackWrangler finished the complete workflow about 1.7× faster than Pandas.
+On a deterministic one-million-row Parquet workload, Polars had the lowest end-to-end time, while QuackWrangler's production DuckDB 2.0 engine completed the workflow faster than Pandas. QuackWrangler's transform phase was faster than both comparison engines.
 
 | Engine                           | Load Parquet | Filter + aggregate + sort |        Total |
 | -------------------------------- | -----------: | ------------------------: | -----------: |
-| QuackWrangler (DuckDB 1.5.6-r.1) |     21.36 ms |               **8.18 ms** |     29.68 ms |
-| Polars 1.43.1                    |  **5.69 ms** |                  21.48 ms | **26.24 ms** |
-| Pandas 3.0.5                     |     11.25 ms |                  39.72 ms |     50.69 ms |
+| QuackWrangler (DuckDB 2.0.0-r.1) |     14.67 ms |               **6.98 ms** |     21.62 ms |
+| Polars 1.43.1                    |  **2.76 ms** |                   8.49 ms | **11.25 ms** |
+| Pandas 3.0.5                     |      9.34 ms |                  42.45 ms |     51.49 ms |
 
-These are medians of seven measured runs after two warmups on an Apple M3 Pro with 18 GB RAM, recorded October 4, 2026. Every engine ran equivalent eager operations and returned the same validated 20-row result. Lower is better.
+These are medians of seven measured runs after two warmups on an Apple M3 Pro with 18 GB RAM, recorded October 22, 2026. Every engine ran equivalent eager operations and returned the same validated 20-row result. Lower is better.
 
 ### Scaling and peak memory
 
@@ -88,34 +92,34 @@ Fresh-process measurements include each language runtime and its loaded librarie
 
 | Rows | QuackWrangler time / RSS |     Polars time / RSS |    Pandas time / RSS |
 | ---: | -----------------------: | --------------------: | -------------------: |
-|  10K |          5.76 ms / 97 MB |  **4.79 ms** / 133 MB |    75.84 ms / 126 MB |
-| 100K |    27.58 ms / **102 MB** |  **6.82 ms** / 146 MB |    52.17 ms / 143 MB |
-|   1M |    44.66 ms / **171 MB** | **34.84 ms** / 308 MB |   105.54 ms / 324 MB |
-|  10M |   **320.88 ms / 740 MB** | 559.61 ms / 1,224 MB | 787.46 ms / 1,627 MB |
+|  10K |          6.09 ms / 99 MB |  **3.45 ms** / 134 MB |    34.66 ms / 125 MB |
+| 100K |    17.68 ms / **105 MB** |  **5.43 ms** / 147 MB |    37.51 ms / 143 MB |
+|   1M |    22.72 ms / **166 MB** | **15.81 ms** / 314 MB |    87.64 ms / 326 MB |
+|  10M |   **137.37 ms / 672 MB** |  151.54 ms / 1,694 MB | 593.59 ms / 1,813 MB |
 
-At 10 million rows, QuackWrangler was 1.7× faster than Polars and 2.5× faster than Pandas in this workload, while its measured peak process RSS was 40% lower than Polars and 54% lower than Pandas. All engines completed successfully; no unmeasured OOM claim is made. See the [raw scalability results](benchmarks/results/scalability.json).
+At 10 million rows, QuackWrangler was 1.1× faster than Polars and 4.3× faster than Pandas in this workload, while its measured peak process RSS was 60% lower than Polars and 63% lower than Pandas. All engines completed successfully; no unmeasured OOM claim is made. See the [raw scalability results](benchmarks/results/scalability.json).
 
 ```text
 10M rows — total workflow time (lower is better)
 
-QuackWrangler  321 ms  ██████████
-Polars         560 ms  █████████████████
-Pandas         787 ms  ████████████████████████
+QuackWrangler  137 ms  █████
+Polars         152 ms  ██████
+Pandas         594 ms  ████████████████████████
 ```
 
 An exploratory single 50M-row run also completed for every engine:
 
 | Engine        |      Total | Peak process RSS |
 | ------------- | ---------: | ---------------: |
-| QuackWrangler | **1.18 s** |      **2.29 GB** |
-| Polars        |     2.73 s |          3.82 GB |
-| Pandas        |     4.54 s |          4.92 GB |
+| QuackWrangler | **1.21 s** |      **2.03 GB** |
+| Polars        |     2.24 s |          3.45 GB |
+| Pandas        |     4.22 s |          5.20 GB |
 
-This 50M result is one fresh-process sample rather than a multi-run median. System swap usage increased during the experiment, so it is published as exploratory evidence and not used for an OOM or “under 1 GB” claim. See the [raw 50M result](benchmarks/results/scalability-50m.json).
+This 50M result is one fresh-process sample rather than a multi-run median. It is published as exploratory evidence and not used for an OOM or “under 1 GB” claim. See the [raw 50M result](benchmarks/results/scalability-50m.json).
 
 ### File-format loading
 
-For the same generated 100K-row dataset, DuckDB materialized Parquet in 20.04 ms, NDJSON in 59.99 ms, and CSV in 77.13 ms. Parquet was 3.8× faster to load than CSV and produced a much smaller file. See the [raw format results](benchmarks/results/formats.json).
+For the same generated 100K-row dataset, DuckDB 2.0 materialized Parquet in 11.30 ms, NDJSON in 48.83 ms, and CSV in 44.34 ms. Parquet was 3.9× faster to load than CSV and produced a much smaller file. See the [raw format results](benchmarks/results/formats.json).
 
 This is a reproducible workload, not a universal engine ranking; results depend on hardware, versions, data shape, cache state, swap pressure, and query. Peak RSS is more defensible than an allocator delta but still includes different runtime overheads. Large runs remain opt-in because they can materially affect workstation responsiveness.
 
@@ -258,7 +262,7 @@ Open VS Code Settings and search for `QuackWrangler`, or configure values direct
 
 ```json
 {
-  "quackwrangler.duckdb.memoryLimit": "1GB",
+  "quackwrangler.duckdb.memoryLimit": "80%",
   "quackwrangler.duckdb.tempDirectory": "",
   "quackwrangler.duckdb.maxTempDirectorySize": "15GB",
   "quackwrangler.duckdb.loadingMode": "auto",
@@ -276,7 +280,11 @@ Open VS Code Settings and search for `QuackWrangler`, or configure values direct
 
 When `duckdb.tempDirectory` is empty, spill files use a unique directory under VS Code's extension storage and are removed when QuackWrangler shuts down. A configured directory is created if needed and is never automatically deleted.
 
-Automatic loading materializes local files up to `duckdb.eagerFileSizeLimitMb` and keeps larger or remote sources lazy through a DuckDB view. Set `duckdb.loadingMode` to `eager` or `lazy` to override that choice. A `duckdb.threads` value of `0` leaves thread selection to DuckDB. Source row order is preserved by default for stable unsorted previews; disable `duckdb.preserveInsertionOrder` to reduce memory use on large data.
+Automatic loading materializes local files up to `duckdb.eagerFileSizeLimitMb` and keeps larger or remote sources lazy through a DuckDB view. Set `duckdb.loadingMode` to `eager` or `lazy` to override that choice. A `duckdb.threads` value of `0` leaves thread selection to DuckDB, which measured faster than capping threads. Source row order is preserved by default for stable unsorted previews; disable `duckdb.preserveInsertionOrder` to reduce memory use on very large data.
+
+Working with data larger than memory depends on spilling, not on thread count. `duckdb.memoryLimit` defaults to `80%` of available memory, and anything above it spills into `duckdb.tempDirectory` within the `duckdb.maxTempDirectorySize` budget. If spilling is unavailable, DuckDB raises an out-of-memory error; QuackWrangler logs the effective memory, temp directory, and spill budget under **View → Output → QuackWrangler** and warns when spilling is disabled.
+
+CSV and TSV column types are resolved once when a source is opened. QuackWrangler samples the schema, validates it against the whole file in one bounded pass, and widens only the columns that genuinely fail conversion, so a late `ALL` in a numeric column loads as text while clean columns keep precise types. Because the resolved schema is reused, later queries carry no detection cost.
 
 ## Develop locally
 

@@ -46,7 +46,9 @@ describe('WranglingSession', () => {
     await session.getPage(0, 100);
     await session.getPage(100, 100);
     expect(query.mock.calls.filter(([sql]) => String(sql).startsWith('DESCRIBE'))).toHaveLength(1);
-    expect(query.mock.calls.filter(([sql]) => String(sql).startsWith('SELECT COUNT'))).toHaveLength(1);
+    expect(query.mock.calls.filter(([sql]) => String(sql).startsWith('SELECT COUNT'))).toHaveLength(
+      1,
+    );
     session.apply('drop_column', { column: 'unused' });
     await session.getPage(0, 100);
     expect(query.mock.calls.filter(([sql]) => String(sql).startsWith('DESCRIBE'))).toHaveLength(2);
@@ -57,7 +59,11 @@ describe('WranglingSession', () => {
       .fn()
       .mockResolvedValueOnce({ rows: [['name', 'VARCHAR', 'YES']] })
       .mockResolvedValueOnce({ rows: [[0, 2, 'alpha', 'omega']] })
-      .mockResolvedValueOnce({ columns: ['name', '__qw_total_rows'], rows: [['alpha', 2]], rowCount: 1 });
+      .mockResolvedValueOnce({
+        columns: ['name', '__qw_total_rows'],
+        rows: [['alpha', 2]],
+        rowCount: 1,
+      });
     const session = new WranglingSession({ query } as never);
     session.load('/tmp/data.csv');
     const first = await session.getStatistics();
@@ -376,7 +382,7 @@ describe('pipeline ordering and reshape transforms', () => {
     const session3 = new WranglingSession({} as never);
     session3.load('/tmp/data.csv');
     session3.apply('fill_nulls', { column: 'name', value: 'N/A' });
-    expect(session3.getSql()).toContain("COALESCE(\"name\", 'N/A')");
+    expect(session3.getSql()).toContain('COALESCE("name", \'N/A\')');
   });
 
   it('uses a custom relation name as the pipeline source', () => {

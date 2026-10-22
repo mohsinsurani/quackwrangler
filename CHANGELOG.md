@@ -4,6 +4,23 @@ All notable changes to QuackWrangler are documented here using [Keep a Changelog
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-22
+
+### Changed
+
+- Upgraded the embedded DuckDB Node API to 2.0.0-r.1 and refreshed project and webview dependencies.
+- Raised the default DuckDB memory limit to `80%` of available memory so large sources rely on spill-to-disk instead of a fixed 1GB ceiling.
+- CSV and TSV column types are now resolved once per source and pinned for later queries, so paging, profiles, charts, search, joins, and unions no longer repeat type detection.
+- Each open editor panel now owns a dedicated DuckDB instance so instance-global settings such as `preserve_insertion_order` cannot bleed between panels when multiple files are open at the same time.
+
+### Fixed
+
+- CSV and TSV loading no longer fails when a column looks numeric in the sampled rows but contains a later textual value such as `ALL`. Only the columns that actually fail conversion are widened, so clean columns keep their precise types.
+- Out-of-memory diagnostics now report the effective memory limit, temp directory, and spill budget, and warn when spilling is disabled, which is the actual cause of `failed to allocate data` errors on large sources.
+- `DuckDBConnection.close()` now calls `closeSync()` on the native DuckDB instance instead of just clearing the reference, preventing a native handle leak when panels are closed.
+- `DuckDBConnection` log and error output is now instance-bound, so messages from multiple simultaneous panel connections are never silently misrouted to the wrong output channel.
+- Removed the unused `DuckDBConnection.getSchema()` method, which contained a separate inconsistent CSV reader path that would have bypassed the resolved-schema cache.
+
 ## [0.2.1] - 2026-10-09
 
 ### Changed
@@ -168,7 +185,8 @@ All notable changes to QuackWrangler are documented here using [Keep a Changelog
 - Filtering, sorting, column transforms, deduplication, aggregation, paging, schema inspection, summaries, and Parquet/CSV/JSON export
 - Activity-bar file browser and custom data editor integration
 
-[Unreleased]: https://github.com/mohsinsurani/quackwrangler/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/mohsinsurani/quackwrangler/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/mohsinsurani/quackwrangler/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/mohsinsurani/quackwrangler/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/mohsinsurani/quackwrangler/compare/v0.1.5...v0.2.0
 [0.1.5]: https://github.com/mohsinsurani/quackwrangler/compare/v0.1.4...v0.1.5

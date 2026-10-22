@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => {
     filePath: undefined as string | undefined,
     postMessage: vi.fn((message: Record<string, unknown>) => posted.push(message)),
     setMessageHandler: vi.fn(),
+    onDispose: vi.fn(),
   };
   return {
     posted,
@@ -122,10 +123,7 @@ describe('summarizeFileCommand host push', () => {
   });
 
   it('posts a stats message that carries session identity but no request ID', async () => {
-    await openDataWranglerCustomEditor(
-      { fsPath: '/data/summary.parquet' } as never,
-      {} as never,
-    );
+    await openDataWranglerCustomEditor({ fsPath: '/data/summary.parquet' } as never, {} as never);
 
     mocks.posted.length = 0;
     await summarizeFileCommand();

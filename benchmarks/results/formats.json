@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-10-04T16:30:15.313Z",
+  "generated_at": "2026-10-22T10:58:05.855Z",
   "methodology": {
     "rows": 100000,
     "runs": 7,
@@ -10,19 +10,19 @@
       "format": "Parquet",
       "rows": 100000,
       "file_mb": 0.22,
-      "load_ms": 20.04
+      "load_ms": 11.3
     },
     {
       "format": "CSV",
       "rows": 100000,
       "file_mb": 4.55,
-      "load_ms": 77.13
+      "load_ms": 44.34
     },
     {
       "format": "NDJSON",
       "rows": 100000,
       "file_mb": 11.71,
-      "load_ms": 59.99
+      "load_ms": 48.83
     }
   ]
 }

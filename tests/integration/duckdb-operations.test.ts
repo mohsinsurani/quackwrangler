@@ -1,11 +1,12 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { DuckDBInstance } from '@duckdb/node-api';
 import { randomUUID } from 'node:crypto';
+import { writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { WranglingSession } from '../../src/transforms/pipeline';
 import { normalizeReadOnlyQuery } from '../../src/duckdb/query-engine';
-import { loadFile } from '../../src/duckdb/parquet-loader';
+import { loadFile, prepareSourceSchema } from '../../src/duckdb/parquet-loader';
 
 let database: DuckDBInstance;
 
@@ -26,7 +27,9 @@ function createAdapter() {
         connection.closeSync();
       }
     },
-    transaction: async <T>(callback: (transaction: { query: (sql: string) => Promise<unknown> }) => Promise<T>) => {
+    transaction: async <T>(
+      callback: (transaction: { query: (sql: string) => Promise<unknown> }) => Promise<T>,
+    ) => {
       const connection = await database.connect();
       await connection.run('BEGIN TRANSACTION');
       try {
@@ -118,6 +121,69 @@ describe('transactional file promotion', () => {
     ).rejects.toThrow('injected promotion failure');
     const after = await adapter.query('SELECT * FROM loader_test_data');
     expect(after.rows).toEqual([[42]]);
+  });
+});
+
+describe('CSV type resolution', () => {
+  it('loads a numeric column that contains a late textual value', async () => {
+    // Reproduces the reported failure: a column that looks like BIGINT in the
+    // sampled rows but contains "ALL" far beyond the sample window.
+    const source = join(tmpdir(), `quackwrangler-late-text-${randomUUID()}.csv`);
+    let body = 'GP_PRAC,NUMBER_OF_PATIENTS\n';
+    for (let index = 0; index < 50_000; index += 1) body += `A${index},${index}\n`;
+    body += 'A99999,ALL\n';
+    await writeFile(source, body);
+
+    const adapter = createAdapter();
+    await prepareSourceSchema(adapter as never, source);
+    await loadFile(adapter as never, source, 'lazy', 64, 'late_text_data');
+
+    // A projecting read is required: COUNT(*) alone can skip the conversion.
+    const rows = await adapter.query('SELECT * FROM late_text_data');
+    expect(rows.rowCount).toBe(50_001);
+    const preserved = await adapter.query(
+      `SELECT NUMBER_OF_PATIENTS FROM late_text_data WHERE GP_PRAC = 'A99999'`,
+    );
+    expect(preserved.rows).toEqual([['ALL']]);
+  });
+
+  it('keeps precise types for clean columns instead of widening everything', async () => {
+    const source = join(tmpdir(), `quackwrangler-clean-${randomUUID()}.csv`);
+    await writeFile(source, 'id,amount\n1,10.5\n2,20.5\n');
+
+    const adapter = createAdapter();
+    await prepareSourceSchema(adapter as never, source);
+    await loadFile(adapter as never, source, 'lazy', 64, 'clean_typed_data');
+
+    const described = await adapter.query('DESCRIBE SELECT * FROM clean_typed_data');
+    expect(described.rows.map((row) => [row[0], row[1]])).toEqual([
+      ['id', 'BIGINT'],
+      ['amount', 'DOUBLE'],
+    ]);
+  });
+
+  it('resolves types once and reuses them for later queries', async () => {
+    const source = join(tmpdir(), `quackwrangler-cached-${randomUUID()}.csv`);
+    await writeFile(source, 'id,label\n1,a\n2,b\n');
+
+    const adapter = createAdapter();
+    const executed: string[] = [];
+    const tracking = {
+      ...adapter,
+      query: async (sql: string) => {
+        executed.push(sql);
+        return adapter.query(sql);
+      },
+    };
+
+    await prepareSourceSchema(tracking as never, source);
+    await loadFile(tracking as never, source, 'lazy', 64, 'cached_typed_data');
+    await tracking.query('SELECT * FROM cached_typed_data');
+    await tracking.query('SELECT * FROM cached_typed_data LIMIT 1');
+
+    expect(executed.filter((sql) => sql.includes('sniff_csv'))).toHaveLength(1);
+    // Steady-state queries must not carry full-file detection.
+    expect(executed.some((sql) => sql.includes('sample_size=-1'))).toBe(false);
   });
 });
 

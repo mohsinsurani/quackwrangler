@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-08-01T04:09:34.519Z",
+  "generated_at": "2026-10-22T10:58:42.436Z",
   "machine": {
     "cpu": "Apple M3 Pro",
     "architecture": "arm64",
@@ -13,28 +13,29 @@
     "sizes": [
       50000000
     ],
+    "stop_after_first_worker_failure": true,
     "result_validation": "exact keys/counts and 0.001 absolute tolerance for floating-point aggregates"
   },
   "results": [
     {
       "rows": 50000000,
       "engine": "QuackWrangler (DuckDB)",
-      "total_ms": 1179.55,
-      "peak_rss_mb": 2287.92,
+      "total_ms": 1205.94,
+      "peak_rss_mb": 2076.31,
       "status": "completed"
     },
     {
       "rows": 50000000,
       "engine": "Polars",
-      "total_ms": 2725.76,
-      "peak_rss_mb": 3821.86,
+      "total_ms": 2241.56,
+      "peak_rss_mb": 3536.48,
       "status": "completed"
     },
     {
       "rows": 50000000,
       "engine": "Pandas",
-      "total_ms": 4544.8,
-      "peak_rss_mb": 4924.06,
+      "total_ms": 4222.24,
+      "peak_rss_mb": 5328.91,
       "status": "completed"
     }
   ]

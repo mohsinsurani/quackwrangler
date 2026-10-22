@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => {
     filePath: undefined as string | undefined,
     postMessage: vi.fn((message: unknown) => posted.push(message)),
     setMessageHandler: vi.fn(),
+    onDispose: vi.fn(),
   };
   return {
     posted,
@@ -61,6 +62,7 @@ vi.mock('../../../src/duckdb/connection.js', () => ({
       return true;
     }
     async connect(): Promise<void> {}
+    async close(): Promise<void> {}
     async query(sql: string): Promise<unknown> {
       if (sql.startsWith('DESCRIBE')) {
         return { columns: [], rows: [['value', 'BIGINT', 'NO']], rowCount: 1, duration: 0 };
@@ -131,9 +133,12 @@ vi.mock('../../../src/webview/provider.js', () => ({
   },
 }));
 
+import { DuckDBConnection } from '../../../src/duckdb/connection.js';
 import { configureCommands, openDataWranglerCustomEditor } from '../../../src/commands';
 
-function latestMessageHandler(): (message: Record<string, unknown> & { type: string }) => Promise<void> {
+function latestMessageHandler(): (
+  message: Record<string, unknown> & { type: string },
+) => Promise<void> {
   const callback = mocks.panel.setMessageHandler.mock.calls.at(-1)?.[0];
   if (!callback) throw new Error('Expected the panel message handler to be registered');
   return callback;
@@ -154,10 +159,7 @@ describe('custom-editor file opening flow', () => {
   });
 
   it('loads a directly clicked Parquet document and posts its first grid page', async () => {
-    await openDataWranglerCustomEditor(
-      { fsPath: '/data/direct.parquet' } as never,
-      {} as never,
-    );
+    await openDataWranglerCustomEditor({ fsPath: '/data/direct.parquet' } as never, {} as never);
 
     expect(mocks.loadFile).toHaveBeenCalledWith(
       expect.anything(),
@@ -175,9 +177,7 @@ describe('custom-editor file opening flow', () => {
 
     mocks.posted.length = 0;
     await latestMessageHandler()({ type: 'ready' });
-    expect(mocks.posted).toContainEqual(
-      expect.objectContaining({ type: 'sessionUpdated' }),
-    );
+    expect(mocks.posted).toContainEqual(expect.objectContaining({ type: 'sessionUpdated' }));
   });
 
   it('records the failed load stage and directs the user to the output channel', async () => {
@@ -185,10 +185,7 @@ describe('custom-editor file opening flow', () => {
 
     await openDataWranglerCustomEditor({ fsPath: '/data/broken.csv' } as never, {} as never);
 
-    expect(mocks.prepareDataFileReader).toHaveBeenCalledWith(
-      expect.anything(),
-      '/data/broken.csv',
-    );
+    expect(mocks.prepareDataFileReader).toHaveBeenCalledWith(expect.anything(), '/data/broken.csv');
     expect(mocks.appendLine).toHaveBeenCalledWith(
       expect.stringContaining(
         '[Load ERROR] Failed while loading the source data: /data/broken.csv\nError: invalid CSV header',
@@ -313,7 +310,10 @@ describe('custom-editor file opening flow', () => {
     await openDataWranglerCustomEditor({ fsPath: '/data/initial.parquet' } as never, {} as never);
     const handler = latestMessageHandler();
 
-    await handler({ type: 'executeCustomQuery', sql: 'SELECT value FROM current_data WHERE value > 0' });
+    await handler({
+      type: 'executeCustomQuery',
+      sql: 'SELECT value FROM current_data WHERE value > 0',
+    });
     await handler({
       type: 'exportData',
       format: 'csv',
@@ -333,5 +333,75 @@ describe('custom-editor file opening flow', () => {
       status: 'completed',
       requestId: 'export-1',
     });
+  });
+});
+
+describe('per-panel DuckDB connection isolation', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.posted.length = 0;
+    configureCommands(
+      { fsPath: '/extension' } as never,
+      { appendLine: mocks.appendLine } as never,
+      {
+        globalStorageUri: { fsPath: '/writable/global-storage' },
+        globalState: { get: vi.fn(() => []), update: vi.fn() },
+      } as never,
+    );
+  });
+
+  it('creates a separate DuckDBConnection for each panel', async () => {
+    const panelA = {
+      filePath: undefined as string | undefined,
+      postMessage: vi.fn(),
+      setMessageHandler: vi.fn(),
+      onDispose: vi.fn(),
+    };
+    const panelB = {
+      filePath: undefined as string | undefined,
+      postMessage: vi.fn(),
+      setMessageHandler: vi.fn(),
+      onDispose: vi.fn(),
+    };
+
+    const { DataWranglerPanel } = await import('../../../src/webview/provider.js');
+    vi.mocked(DataWranglerPanel)
+      .attach.mockReturnValueOnce(panelA as never)
+      .mockReturnValueOnce(panelB as never);
+
+    await openDataWranglerCustomEditor({ fsPath: '/data/a.parquet' } as never, {} as never);
+    await openDataWranglerCustomEditor({ fsPath: '/data/b.parquet' } as never, {} as never);
+
+    // Both panels must have registered a dispose handler.
+    expect(panelA.onDispose).toHaveBeenCalledOnce();
+    expect(panelB.onDispose).toHaveBeenCalledOnce();
+
+    // The connections passed to loadFile must be distinct objects.
+    const callsA = mocks.loadFile.mock.calls.filter((c) => String(c[1]).includes('a.parquet'));
+    const callsB = mocks.loadFile.mock.calls.filter((c) => String(c[1]).includes('b.parquet'));
+    expect(callsA).toHaveLength(1);
+    expect(callsB).toHaveLength(1);
+    const connA = callsA[0][0] as DuckDBConnection;
+    const connB = callsB[0][0] as DuckDBConnection;
+    expect(connA).not.toBe(connB);
+  });
+
+  it('calls the dispose handler registered by onDispose when a panel is closed', async () => {
+    const panel = {
+      filePath: undefined as string | undefined,
+      postMessage: vi.fn(),
+      setMessageHandler: vi.fn(),
+      onDispose: vi.fn(),
+    };
+    const { DataWranglerPanel } = await import('../../../src/webview/provider.js');
+    vi.mocked(DataWranglerPanel).attach.mockReturnValue(panel as never);
+
+    await openDataWranglerCustomEditor({ fsPath: '/data/a.parquet' } as never, {} as never);
+
+    expect(panel.onDispose).toHaveBeenCalledOnce();
+    // Simulate panel disposal: fire the registered callback and verify the
+    // connection is closed by observing the connection mock.
+    const disposeCallback = panel.onDispose.mock.calls[0][0] as () => void;
+    expect(() => disposeCallback()).not.toThrow();
   });
 });

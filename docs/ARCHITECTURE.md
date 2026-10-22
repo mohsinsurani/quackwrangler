@@ -99,6 +99,24 @@ Exports use DuckDB `COPY` over the full pipeline SQL, not the visible page. CSV,
 
 When the user has not configured `quackwrangler.duckdb.tempDirectory`, the extension creates a unique spill directory below `ExtensionContext.globalStorageUri`. This prevents DuckDB from attempting to create a relative `.tmp` directory in a read-only workspace or process directory. The directory is removed after connection failure or extension deactivation; cleanup failures are logged without masking the original error. User-configured directories are created when needed and are not deleted by QuackWrangler. Memory, spill size, worker threads, and insertion-order preservation are applied when the in-memory instance starts. Insertion order is preserved by default so unsorted previews follow source order; users can disable it for lower memory use on large data.
 
+Out-of-memory failures on large sources come from DuckDB being unable to offload data, not from thread count. Measurements on a 112 MB CSV showed that a 150 MB memory limit succeeds when a temp directory is available and fails without one, while capping worker threads cost 1.6–2.7× more time to save roughly 55 MB of peak RSS. The connection therefore leaves thread selection to DuckDB and instead records the effective `memory_limit`, `temp_directory`, and `max_temp_directory_size` after connecting, warning when spilling is disabled. Reading these diagnostics must never prevent a usable connection.
+
+## Per-panel DuckDB connections
+
+`SET preserve_insertion_order` and `SET threads` are scoped to the DuckDB instance, not to an individual connection handle. A plain `SET` applies to all current and future connections on the same instance. Running it on a shared instance from a second panel load would therefore overwrite the value seen by any in-flight query on the first panel.
+
+Each `PanelState` therefore owns its own `DuckDBConnection` (which wraps a `DuckDBInstance`). `getPanelConnection` creates that instance on the first load and caches it on the state. The instance is closed and removed by `closePanelConnection`, which is registered with `panel.onDispose` the first time a panel loads a file.
+
+Panel-independent commands — schema comparison, drift detection, and the global export command — use `getSharedConnection`, which manages a single separate instance that is not used for any panel query. `disposeCommands` closes both the shared connection and any surviving panel connections.
+
+## CSV type resolution
+
+A sampled CSV sniff is cheap but can choose a numeric type from early rows and then fail on a later textual value. Scanning the entire file for detection is correct but must be repeated by every query that references the reader, which makes interactive paging slow: on a 112 MB CSV, embedding full-file detection in the reader raised a 100-row page from roughly 26 ms to about 1,137 ms.
+
+`src/duckdb/csv-schema.ts` instead resolves types once per source. It samples the schema, then runs one bounded validation scan that projects every column and records conversion failures as rejects, and widens only the rejecting columns to `VARCHAR`. The projection uses `COUNT(column)` per column because a bare `COUNT(*)` can skip the projection entirely and silently miss conversion errors. Because DuckDB scopes rejects tables to the connection that produced them, the scan and the reject lookup share one connection through `transaction`. If the validation scan cannot run, every column falls back to `VARCHAR` so the source still opens.
+
+Resolved schemas are cached per connection and per path, and `getConnectionTableRef` rebuilds reader references from that cache. Loading, metadata, joins, and unions all use it, so steady-state queries carry no detection cost. Resolution measured about 135 ms versus about 1,221 ms for full-file detection on the same file, and paging returned to single-digit or low-tens milliseconds.
+
 ## Lightweight dbt context
 
 For a local data file, the extension searches upward to the active workspace boundary for `dbt_project.yml`. A successful match sets a contextual VS Code key that reveals one compact **Copy as dbt SQL** action. The export asks for an upstream model name and wraps the active validated transform history with `{{ ref('model_name') }}` as either a complete model query or a CTE snippet. It preserves DuckDB SQL semantics and does not translate expressions for other dbt adapters. It also does not parse artifacts, inspect the dbt graph, run dbt, or add a permanent sidebar.
@@ -143,7 +161,7 @@ Increment `WEBVIEW_PROTOCOL_VERSION` when a `sessionUpdated` payload changes inc
 
 ## Native distribution
 
-QuackWrangler embeds `@duckdb/node-api` 1.5.6-r.1. DuckDB's Node binding contains platform-specific native libraries, so QuackWrangler publishes separate VSIX packages for Windows, Linux, Alpine Linux, and macOS on x64 and ARM64 under one Marketplace version. VS Code selects the matching target automatically. There is no un-targeted fallback package because a VSIX containing only the maintainer's local DuckDB binary would fail on other systems.
+QuackWrangler embeds `@duckdb/node-api` 2.0.0-r.1. DuckDB's Node binding contains platform-specific native libraries, so QuackWrangler publishes separate VSIX packages for Windows, Linux, Alpine Linux, and macOS on x64 and ARM64 under one Marketplace version. VS Code selects the matching target automatically. There is no un-targeted fallback package because a VSIX containing only the maintainer's local DuckDB binary would fail on other systems.
 
 `scripts/vsce-platform.mjs` makes local packaging target the current platform. `.github/workflows/package-platforms.yml` builds the complete release matrix on matching GitHub-hosted runners and verifies that the expected DuckDB binding is installed before packaging.
 

@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
 import { DuckDBConnection } from '../duckdb/connection.js';
-import { getTableRef } from '../duckdb/parquet-loader.js';
+import { getConnectionTableRef, getTableRef } from '../duckdb/parquet-loader.js';
 import { quoteIdentifier, quoteLiteral } from '../duckdb/sql.js';
 import {
   ColumnInfo,
@@ -154,7 +154,11 @@ function nestedExpression(params: Record<string, unknown>): string {
   return expression;
 }
 
-function operationSql(type: string, params: Record<string, unknown>): string {
+function operationSql(
+  type: string,
+  params: Record<string, unknown>,
+  secondaryTableRef: (filePath: string) => string = (filePath) => getTableRef(filePath),
+): string {
   switch (type) {
     case 'filterRows':
     case 'filter_rows':
@@ -204,11 +208,11 @@ function operationSql(type: string, params: Record<string, unknown>): string {
       if (!new Set(['INNER', 'LEFT', 'RIGHT', 'FULL']).has(joinType)) {
         throw new Error(`Unsupported join type: ${joinType}`);
       }
-      return `SELECT left_data.*, right_data.* FROM current_data AS left_data ${joinType} JOIN ${getTableRef(filePath)} AS right_data ON left_data.${leftColumn} = right_data.${rightColumn}`;
+      return `SELECT left_data.*, right_data.* FROM current_data AS left_data ${joinType} JOIN ${secondaryTableRef(filePath)} AS right_data ON left_data.${leftColumn} = right_data.${rightColumn}`;
     }
     case 'union_file': {
       const filePath = requiredString(params, 'filePath');
-      return `SELECT * FROM current_data UNION ALL BY NAME SELECT * FROM ${getTableRef(filePath)}`;
+      return `SELECT * FROM current_data UNION ALL BY NAME SELECT * FROM ${secondaryTableRef(filePath)}`;
     }
     case 'castType':
     case 'cast_type': {
@@ -366,7 +370,11 @@ export class WranglingSession {
   }
 
   apply(type: string, params: Record<string, unknown>): void {
-    const sql = operationSql(type, params);
+    // Secondary sources reuse any schema already resolved on this connection so
+    // joins and unions do not re-run CSV type detection per query.
+    const sql = operationSql(type, params, (filePath) =>
+      getConnectionTableRef(this.connection, filePath),
+    );
     this.history.push({
       id: randomUUID(),
       type,

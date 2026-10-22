@@ -7,17 +7,6 @@ export interface DuckDBTransaction {
   query(sql: string): Promise<QueryResult>;
 }
 
-let outputChannel: vscode.OutputChannel;
-
-function log(message: string): void {
-  outputChannel?.appendLine(`[DuckDB] ${message}`);
-}
-
-function logError(message: string, error?: unknown): void {
-  const details = error instanceof Error ? (error.stack ?? error.message) : String(error);
-  outputChannel?.appendLine(`[DuckDB ERROR] ${message}: ${details}`);
-}
-
 function quoteSetting(value: string): string {
   return `'${value.replace(/'/g, "''")}'`;
 }
@@ -25,31 +14,39 @@ function quoteSetting(value: string): string {
 export class DuckDBConnection {
   private instance: DuckDBInstance | null = null;
   private config: DataWranglerConfig;
+  private channel: vscode.OutputChannel | undefined;
 
   constructor(config: DataWranglerConfig, channel?: vscode.OutputChannel) {
     this.config = config;
-    if (channel) {
-      outputChannel = channel;
-    }
+    this.channel = channel;
+  }
+
+  private log(message: string): void {
+    this.channel?.appendLine(`[DuckDB] ${message}`);
+  }
+
+  private logError(message: string, error?: unknown): void {
+    const details = error instanceof Error ? (error.stack ?? error.message) : String(error);
+    this.channel?.appendLine(`[DuckDB ERROR] ${message}: ${details}`);
   }
 
   async connect(): Promise<void> {
     try {
-      log('Creating in-memory DuckDB instance...');
+      this.log('Creating in-memory DuckDB instance...');
       this.instance = await DuckDBInstance.create(':memory:');
 
       if (this.config.memoryLimit) {
         const conn = await this.instance.connect();
         await conn.run(`SET memory_limit=${quoteSetting(this.config.memoryLimit)}`);
         conn.closeSync();
-        log(`Memory limit set to ${this.config.memoryLimit}`);
+        this.log(`Memory limit set to ${this.config.memoryLimit}`);
       }
 
       if (this.config.tempDirectory) {
         const conn = await this.instance.connect();
         await conn.run(`SET temp_directory=${quoteSetting(this.config.tempDirectory)}`);
         conn.closeSync();
-        log(`Temp directory set to ${this.config.tempDirectory}`);
+        this.log(`Temp directory set to ${this.config.tempDirectory}`);
       }
 
       if (this.config.maxTempDirectorySize) {
@@ -58,21 +55,24 @@ export class DuckDBConnection {
           `SET max_temp_directory_size=${quoteSetting(this.config.maxTempDirectorySize)}`,
         );
         conn.closeSync();
-        log(`Maximum temp directory size set to ${this.config.maxTempDirectorySize}`);
+        this.log(`Maximum temp directory size set to ${this.config.maxTempDirectorySize}`);
       }
 
       if (this.config.threads > 0) {
         const conn = await this.instance.connect();
         await conn.run(`SET threads=${Math.floor(this.config.threads)}`);
         conn.closeSync();
-        log(`Worker threads set to ${Math.floor(this.config.threads)}`);
+        this.log(`Worker threads set to ${Math.floor(this.config.threads)}`);
       }
 
-      const conn = await this.instance.connect();
-      await conn.run(
-        `SET preserve_insertion_order=${this.config.preserveInsertionOrder ? 'true' : 'false'}`,
-      );
-      conn.closeSync();
+      {
+        const conn = await this.instance.connect();
+        await conn.run(
+          `SET preserve_insertion_order=${this.config.preserveInsertionOrder ? 'true' : 'false'}`,
+        );
+        conn.closeSync();
+        this.log(`Preserve insertion order set to ${this.config.preserveInsertionOrder}`);
+      }
 
       const configuredExtensions = Array.isArray(this.config.autoLoadExtensions)
         ? this.config.autoLoadExtensions
@@ -83,17 +83,55 @@ export class DuckDBConnection {
         const conn = await this.instance.connect();
         try {
           await conn.run('LOAD httpfs');
-          log('Loaded httpfs extension');
+          this.log('Loaded httpfs extension');
         } catch {
-          log('httpfs extension is not installed; local files remain available');
+          this.log('httpfs extension is not installed; local files remain available');
         }
         conn.closeSync();
       }
 
-      log('DuckDB instance created successfully');
+      await this.verifySpillConfiguration();
+
+      this.log('DuckDB instance created successfully');
     } catch (error) {
-      logError('Failed to create DuckDB instance', error);
+      this.logError('Failed to create DuckDB instance', error);
       throw error;
+    }
+  }
+
+  /**
+   * Out-of-memory failures on large sources are caused by DuckDB being unable to
+   * offload data, not by thread count. Record the effective spill settings so a
+   * misconfigured temp directory or a zero spill budget is visible in the log
+   * rather than surfacing later as an opaque allocation failure.
+   */
+  private async verifySpillConfiguration(): Promise<void> {
+    if (!this.instance) return;
+    const conn = await this.instance.connect();
+    try {
+      const result = await conn.run(
+        `SELECT current_setting('temp_directory'), current_setting('max_temp_directory_size'), current_setting('memory_limit')`,
+      );
+      const [row] = await result.getRowsJson();
+      const [tempDirectory, maxTempSize, memoryLimit] = (row ?? []) as string[];
+      this.log(
+        `Spill configuration: memory_limit=${memoryLimit}, temp_directory=${tempDirectory || '(unset)'}, max_temp_directory_size=${maxTempSize}`,
+      );
+      if (!tempDirectory) {
+        this.log(
+          'WARNING: no temp directory is configured, so queries larger than the memory limit cannot spill and may fail with an out-of-memory error.',
+        );
+      }
+      if (/^0(\.0+)?\s*(b|bytes|kib|mib|gib)?$/i.test(String(maxTempSize ?? '').trim())) {
+        this.log(
+          'WARNING: max_temp_directory_size is zero, which disables spilling to disk. Increase quackwrangler.duckdb.maxTempDirectorySize to process data larger than memory.',
+        );
+      }
+    } catch (error) {
+      // Diagnostics must never prevent a usable connection.
+      this.logError('Could not read DuckDB spill configuration', error);
+    } finally {
+      conn.closeSync();
     }
   }
 
@@ -111,7 +149,7 @@ export class DuckDBConnection {
         conn.closeSync();
       }
     } catch (error) {
-      logError('Query execution failed', error);
+      this.logError('Query execution failed', error);
       throw error;
     }
   }
@@ -132,7 +170,7 @@ export class DuckDBConnection {
       try {
         await conn.run('ROLLBACK');
       } catch (rollbackError) {
-        logError('Transaction rollback failed', rollbackError);
+        this.logError('Transaction rollback failed', rollbackError);
       }
       throw error;
     } finally {
@@ -145,51 +183,24 @@ export class DuckDBConnection {
     sql: string,
     startTime: number,
   ): Promise<QueryResult> {
-    log(`Executing query: ${sql.substring(0, 200)}...`);
+    this.log(`Executing query: ${sql.substring(0, 200)}...`);
     const result = await conn.run(sql);
     const rows = await result.getRowsJson();
     const columns = result.columnNames();
     const duration = Date.now() - startTime;
-    log(`Query completed in ${duration}ms, returned ${rows.length} rows`);
+    this.log(`Query completed in ${duration}ms, returned ${rows.length} rows`);
     return { columns, rows, rowCount: rows.length, duration };
-  }
-
-  async getSchema(filePath: string): Promise<{ columns: string[]; types: string[] }> {
-    if (!this.instance) {
-      throw new Error('DuckDB not connected. Call connect() first.');
-    }
-
-    const ext = filePath.split('.').pop()?.toLowerCase();
-    let tableName: string;
-
-    if (ext === 'parquet') {
-      tableName = `read_parquet('${filePath}')`;
-    } else if (ext === 'csv' || ext === 'tsv') {
-      tableName = `read_csv_auto('${filePath}')`;
-    } else if (ext === 'json' || ext === 'jsonl' || ext === 'ndjson') {
-      tableName = `read_json_auto('${filePath}')`;
-    } else if (ext === 'xlsx') {
-      tableName = `read_xlsx('${filePath}')`;
-    } else if (ext === 'ods') {
-      tableName = `ST_Read('${filePath}')`;
-    } else {
-      throw new Error(`Unsupported file type: ${ext}`);
-    }
-
-    const result = await this.query(`DESCRIBE SELECT * FROM ${tableName}`);
-    const columns = result.rows.map((row: unknown[]) => row[0] as string);
-    const types = result.rows.map((row: unknown[]) => row[1] as string);
-
-    return { columns, types };
   }
 
   async close(): Promise<void> {
     if (this.instance) {
       try {
+        this.instance.closeSync();
         this.instance = null;
-        log('DuckDB instance closed');
+        this.log('DuckDB instance closed');
       } catch (error) {
-        logError('Error closing DuckDB instance', error);
+        this.logError('Error closing DuckDB instance', error);
+        this.instance = null;
       }
     }
   }

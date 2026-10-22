@@ -1,9 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   detectFileType,
+  getConnectionTableRef,
   getTableRef,
   loadFile,
   prepareDataFileReader,
+  prepareSourceSchema,
   resolveLoadingMode,
 } from '../../../src/duckdb/parquet-loader';
 
@@ -12,6 +14,53 @@ describe('data file readers', () => {
     expect(detectFileType('/tmp/events.arrow')).toBe('arrow');
     expect(detectFileType('https://example.com/events.ipc?token=hidden')).toBe('arrow');
     expect(getTableRef('/tmp/events.arrows')).toBe("read_arrow('/tmp/events.arrows')");
+  });
+
+  it('pins resolved CSV column types so queries do not repeat type detection', () => {
+    expect(
+      getTableRef('/tmp/registrations.csv', 'csv', [
+        { name: 'GP_PRAC', type: 'VARCHAR' },
+        { name: 'NUMBER_OF_PATIENTS', type: 'VARCHAR' },
+      ]),
+    ).toBe(
+      "read_csv('/tmp/registrations.csv', types={'GP_PRAC': 'VARCHAR', 'NUMBER_OF_PATIENTS': 'VARCHAR'})",
+    );
+  });
+
+  it('falls back to auto-detection when no schema has been resolved', () => {
+    expect(getTableRef('/tmp/registrations.csv')).toBe("read_csv_auto('/tmp/registrations.csv')");
+  });
+
+  it('caches a resolved schema per connection and reuses it for later references', async () => {
+    const query = vi.fn().mockImplementation(async (sql: string) => {
+      if (sql.startsWith('SELECT Columns FROM sniff_csv')) {
+        return {
+          rows: [
+            [
+              [
+                { name: 'id', type: 'BIGINT' },
+                { name: 'amount', type: 'BIGINT' },
+              ],
+            ],
+          ],
+        };
+      }
+      if (sql.startsWith('SELECT DISTINCT column_name')) return { rows: [['amount']] };
+      return { rows: [] };
+    });
+    const transaction = vi.fn(async (callback) => callback({ query }));
+    const connection = { query, transaction } as never;
+
+    await prepareSourceSchema(connection, '/tmp/registrations.csv');
+    // A second call must not re-run detection.
+    await prepareSourceSchema(connection, '/tmp/registrations.csv');
+
+    const sniffs = query.mock.calls.filter(([sql]) => String(sql).includes('sniff_csv'));
+    expect(sniffs).toHaveLength(1);
+    // Only the rejecting column is widened; the clean column keeps its type.
+    expect(getConnectionTableRef(connection, '/tmp/registrations.csv')).toBe(
+      "read_csv('/tmp/registrations.csv', types={'id': 'BIGINT', 'amount': 'VARCHAR'})",
+    );
   });
 
   it('prepares signed nanoarrow and httpfs extensions for remote Arrow', async () => {
@@ -91,7 +140,9 @@ describe('data file readers', () => {
           'CREATE VIEW "current_data" AS SELECT * FROM "current_data_materialized"',
         );
       } else {
-        expect(calls.some((sql) => /^ALTER VIEW .* RENAME TO "current_data"$/.test(sql))).toBe(true);
+        expect(calls.some((sql) => /^ALTER VIEW .* RENAME TO "current_data"$/.test(sql))).toBe(
+          true,
+        );
       }
       expect(transaction).toHaveBeenCalledTimes(2);
     },

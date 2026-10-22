@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
     columnNames: vi.fn().mockReturnValue(['id']),
   }),
   closeSync: vi.fn(),
+  instanceCloseSync: vi.fn(),
 }));
 
 vi.mock('vscode', () => ({
@@ -22,6 +23,7 @@ vi.mock('vscode', () => ({
 vi.mock('@duckdb/node-api', () => ({
   DuckDBInstance: {
     create: vi.fn().mockResolvedValue({
+      closeSync: mocks.instanceCloseSync,
       connect: vi.fn().mockResolvedValue({
         all: vi.fn().mockResolvedValue([]),
         run: mocks.run,
@@ -104,6 +106,36 @@ describe('DuckDBConnection', () => {
     });
   });
 
+  describe('spill diagnostics', () => {
+    it('warns when no temp directory is available so spilling cannot occur', async () => {
+      mocks.run.mockImplementation(async (sql: string) => ({
+        getRowsJson: vi
+          .fn()
+          .mockResolvedValue(sql.includes('current_setting') ? [['', '0 bytes', '1GB']] : [[1]]),
+        columnNames: vi.fn().mockReturnValue(['a', 'b', 'c']),
+      }));
+
+      await connection.connect();
+
+      const logged = mocks.appendLine.mock.calls.map(([line]) => String(line)).join('\n');
+      expect(logged).toContain('no temp directory is configured');
+      expect(logged).toContain('max_temp_directory_size is zero');
+    });
+
+    it('does not fail the connection when spill settings cannot be read', async () => {
+      mocks.run.mockImplementation(async (sql: string) => {
+        if (sql.includes('current_setting')) throw new Error('settings unavailable');
+        return {
+          getRowsJson: vi.fn().mockResolvedValue([[1]]),
+          columnNames: vi.fn().mockReturnValue(['id']),
+        };
+      });
+
+      await expect(connection.connect()).resolves.toBeUndefined();
+      expect(connection.isConnected()).toBe(true);
+    });
+  });
+
   describe('transaction', () => {
     it('commits callback queries on one native connection', async () => {
       await connection.connect();
@@ -138,17 +170,20 @@ describe('DuckDBConnection', () => {
   });
 
   describe('close', () => {
-    it('should close connection', async () => {
+    it('should close connection and call closeSync on the native instance', async () => {
       await connection.connect();
       await connection.close();
       expect(connection.isConnected()).toBe(false);
+      expect(mocks.instanceCloseSync).toHaveBeenCalledOnce();
     });
 
-    it('should be safe to call multiple times', async () => {
+    it('should be safe to call multiple times without double-closing', async () => {
       await connection.connect();
       await connection.close();
       await connection.close();
       expect(connection.isConnected()).toBe(false);
+      // closeSync must only be called once — the second close() is a no-op.
+      expect(mocks.instanceCloseSync).toHaveBeenCalledOnce();
     });
   });
 });

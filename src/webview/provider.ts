@@ -94,6 +94,15 @@ export class DataWranglerPanel {
     );
   }
 
+  /**
+   * Registers a one-time callback to be invoked when this panel is disposed.
+   * The callback is added to the panel's disposable list so it fires during
+   * _cleanup regardless of how the panel is closed.
+   */
+  public onDispose(callback: () => void): void {
+    this._disposables.push({ dispose: callback });
+  }
+
   private _cleanup(): void {
     DataWranglerPanel._allPanels.delete(this);
     if (DataWranglerPanel.currentPanel === this) {
