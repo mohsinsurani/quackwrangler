@@ -1,6 +1,6 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
-import path from 'path';
+import { resolve } from 'path';
 
 export default defineConfig({
   plugins: [react()],
@@ -10,7 +10,7 @@ export default defineConfig({
     },
   },
   build: {
-    outDir: path.resolve(__dirname, '../dist/webview'),
+    outDir: resolve(import.meta.dirname, '../dist/webview'),
     emptyOutDir: true,
     sourcemap: false,
     minify: 'terser',
@@ -24,7 +24,7 @@ export default defineConfig({
   },
   resolve: {
     alias: {
-      '@': path.resolve(__dirname, 'src'),
+      '@': resolve(import.meta.dirname, 'src'),
     },
   },
   define: {

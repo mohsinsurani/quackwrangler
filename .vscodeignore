@@ -4,7 +4,15 @@ src/**
 tests/**
 webview-ui/**
 node_modules/**
-!node_modules/@duckdb/**
+!node_modules/@duckdb/node-bindings/**
+!node_modules/@duckdb/node-bindings-darwin-arm64/**
+!node_modules/@duckdb/node-bindings-darwin-x64/**
+!node_modules/@duckdb/node-bindings-linux-x64/**
+!node_modules/@duckdb/node-bindings-linux-x64-musl/**
+!node_modules/@duckdb/node-bindings-linux-arm64/**
+!node_modules/@duckdb/node-bindings-linux-arm64-musl/**
+!node_modules/@duckdb/node-bindings-win32-x64/**
+!node_modules/@duckdb/node-bindings-win32-arm64/**
 !node_modules/detect-libc/**
 .gitignore
 .git/**

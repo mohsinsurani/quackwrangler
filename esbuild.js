@@ -32,17 +32,16 @@ const extensionConfig = {
   minify: production,
   sourcemap: !production,
   external: [
+    // VS Code API — provided at runtime by the extension host.
     'vscode',
-    '@duckdb/node-api',
-    '@duckdb/node-bindings',
-    '@duckdb/node-bindings-darwin-arm64',
-    '@duckdb/node-bindings-darwin-x64',
-    '@duckdb/node-bindings-linux-x64',
-    '@duckdb/node-bindings-linux-x64-musl',
-    '@duckdb/node-bindings-linux-arm64',
-    '@duckdb/node-bindings-linux-arm64-musl',
-    '@duckdb/node-bindings-win32-x64',
-    '@duckdb/node-bindings-win32-arm64',
+    // Native DuckDB binary addons — must stay as separate files because esbuild
+    // cannot inline .node native modules. @duckdb/node-api JS layer IS bundled
+    // so the VSIX no longer ships ~190 individual JS files from that package.
+    '*.node',
+    // detect-libc is a separate runtime package used by the DuckDB binding
+    // loader to detect musl vs glibc at startup; keep it external so its
+    // subprocess and filesystem probes work correctly in the extension host.
+    'detect-libc',
   ],
   define: {
     'process.env.NODE_ENV': production ? '"production"' : '"development"',
