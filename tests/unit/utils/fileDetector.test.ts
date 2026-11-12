@@ -26,7 +26,7 @@ describe('fileDetector utils', () => {
     it('should identify spreadsheet files supported by DuckDB', () => {
       expect(isDataFile('data.xlsx')).toBe(true);
       expect(isDataFile('data.ods')).toBe(true);
-      expect(isDataFile('legacy.xls')).toBe(false);
+      expect(isDataFile('legacy.xls')).toBe(true);
     });
 
     it('recognizes Arrow IPC and capability-gated ORC files', () => {

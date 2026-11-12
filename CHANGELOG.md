@@ -4,6 +4,17 @@ All notable changes to QuackWrangler are documented here using [Keep a Changelog
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-11-12
+
+### Fixed
+
+- XLSX files no longer fail when a column mixes numeric and textual cells; safe numeric columns and native Excel date, timestamp, time, and boolean cells are typed automatically while mixed or ambiguous columns remain text.
+- TSV and Arrow IPC aliases now activate the extension consistently, and ORC files load through DuckDB's signed community extension.
+- All readable formats now open directly in QuackWrangler, ODS hides GDAL's synthetic `OGC_FID` field, and cached DuckDB extensions load without a network install attempt.
+- Legacy `.xls` files now convert to temporary `.xlsx` files in-process before loading.
+- Added local redacted diagnostic summaries for load, query, transform, and export failures without enabling remote telemetry.
+- Patched the extension packaging toolchain's Azure MSAL dependency and other audited development dependencies.
+
 ## [0.3.0] - 2026-10-22
 
 ### Changed
@@ -186,6 +197,7 @@ All notable changes to QuackWrangler are documented here using [Keep a Changelog
 - Activity-bar file browser and custom data editor integration
 
 [Unreleased]: https://github.com/mohsinsurani/quackwrangler/compare/v0.3.0...HEAD
+[0.4.0]: https://github.com/mohsinsurani/quackwrangler/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/mohsinsurani/quackwrangler/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/mohsinsurani/quackwrangler/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/mohsinsurani/quackwrangler/compare/v0.1.5...v0.2.0

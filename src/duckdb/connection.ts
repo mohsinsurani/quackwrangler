@@ -208,4 +208,8 @@ export class DuckDBConnection {
   isConnected(): boolean {
     return this.instance !== null;
   }
+
+  getTempDirectory(): string | undefined {
+    return this.config.tempDirectory || undefined;
+  }
 }

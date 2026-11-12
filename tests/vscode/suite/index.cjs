@@ -72,6 +72,18 @@ async function run() {
   const root = vscode.workspace.workspaceFolders?.[0]?.uri;
   assert.ok(root, 'The Extension Host test workspace must be open');
   await vscode.commands.executeCommand(
+    'vscode.open',
+    vscode.Uri.joinPath(root, 'direct.xlsx'),
+  );
+  await waitFor('direct XLSX opening in the QuackWrangler editor', () => dataEditorTabs().length === 1);
+  assert.equal(
+    vscode.window.tabGroups.activeTabGroup.activeTab?.input?.viewType,
+    'quackwrangler.dataEditor',
+    'clicking an XLSX file must select the QuackWrangler custom editor by default',
+  );
+  await closeAllEditors();
+
+  await vscode.commands.executeCommand(
     'quackwrangler.openfile',
     vscode.Uri.joinPath(root, 'first.csv'),
   );

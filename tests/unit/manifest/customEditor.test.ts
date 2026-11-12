@@ -2,9 +2,10 @@ import fs from 'fs';
 import path from 'path';
 
 import { describe, expect, it } from 'vitest';
+import { DATA_FILE_EXTENSIONS } from '../../../src/utils/fileDetector';
 
 describe('QuackWrangler custom editor contribution', () => {
-  it('registers Parquet, CSV, and XLSX with default editor priority', () => {
+  it('registers every supported format with default editor priority', () => {
     const manifest = JSON.parse(
       fs.readFileSync(path.resolve(process.cwd(), 'package.json'), 'utf8'),
     ) as {
@@ -20,11 +21,9 @@ describe('QuackWrangler custom editor contribution', () => {
 
     expect(editor.viewType).toBe('quackwrangler.dataEditor');
     expect(editor.priority).toBe('default');
-    expect(editor.selector.map((item) => item.filenamePattern)).toEqual([
-      '*.parquet',
-      '*.csv',
-      '*.xlsx',
-    ]);
+    expect(new Set(editor.selector.map((item) => item.filenamePattern))).toEqual(
+      new Set(DATA_FILE_EXTENSIONS.map((extension) => `*.${extension}`)),
+    );
   });
 
   it('registers release-critical commands, formats, and privacy settings', () => {
@@ -39,7 +38,7 @@ describe('QuackWrangler custom editor contribution', () => {
       };
     };
     const commands = manifest.contributes.commands.map((item) => item.command);
-    expect(manifest.version).toBe('0.3.0');
+    expect(manifest.version).toBe('0.4.0');
     expect(commands).toEqual(
       expect.arrayContaining([
         'quackwrangler.openRemoteData',
@@ -57,6 +56,11 @@ describe('QuackWrangler custom editor contribution', () => {
         'workspaceContains:**/*.orc',
         'onCustomEditor:quackwrangler.dataEditor',
       ]),
+    );
+    expect(manifest.activationEvents).toEqual(
+      expect.arrayContaining(
+        DATA_FILE_EXTENSIONS.map((extension) => `workspaceContains:**/*.${extension}`),
+      ),
     );
     expect(manifest.contributes.configuration.properties).toHaveProperty('quackwrangler.ai.model');
   });

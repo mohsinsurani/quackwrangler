@@ -17,6 +17,7 @@ await Promise.all([
 await Promise.all([
   copyFile(resolve(root, 'tests/fixtures/sample.csv'), resolve(workspace, 'first.csv')),
   copyFile(resolve(root, 'tests/fixtures/sample.csv'), resolve(workspace, 'second.csv')),
+  copyFile(resolve(root, 'tests/fixtures/sample.csv'), resolve(workspace, 'direct.xlsx')),
 ]);
 
 const args = [

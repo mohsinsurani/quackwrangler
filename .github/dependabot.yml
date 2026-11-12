@@ -4,14 +4,19 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    open-pull-requests-limit: 10
+    labels: ["dependencies", "security"]
     groups:
       extension-dependencies:
         patterns: ["*"]
+        exclude-patterns: ["@azure/*", "@typescript-eslint/*", "@vscode/vsce"]
 
   - package-ecosystem: npm
     directory: /webview-ui
     schedule:
       interval: weekly
+    open-pull-requests-limit: 10
+    labels: ["dependencies", "security"]
     groups:
       webview-dependencies:
         patterns: ["*"]
@@ -20,6 +25,8 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    open-pull-requests-limit: 10
+    labels: ["dependencies", "security"]
     groups:
       github-actions:
         patterns: ["*"]

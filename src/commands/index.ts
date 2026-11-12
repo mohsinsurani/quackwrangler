@@ -15,6 +15,8 @@ import { schemaComparisonMarkdown } from '../schema/compare.js';
 import { WranglingSession } from '../transforms/pipeline.js';
 import { DataWranglerConfig } from '../types/index.js';
 import { WebviewMessage } from '../types/index.js';
+import { redactedDiagnostic } from '../utils/diagnostics.js';
+import { isDuckDBMemoryError } from '../utils/duckdbErrors.js';
 import { DATA_EDITOR_VIEW_TYPE, shouldOpenWithDataEditor } from '../utils/editorRouting.js';
 import { DATA_FILE_EXTENSIONS } from '../utils/fileDetector.js';
 import { isDataFile } from '../utils/fileDetector.js';
@@ -462,6 +464,9 @@ async function handleWebviewMessage(
         return;
     }
   } catch (error) {
+    outputChannel?.appendLine(
+      `[Diagnostic] ${JSON.stringify(redactedDiagnostic(error, state.session?.getFilePath()))}`,
+    );
     panel.postMessage({
       type: 'error',
       message: error instanceof Error ? error.message : String(error),
@@ -649,12 +654,7 @@ async function collectDataFiles(
   for (const [name, type] of await vscode.workspace.fs.readDirectory(folder)) {
     const child = vscode.Uri.joinPath(folder, name);
     if (type === vscode.FileType.Directory) await collectDataFiles(child, output);
-    else if (
-      type === vscode.FileType.File &&
-      isDataFile(name) &&
-      !name.toLowerCase().endsWith('.orc')
-    )
-      output.push(child);
+    else if (type === vscode.FileType.File && isDataFile(name)) output.push(child);
   }
   return output;
 }
@@ -696,6 +696,7 @@ async function loadDataIntoPanel(
   panel: DataWranglerPanel,
   filePath: string,
   requestId?: string,
+  loadingModeOverride?: 'auto' | 'eager' | 'lazy',
 ): Promise<void> {
   panel.setMessageHandler((message) => handleWebviewMessage(panel, message));
   // Register cleanup exactly once per panel. Registering after setMessageHandler
@@ -733,7 +734,7 @@ async function loadDataIntoPanel(
     await loadFile(
       conn,
       filePath,
-      config.loadingMode,
+      loadingModeOverride ?? config.loadingMode,
       config.eagerFileSizeLimitMb,
       state.relationName,
     );
@@ -771,9 +772,48 @@ async function loadDataIntoPanel(
     const message = error instanceof Error ? error.message : String(error);
     const details = error instanceof Error ? (error.stack ?? error.message) : String(error);
     outputChannel?.appendLine(`[Load ERROR] Failed while ${stage}: ${filePath}\n${details}`);
-    vscode.window.showErrorMessage(
-      `Failed to load file: ${message}. See View > Output > QuackWrangler for details.`,
+    outputChannel?.appendLine(
+      `[Diagnostic] ${JSON.stringify({ stage, ...redactedDiagnostic(error, filePath) })}`,
     );
+    const recovery = isDuckDBMemoryError(error)
+      ? await vscode.window.showErrorMessage(
+          'DuckDB ran out of memory or spill space while loading this file.',
+          'Retry with Lazy Loading',
+          'Choose Spill Folder',
+          'Open DuckDB Settings',
+        )
+      : undefined;
+    if (recovery === 'Retry with Lazy Loading') {
+      await loadDataIntoPanel(panel, filePath, requestId, 'lazy');
+      return;
+    }
+    if (recovery === 'Choose Spill Folder') {
+      const selected = await vscode.window.showOpenDialog({
+        canSelectFiles: false,
+        canSelectFolders: true,
+        canSelectMany: false,
+        openLabel: 'Use folder for DuckDB spill files',
+      });
+      if (selected?.[0]) {
+        await vscode.workspace
+          .getConfiguration('quackwrangler')
+          .update('duckdb.tempDirectory', selected[0].fsPath, vscode.ConfigurationTarget.Workspace);
+        await closePanelConnection(panel);
+        await loadDataIntoPanel(panel, filePath, requestId);
+        return;
+      }
+    }
+    if (recovery === 'Open DuckDB Settings') {
+      await vscode.commands.executeCommand(
+        'workbench.action.openSettings',
+        '@ext:quackwrangler.quackwrangler duckdb',
+      );
+    }
+    if (!recovery) {
+      await vscode.window.showErrorMessage(
+        `Failed to load file: ${message}. See View > Output > QuackWrangler for details.`,
+      );
+    }
     panel.postMessage({ type: 'error', message, requestId });
   }
 }

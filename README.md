@@ -54,7 +54,7 @@ QuackWrangler ships with DuckDB built in. Open CSV, Parquet, JSON, Excel, and OD
 
 ## 0.2.0 highlights
 
-- Open Parquet, CSV, and XLSX directly in the QuackWrangler custom editor, with independent state for every open tab.
+- Open every supported data format directly in the QuackWrangler custom editor, with independent state for every open tab. Optional DuckDB extensions load from the local cache and are downloaded only when missing.
 - Use the more visible **AI plan** action with OpenAI or an HTTPS OpenAI-compatible Responses API; stale and overlapping plans are safely discarded.
 - Load small local sources eagerly and large or remote sources lazily, with configurable thresholds, DuckDB threads, and insertion-order behavior.
 - Keep custom SQL, charts, profiles, exports, and Command Palette actions scoped to the correct editor even when asynchronous responses arrive late.
@@ -234,19 +234,22 @@ QuackWrangler only offers numeric aggregations such as average for compatible sc
 | Parquet        | `.parquet`                   | Native DuckDB reader                                 |
 | Delimited text | `.csv`, `.tsv`               | Automatic schema and delimiter detection             |
 | JSON           | `.json`, `.jsonl`, `.ndjson` | Arrays, records, and nested values supported         |
-| Excel          | `.xlsx`                      | Uses DuckDB's spreadsheet support                    |
+| Excel          | `.xlsx`, `.xls`              | Legacy `.xls` is converted to temporary `.xlsx`    |
 | OpenDocument   | `.ods`                       | Uses DuckDB's spreadsheet support                    |
 | Arrow IPC      | `.arrow`, `.arrows`, `.ipc`  | Uses DuckDB's signed `nanoarrow` community extension |
+| ORC            | `.orc`                       | Uses DuckDB's signed `orc` community extension       |
 
 HTTPS and S3 URLs are supported for formats handled by the corresponding DuckDB reader. Remote access uses DuckDB `httpfs`; private S3 authentication follows DuckDB/AWS credential-chain configuration, so QuackWrangler does not place cloud credentials in workspace files.
 
-ORC files are detected and produce an actionable compatibility message, but they are not advertised as readable: the embedded DuckDB 1.5 runtime does not currently expose a supported ORC reader. Convert ORC to Parquet or CSV before opening it. QuackWrangler will enable native ORC loading only when a supported, testable DuckDB reader is available.
+XLSX, ODS, Arrow IPC, and ORC use signed DuckDB extensions. QuackWrangler loads cached copies first, so only the first use of a missing extension requires network access. Legacy `.xls` files are converted in-process to a temporary `.xlsx` file, then use the same XLSX reader and type handling. Password-protected or malformed legacy workbooks may still fail conversion.
 
-Spreadsheet support can require DuckDB to download an extension the first time it is used. Legacy `.xls` files are not currently supported.
+XLSX files are first read as text, then QuackWrangler selectively restores types only when every non-empty cell converts safely. Native Excel formatting is used to recover `DATE`, `TIMESTAMP`, `TIME`, and `BOOLEAN` values regardless of how Excel displays them; clean numeric columns become `BIGINT` or `DOUBLE`. Columns with mixed values such as `42` and `tablet`, leading-zero identifiers, or ambiguous text dates remain `VARCHAR`. Use a cast transform or custom SQL when plain text dates need a locale-specific interpretation.
 
 ### Troubleshooting file loading
 
 If a file does not open, choose **View → Output** and select **QuackWrangler** from the channel menu. The log records the source path, whether the failure occurred while connecting to DuckDB, preparing a format reader, loading data, or building the preview, and the native error stack. This is particularly useful for first-time XLSX/ODS/Arrow opens, which may need to download a DuckDB extension.
+
+QuackWrangler also writes a compact `[Diagnostic]` entry with an error category, file extension, stage, and redacted message. These diagnostics remain local and remove file paths and remote URLs. QuackWrangler does not currently send crash reports or telemetry to a maintainer-operated service.
 
 For extension activation failures that happen before the QuackWrangler channel appears, run **Developer: Show Logs…** from the Command Palette and open **Extension Host**, or choose **Help → Toggle Developer Tools** and inspect the Console. Include the QuackWrangler version, operating system, CPU architecture, the failing file type, and the relevant error block when reporting a problem; review paths and data values before sharing logs publicly.
 
@@ -282,7 +285,7 @@ When `duckdb.tempDirectory` is empty, spill files use a unique directory under V
 
 Automatic loading materializes local files up to `duckdb.eagerFileSizeLimitMb` and keeps larger or remote sources lazy through a DuckDB view. Set `duckdb.loadingMode` to `eager` or `lazy` to override that choice. A `duckdb.threads` value of `0` leaves thread selection to DuckDB, which measured faster than capping threads. Source row order is preserved by default for stable unsorted previews; disable `duckdb.preserveInsertionOrder` to reduce memory use on very large data.
 
-Working with data larger than memory depends on spilling, not on thread count. `duckdb.memoryLimit` defaults to `80%` of available memory, and anything above it spills into `duckdb.tempDirectory` within the `duckdb.maxTempDirectorySize` budget. If spilling is unavailable, DuckDB raises an out-of-memory error; QuackWrangler logs the effective memory, temp directory, and spill budget under **View → Output → QuackWrangler** and warns when spilling is disabled.
+Working with data larger than memory depends on spilling, not on thread count. `duckdb.memoryLimit` defaults to `80%` of available memory, and anything above it spills into `duckdb.tempDirectory` within the `duckdb.maxTempDirectorySize` budget. If spilling is unavailable, DuckDB raises an out-of-memory error; QuackWrangler logs the effective memory, temp directory, and spill budget under **View → Output → QuackWrangler** and warns when spilling is disabled. When a load hits a memory or spill-space error, QuackWrangler offers **Retry with Lazy Loading**, **Choose Spill Folder**, and **Open DuckDB Settings**. No application can guarantee success when the source, query, or required spill data exceeds both available memory and disk space.
 
 CSV and TSV column types are resolved once when a source is opened. QuackWrangler samples the schema, validates it against the whole file in one bounded pass, and widens only the columns that genuinely fail conversion, so a late `ALL` in a numeric column loads as text while clean columns keep precise types. Because the resolved schema is reused, later queries carry no detection cost.
 

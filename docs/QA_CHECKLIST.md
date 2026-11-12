@@ -19,8 +19,8 @@ Confirm that `package.json` and `package-lock.json` remain on the currently publ
 
 Run **Run QuackWrangler Extension** from the repository's Run and Debug view, then check:
 
-- Open CSV, TSV, Parquet, JSON, JSONL/NDJSON, XLSX, ODS, and Arrow files.
-- Click Parquet, CSV, and XLSX files and confirm they open directly in the QuackWrangler custom editor; confirm other formats retain their normal editor association until **Open in QuackWrangler** is selected.
+- Open CSV, TSV, Parquet, JSON, JSONL/NDJSON, XLSX, legacy XLS, ODS, all Arrow IPC suffixes (`.arrow`, `.arrows`, `.ipc`), and ORC files.
+- Click each supported file extension and confirm it opens directly in the QuackWrangler custom editor; confirm explicit user editor associations can still override the default.
 - From a **No data loaded** editor, confirm the orientation text mentions visual transforms, profiles/charts, and AI planning. Use **Open File** and confirm the selected file replaces the empty state in the same tab. Use **Open Folder**, select a nested supported file, and confirm it loads in that same tab; verify cancellation and empty folders leave a clear, usable state.
 - Open data from a read-only workspace and confirm DuckDB spill storage is created under VS Code extension storage rather than a relative `.tmp` directory.
 - Open a folder and confirm supported files appear under their actual subfolders.

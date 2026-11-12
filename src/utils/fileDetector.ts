@@ -8,6 +8,7 @@ export const DATA_FILE_EXTENSIONS = [
   'jsonl',
   'ndjson',
   'xlsx',
+  'xls',
   'ods',
   'arrow',
   'arrows',

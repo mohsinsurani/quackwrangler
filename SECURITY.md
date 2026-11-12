@@ -8,6 +8,8 @@ OpenAI API keys are stored with VS Code `SecretStorage`. They must never be plac
 
 Remote datasets necessarily contact the URL supplied by the user. Downloaded content is processed locally after retrieval.
 
+Error diagnostics are written locally to the QuackWrangler output channel. Compact diagnostic entries contain an error category, file extension, operation stage, and redacted message; they remove file paths and URLs and are not uploaded automatically. QuackWrangler does not currently operate a crash-reporting or telemetry service.
+
 ## Supported Versions
 
 Security updates are provided for the latest Marketplace release only.
