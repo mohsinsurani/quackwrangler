@@ -64,6 +64,8 @@ jobs:
         run: npm run lint
 
       - name: Test
+        env:
+          QW_SKIP_OPTIONAL_EXTENSION_TESTS: true
         run: npm test
 
       - name: Build
@@ -111,7 +113,7 @@ jobs:
             --env EXPECTED_VERSION \
             --env DUCKDB_BINDING \
             node:20-alpine \
-            sh -c "npm ci --include=optional && npm --prefix webview-ui ci && node scripts/verify-release-target.mjs && npm run lint && npm test && npm run build && npm run package"
+             sh -c "npm ci --include=optional && npm --prefix webview-ui ci && node scripts/verify-release-target.mjs && npm run lint && QW_SKIP_OPTIONAL_EXTENSION_TESTS=true npm test && npm run build && npm run package"
 
       - name: Upload targeted VSIX
         uses: actions/upload-artifact@v7

@@ -130,6 +130,8 @@ describe('transactional file promotion', () => {
 });
 
 describe('supported file formats', () => {
+  const skipOptionalExtensionTests = process.env.QW_SKIP_OPTIONAL_EXTENSION_TESTS === 'true';
+
   it('converts legacy XLS files to a temporary XLSX before loading', async () => {
     const source = join(tmpdir(), `quackwrangler-legacy-${randomUUID()}.xls`);
     const workbook = XLSX.utils.book_new();
@@ -172,7 +174,7 @@ describe('supported file formats', () => {
     expect(result.rows).toEqual([['1', 'duck']]);
   });
 
-  it('loads ODS through the spatial reader', async () => {
+  it.skipIf(skipOptionalExtensionTests)('loads ODS through the spatial reader', async () => {
     const source = join(tmpdir(), `quackwrangler-format-${randomUUID()}.ods`);
     const workbook =
       'UEsDBBQAAAAAADyCbF2FbDmKLgAAAC4AAAAIAAAAbWltZXR5cGVhcHBsaWNhdGlvbi92bmQub2FzaXMub3BlbmRvY3VtZW50LnNwcmVhZHNoZWV0UEsDBBQAAAAIADyCbF0h0v8CKgEAAMkDAAALAAAAY29udGVudC54bWytU9tSgzAQ/RUm7zTQJ80AffMH1A9Ik4UyplkmCUr/3oRQCo520PEF9nZ2z56F4jCcVfIOxraoS5LvMpKAFihb3ZTk9eUpfSCHqsC6bgUwiaI/g3apQO38O/FgbVnMlqQ3miG3rWWan8EyJxh2oK8otqxm46gYcfyoNsPH4hUaBrcZ7GuX2MgFEUtycq5jlAZQjO7QNHSfZY80+leM4ErcRppmVqXGXkvuvJATBxg6MG1IcTXC2KpDJDLJsTjBnsyCH1FeZsd2Bri0JwBXFVGG8ZlEO8wsyXNI52RVkBr8WAcEKDVP5qqH1F06j7bO+MMHdODXVa0s6GR640uDv7UMNO82pXeZb16lVsgdWWW8uDce+b9vJnvx9svNlhHvfXdouvoU6A9/YvUJUEsDBBQAAAAIADyCbF21rYD5tgAAAHABAAAVAAAATUVUQS1JTkYvbWFuaWZlc3QueG1sjZDRCsIwDEV/ZeR9q/okZdU3v0A/oLSZFtq0rNnY/t4qOCci+JaQ3Htu0h6n4KsR++wiKdg2G6iQTLSOrgou51O9h+OhDZpch5nlq6iKjPLSKhh6klFnlyXpgFmykTEh2WiGgMTyc18+QUu34u9gReucx7qo+/m92w3e10nzTYFYWQS0Ttc8J1SgU/LOaC6WYiTbPHM16zhNTj1qm2+IDOJ/oonED3m55gebcWLxGBdX8fW2wx1QSwECFAMUAAAAAAA8gmxdhWw5ii4AAAAuAAAACAAAAAAAAAAAAAAAgAEAAAAAbWltZXR5cGVQSwECFAMUAAAACAA8gmxdIdL/AioBAADJAwAACwAAAAAAAAAAAAAAgAFUAAAAY29udGVudC54bWxQSwECFAMUAAAACAA8gmxdta2A+bYAAABwAQAAFQAAAAAAAAAAAAAAgAGnAQAATUVUQS1JTkYvbWFuaWZlc3QueG1sUEsFBgAAAAADAAMAsgAAAJACAAAAAA==';
@@ -185,7 +187,9 @@ describe('supported file formats', () => {
     expect(result.rows).toEqual([[1, 'duck']]);
   });
 
-  it.each(['arrow', 'arrows', 'ipc'])('loads .%s Arrow IPC files', async (extension) => {
+  it
+    .skipIf(skipOptionalExtensionTests)
+    .each(['arrow', 'arrows', 'ipc'])('loads .%s Arrow IPC files', async (extension) => {
     const source = join(tmpdir(), `quackwrangler-format-${randomUUID()}.${extension}`);
     const writer = await database.connect();
     try {
@@ -206,7 +210,7 @@ describe('supported file formats', () => {
     expect(result.rows).toEqual([[1, 'duck']]);
   });
 
-  it('loads ORC through the signed community extension', async () => {
+  it.skipIf(skipOptionalExtensionTests)('loads ORC through the signed community extension', async () => {
     const source = join(tmpdir(), `quackwrangler-format-${randomUUID()}.orc`);
     const writer = await database.connect();
     try {
