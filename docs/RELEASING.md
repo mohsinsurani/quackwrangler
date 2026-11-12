@@ -72,9 +72,10 @@ npx vsce publish --packagePath path/to/quackwrangler-win32-x64-<version>.vsix
 
 Alternatively, upload the approved VSIX through the [Visual Studio Marketplace publisher portal](https://marketplace.visualstudio.com/manage/publishers/).
 
-For the normal CI path, store the Marketplace token as the `VSCE_PAT` Actions
-secret, then run **Publish Marketplace release** with the approved version and
-the inspected **Package platform VSIXs** run ID. The publishing workflow
+For the normal CI path, configure Marketplace Trusted Publishing for the
+`publish-marketplace.yml` workflow, grant the publishing job `id-token: write`,
+then run **Publish Marketplace release** with the approved version and the
+inspected **Package platform VSIXs** run ID. The publishing workflow
 downloads that exact artifact set, requires all eight target packages, and
 publishes them sequentially under one Marketplace version.
 

@@ -15,6 +15,7 @@ on:
 permissions:
   actions: read
   contents: read
+  id-token: write
 
 concurrency:
   group: marketplace-publish
@@ -67,10 +68,8 @@ jobs:
 
       - name: Publish all platform packages
         shell: bash
-        env:
-          VSCE_PAT: ${{ secrets.VSCE_PAT }}
         run: |
           mapfile -t packages < <(find release -maxdepth 1 -type f -name '*.vsix' -print | sort)
           for package in "${packages[@]}"; do
-            npx --yes @vscode/vsce publish --packagePath "$package"
+            npx --yes @vscode/vsce publish --packagePath "$package" --oidc
           done
