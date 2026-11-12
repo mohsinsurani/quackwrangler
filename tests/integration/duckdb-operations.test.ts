@@ -188,7 +188,12 @@ describe('supported file formats', () => {
   it.each(['arrow', 'arrows', 'ipc'])('loads .%s Arrow IPC files', async (extension) => {
     const source = join(tmpdir(), `quackwrangler-format-${randomUUID()}.${extension}`);
     const writer = await database.connect();
-    await writer.run('LOAD nanoarrow');
+    try {
+      await writer.run('LOAD nanoarrow');
+    } catch {
+      await writer.run('INSTALL nanoarrow FROM community');
+      await writer.run('LOAD nanoarrow');
+    }
     const ipc = await writer.run("SELECT * FROM to_arrow_ipc((SELECT 1 AS id, 'duck' AS name))");
     const chunks = (await ipc.getRows()).map((row) => (row[0] as { bytes: Buffer }).bytes);
     writer.closeSync();
@@ -204,7 +209,12 @@ describe('supported file formats', () => {
   it('loads ORC through the signed community extension', async () => {
     const source = join(tmpdir(), `quackwrangler-format-${randomUUID()}.orc`);
     const writer = await database.connect();
-    await writer.run('LOAD orc');
+    try {
+      await writer.run('LOAD orc');
+    } catch {
+      await writer.run('INSTALL orc FROM community');
+      await writer.run('LOAD orc');
+    }
     await writer.run(`COPY (SELECT 1 AS id, 'duck' AS name) TO '${source}' (FORMAT ORC)`);
     writer.closeSync();
 
