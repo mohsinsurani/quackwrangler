@@ -71,5 +71,5 @@ jobs:
         run: |
           mapfile -t packages < <(find release -maxdepth 1 -type f -name '*.vsix' -print | sort)
           for package in "${packages[@]}"; do
-            npx --yes @vscode/vsce publish --packagePath "$package" --oidc
+            npx --yes --package @vscode/vsce@4.1.0 vsce publish --packagePath "$package" --oidc
           done
