@@ -91,6 +91,19 @@ export type WebviewMessage =
       type: 'exportData';
       format: 'parquet' | 'csv' | 'json';
       outputPath?: string;
+      sessionId: string;
+      revision: number;
+      customQuerySql: string | null;
+    } & RequestMessage)
+  | ({ type: 'saveRecipe' } & RequestMessage)
+  | ({ type: 'openRecipePicker' } & RequestMessage)
+  | ({ type: 'replayRecipe'; filePath?: string } & RequestMessage)
+  | ({
+      type: 'polarsHandoff';
+      mode: 'result' | 'recipe';
+      sessionId: string;
+      revision: number;
+      customQuerySql: string | null;
     } & RequestMessage)
   | ({ type: 'undo' } & RequestMessage)
   | ({ type: 'redo' } & RequestMessage)
@@ -101,7 +114,12 @@ export type WebviewMessage =
   | ({ type: 'refresh' } & RequestMessage)
   | ({ type: 'removeTransform'; id: string } & RequestMessage)
   | ({ type: 'reorderTransforms'; sourceId: string; targetId: string } & RequestMessage)
-  | ({ type: 'searchRows'; query: string } & RequestMessage)
+  | ({
+      type: 'searchRows';
+      query: string;
+      filter?: { column: string; operator: 'is_null' | 'is_not_null' };
+    } & RequestMessage)
+  | ({ type: 'searchChange'; query: string } & RequestMessage)
   | ({ type: 'requestChart'; chart: ChartRequest } & RequestMessage)
   | ({ type: 'getStats' } & RequestMessage)
   | ({ type: 'generateAITransforms' } & RequestMessage)
@@ -128,6 +146,7 @@ export type ExtensionMessage =
       schema: TableSchema;
       result: QueryResult;
       page: PageInfo;
+      customQuerySql: string;
     } & ResponseContext &
       SessionContext)
   | ({
@@ -136,6 +155,7 @@ export type ExtensionMessage =
       result: QueryResult;
       page: PageInfo;
       query: string;
+      scope: 'search' | 'inspection';
     } & ResponseContext &
       SessionContext)
   | ({ type: 'error'; message: string } & ResponseContext)

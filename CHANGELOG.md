@@ -2,7 +2,23 @@
 
 All notable changes to QuackWrangler are documented here using [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.5.0] - 2026-11-20
+
+- Added a step-by-step column picker for missing input columns when replaying `.qw` recipes. Cancelling or failing validation leaves the current result intact.
+
+- Kept the toolbar and data grid clear of the Tools pane, which stacks below the grid in narrow VS Code split editors. Restored keyboard focus after dismissing fill and export controls.
+
+- Fixed CSV, JSON, and Parquet export confirmation in VS Code’s sandboxed data editor by showing the row count and scope in a VS Code picker.
+
+### Added
+
+- Made data-quality null findings actionable: inspect matching rows without mutating transform history, fill with an explicit replacement, or exclude null rows through a validated undoable transform.
+- Added grid-first editor controls, explicit result/source counts, one-click recipe save/replay, and Polars Parquet handoff or guarded recipe export for supported local sources and transforms.
+- Made transform apply and recipe replay validate resulting DuckDB queries before retaining history; invalid actions preserve the prior pipeline.
+- Added column-type-aware null-fill validation, export scope confirmation, and safer Polars recipe generation that opens a Python draft only for supported cases.
+- Verified generated Polars 1.43 recipes by executing them on Parquet fixtures; recipe export is now limited to Parquet sources and null filters, renames, drops, and sorts.
+- Made transform apply, undo/redo, and recipe replay commit candidate histories only after validation; export and query results now preserve accepted session/revision scope.
+- Changed the recipe action label to **Open Polars recipe** and moved pinned Polars/PyArrow execution coverage into opt-in integration tests and CI setup.
 
 ## [0.4.0] - 2026-11-12
 

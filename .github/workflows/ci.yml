@@ -31,6 +31,12 @@ jobs:
         working-directory: webview-ui
         run: npm ci
 
+      - name: Set up Python tooling for Polars recipe tests
+        if: matrix.node-version == 22
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
       - name: Lint
         run: npm run lint
 
@@ -45,12 +51,18 @@ jobs:
         run: npm run build
 
       - name: Test
-        if: matrix.node-version != 20
-        run: npm test
+        if: matrix.node-version == 22
+        run: npm test -- --exclude tests/unit/polars/**
 
       - name: Test with coverage thresholds
         if: matrix.node-version == 20
         run: npm run test:coverage
+
+      - name: Test Polars recipe integration
+        if: matrix.node-version == 22
+        env:
+          QW_POLARS_INTEGRATION: '1'
+        run: npm test -- tests/unit/polars/recipe.test.ts
 
       - name: Upload coverage report
         if: matrix.node-version == 20

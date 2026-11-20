@@ -15,6 +15,7 @@ interface PageState {
   offset: number;
   limit: number;
   totalRows: number;
+  scope?: 'pipeline' | 'search' | 'inspection' | 'query';
 }
 interface SessionMessage {
   protocolVersion: number;
@@ -36,6 +37,29 @@ interface SessionMessage {
   requestId?: string;
   sessionId: string;
   revision: number;
+}
+
+interface QueryResultMessage {
+  type: 'customQueryResult';
+  requestId?: string;
+  sessionId: string;
+  revision: number;
+  schema: { columns: Array<{ name: string; type: string; nullable: boolean }> };
+  result: { rows: unknown[][] };
+  page: PageState;
+  customQuerySql: string;
+}
+
+interface SearchResultMessage {
+  type: 'searchResult';
+  requestId?: string;
+  sessionId: string;
+  revision: number;
+  schema: { columns: Array<{ name: string; type: string; nullable: boolean }> };
+  result: { rows: unknown[][] };
+  page: PageState;
+  query: string;
+  scope: 'search' | 'inspection';
 }
 
 const WEBVIEW_PROTOCOL_VERSION = 3;
@@ -69,16 +93,23 @@ export const App: React.FC = () => {
   const [stats, setStats] = useState<ColumnProfile[]>([]);
   const [customQueryActive, setCustomQueryActive] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [activeSearchQuery, setActiveSearchQuery] = useState('');
+  const [activeQuerySql, setActiveQuerySql] = useState<string | null>(null);
   const [qualityIssues, setQualityIssues] = useState<QualityIssue[]>([]);
   const [chartConfig, setChartConfig] = useState<ChartConfig>();
   const [chartRows, setChartRows] = useState<unknown[][]>([]);
   const [chartLoading, setChartLoading] = useState(false);
   const [operationsCollapsed, setOperationsCollapsed] = useState(true);
+  const [exportMenuOpen, setExportMenuOpen] = useState(false);
+  const [inspection, setInspection] = useState<{ column: string; operator: string } | null>(null);
+  const [fillDialog, setFillDialog] = useState<{ column: string; value: string } | null>(null);
+  const [fillError, setFillError] = useState<string | null>(null);
   const [canUndo, setCanUndo] = useState(false);
   const [canRedo, setCanRedo] = useState(false);
   const [aiLoading, setAiLoading] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const inspectionActive = useRef(false);
   const [loadingProgress, setLoadingProgress] = useState<{
     percent: number;
     message: string;
@@ -86,6 +117,9 @@ export const App: React.FC = () => {
   }>();
   const [secondaryFile, setSecondaryFile] = useState<{ filePath: string; columns: string[] }>();
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const exportButtonRef = useRef<HTMLButtonElement>(null);
+  const exportFocusPending = useRef(false);
+  const fillTriggerRef = useRef<HTMLElement | null>(null);
   const pendingTransform = useRef<string | null>(null);
   const requestSequence = useRef(0);
   const latestRequests = useRef<Partial<Record<RequestSurface, string>>>({});
@@ -99,6 +133,42 @@ export const App: React.FC = () => {
       return requestId;
     },
     [postMessage],
+  );
+
+  const requestExport = useCallback(
+    (format: 'parquet' | 'csv' | 'json') => {
+      const context = sessionContext.current;
+      if (loading || !context) return;
+      setLoading(true);
+      sendRequest('export', {
+        type: 'exportData',
+        format,
+        ...context,
+        customQuerySql: activeQuerySql,
+      });
+    },
+    [activeQuerySql, loading, sendRequest],
+  );
+
+  const closeFillDialog = () => {
+    setFillDialog(null);
+    const trigger = fillTriggerRef.current;
+    requestAnimationFrame(() => trigger?.focus());
+  };
+
+  const requestPolarsHandoff = useCallback(
+    (mode: 'result' | 'recipe') => {
+      const context = sessionContext.current;
+      if (!context) return;
+      sendRequest('export', {
+        type: 'polarsHandoff',
+        mode,
+        sessionId: context.sessionId,
+        revision: context.revision,
+        customQuerySql: activeQuerySql,
+      });
+    },
+    [activeQuerySql, sendRequest],
   );
 
   const showToast = useCallback((message: string) => {
@@ -118,7 +188,7 @@ export const App: React.FC = () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const unsubscribe = onMessage((message: any) => {
       if (message.type === 'sessionUpdated') {
-        const update = message as SessionMessage & { type: string };
+        const update = message as SessionMessage;
         if (
           update.requestId &&
           latestRequests.current.grid &&
@@ -160,7 +230,7 @@ export const App: React.FC = () => {
           showToast(`Applied ${transformLabel(pendingTransform.current)}`);
           pendingTransform.current = null;
         }
-        setPage(update.page);
+        setPage({ ...update.page, scope: 'pipeline' });
         setDatasetRowCount(update.schema.rowCount);
         setStats([]);
         setQualityIssues([]);
@@ -169,22 +239,27 @@ export const App: React.FC = () => {
         setLoading(false);
         setError(null);
         setSearchQuery('');
+        setActiveSearchQuery('');
+        setInspection(null);
+        inspectionActive.current = false;
         setCanUndo(update.canUndo ?? history.length > 0);
         setCanRedo(update.canRedo ?? false);
         sendRequest('stats', { type: 'getStats' });
         setCustomQueryActive(false);
+        setActiveQuerySql(null);
         setLoadingProgress(undefined);
         setAiLoading(false);
       } else if (message.type === 'customQueryResult') {
-        if (message.requestId !== latestRequests.current.grid) return;
+        const queryResult = message as QueryResultMessage;
+        if (queryResult.requestId !== latestRequests.current.grid) return;
         if (
           !sessionContext.current ||
-          message.sessionId !== sessionContext.current.sessionId ||
-          message.revision !== sessionContext.current.revision
+          queryResult.sessionId !== sessionContext.current.sessionId ||
+          queryResult.revision !== sessionContext.current.revision
         )
           return;
         setColumns(
-          message.schema.columns.map(
+          queryResult.schema.columns.map(
             (column: { name: string; type: string; nullable: boolean }) => ({
               name: column.name,
               displayName: column.name,
@@ -193,26 +268,29 @@ export const App: React.FC = () => {
               nullable: column.nullable,
               nullCount: 0,
               uniqueCount: 0,
-              totalRows: message.page.totalRows,
+              totalRows: queryResult.page.totalRows,
             }),
           ) as ColumnInfo[],
         );
-        setRows(message.result.rows);
-        setPage(message.page);
+        setRows(queryResult.result.rows);
+        setPage({ ...queryResult.page, scope: 'query' });
         setStats([]);
         setCustomQueryActive(true);
+        setActiveQuerySql(queryResult.customQuerySql);
+        setActiveSearchQuery('');
         setLoading(false);
         setError(null);
       } else if (message.type === 'searchResult') {
-        if (message.requestId !== latestRequests.current.grid) return;
+        const searchResult = message as SearchResultMessage;
+        if (searchResult.requestId !== latestRequests.current.grid) return;
         if (
           !sessionContext.current ||
-          message.sessionId !== sessionContext.current.sessionId ||
-          message.revision !== sessionContext.current.revision
+          searchResult.sessionId !== sessionContext.current.sessionId ||
+          searchResult.revision !== sessionContext.current.revision
         )
           return;
         setColumns(
-          message.schema.columns.map(
+          searchResult.schema.columns.map(
             (column: { name: string; type: string; nullable: boolean }) => ({
               name: column.name,
               displayName: column.name,
@@ -221,13 +299,16 @@ export const App: React.FC = () => {
               nullable: column.nullable,
               nullCount: 0,
               uniqueCount: 0,
-              totalRows: message.page.totalRows,
+              totalRows: searchResult.page.totalRows,
             }),
           ) as ColumnInfo[],
         );
-        setRows(message.result.rows);
-        setPage(message.page);
-        setSearchQuery(message.query);
+        setRows(searchResult.result.rows);
+        setPage({ ...searchResult.page, scope: searchResult.scope });
+        inspectionActive.current = searchResult.scope === 'inspection';
+        setSearchQuery(searchResult.query);
+        setActiveSearchQuery(searchResult.query);
+        setPage({ ...message.page, scope: inspectionActive.current ? 'inspection' : 'search' });
         setLoading(false);
         setError(null);
       } else if (message.type === 'stats') {
@@ -264,6 +345,10 @@ export const App: React.FC = () => {
         if (message.requestId !== latestRequests.current.export) return;
         setLoading(false);
         setError(null);
+        if (exportFocusPending.current) {
+          exportFocusPending.current = false;
+          requestAnimationFrame(() => exportButtonRef.current?.focus());
+        }
       } else if (message.type === 'aiComplete') {
         if (message.requestId !== latestRequests.current.ai) return;
         setAiLoading(false);
@@ -406,30 +491,106 @@ export const App: React.FC = () => {
         </div>
       )}
       <div className={`app-layout ${operationsCollapsed ? 'operations-collapsed' : ''}`}>
-        <div className="operations-pane">
-          {operationsCollapsed ? (
-            <button
-              className="operations-expand"
-              type="button"
-              onClick={() => setOperationsCollapsed(false)}
-              title="Expand operations"
-              aria-label="Expand operations"
-            >
-              <span className="operations-expand-icon">›</span>
-              <span className="operations-expand-label">Operations</span>
-            </button>
-          ) : (
+        <div className="grid-content">
+          {filePath ? (
+            <>
+              <div className="workspace-actions">
+                <button type="button" onClick={() => setOperationsCollapsed(false)}>
+                  Transform
+                </button>
+                <button type="button" onClick={() => setOperationsCollapsed(false)}>
+                  Steps · {steps.length}
+                </button>
+                <div
+                  className="export-menu"
+                  onKeyDown={(event) => {
+                    if (event.key !== 'Escape' || !exportMenuOpen) return;
+                    event.preventDefault();
+                    event.stopPropagation();
+                    setExportMenuOpen(false);
+                    exportButtonRef.current?.focus();
+                  }}
+                >
+                  <button
+                    ref={exportButtonRef}
+                    type="button"
+                    onClick={() => setExportMenuOpen((value) => !value)}
+                    aria-expanded={exportMenuOpen}
+                  >
+                    Export ▾
+                  </button>
+                  {exportMenuOpen && (
+                    <div className="export-menu-items" role="menu">
+                      {(['parquet', 'csv', 'json'] as const).map((format) => (
+                        <button
+                          key={format}
+                          type="button"
+                          role="menuitem"
+                          onClick={() => {
+                            setExportMenuOpen(false);
+                            exportFocusPending.current = true;
+                            requestExport(format);
+                          }}
+                        >
+                          {format.toUpperCase()}
+                        </button>
+                      ))}
+                      <button
+                        type="button"
+                        role="menuitem"
+                        disabled={Boolean(inspection)}
+                        onClick={() => {
+                          setExportMenuOpen(false);
+                          if (!inspection) requestPolarsHandoff('result');
+                        }}
+                      >
+                        Continue in Polars…
+                      </button>
+                      <button
+                        type="button"
+                        role="menuitem"
+                        disabled={Boolean(inspection)}
+                        onClick={() => {
+                          setExportMenuOpen(false);
+                          if (!inspection) requestPolarsHandoff('recipe');
+                        }}
+                      >
+                        Open Polars recipe
+                      </button>
+                    </div>
+                  )}
+                </div>
+                <button type="button" onClick={() => sendRequest('grid', { type: 'saveRecipe' })}>
+                  Save recipe
+                </button>
+                <button type="button" onClick={() => postMessage({ type: 'openRecipePicker' })}>
+                  Run recipe…
+                </button>
+                {operationsCollapsed && (
+                  <button
+                    className="operations-expand"
+                    type="button"
+                    onClick={() => setOperationsCollapsed(false)}
+                  >
+                    Tools
+                  </button>
+                )}
+              </div>
+            </>
+          ) : null}
+        </div>
+        {!operationsCollapsed && (
+          <div className="operations-pane">
             <OperationsPanel
               columns={columns}
               transformSteps={steps}
               canUndo={canUndo && !loading}
               canRedo={canRedo && !loading}
               onTransform={transform}
-              onExport={(format) => {
-                if (loading) return;
-                setLoading(true);
-                sendRequest('export', { type: 'exportData', format });
-              }}
+              onExport={requestExport}
+              onSaveRecipe={() => sendRequest('grid', { type: 'saveRecipe' })}
+              onReplayRecipe={() => postMessage({ type: 'openRecipePicker' })}
+              onPolarsHandoff={requestPolarsHandoff}
               onRemoveStep={(id) => {
                 if (loading) return;
                 setLoading(true);
@@ -452,8 +613,8 @@ export const App: React.FC = () => {
               secondaryFile={secondaryFile}
               onSelectSecondaryFile={() => postMessage({ type: 'selectSecondaryFile' })}
             />
-          )}
-        </div>
+          </div>
+        )}
         <div className="grid-pane">
           {filePath ? (
             <>
@@ -470,13 +631,33 @@ export const App: React.FC = () => {
                     sendRequest('grid', { type: 'clearCustomQuery' });
                   }}
                 />
-                {!customQueryActive && (
+                {!customQueryActive && !operationsCollapsed && (
                   <DataQualitySummary
                     issues={qualityIssues}
                     loading={loading && stats.length === 0}
+                    onInspect={(issue) => {
+                      if (!issue.column) return;
+                      inspectionActive.current = true;
+                      setInspection({ column: issue.column, operator: 'is_null' });
+                      setLoading(true);
+                      sendRequest('grid', {
+                        type: 'searchRows',
+                        query: '',
+                        filter: { column: issue.column, operator: 'is_null' },
+                      });
+                    }}
+                    onFill={(column) => {
+                      fillTriggerRef.current =
+                        document.activeElement instanceof HTMLElement
+                          ? document.activeElement
+                          : null;
+                      setFillError(null);
+                      setFillDialog({ column, value: '' });
+                    }}
+                    onTransform={transform}
                   />
                 )}
-                {!customQueryActive && (
+                {!customQueryActive && !operationsCollapsed && (
                   <ChartPanel
                     columns={columns}
                     config={chartConfig}
@@ -494,6 +675,8 @@ export const App: React.FC = () => {
                 className="grid-search"
                 onSubmit={(event) => {
                   event.preventDefault();
+                  setInspection(null);
+                  inspectionActive.current = false;
                   setLoading(true);
                   sendRequest('grid', { type: 'searchRows', query: searchQuery });
                 }}
@@ -502,7 +685,12 @@ export const App: React.FC = () => {
                   ref={searchInputRef}
                   type="search"
                   value={searchQuery}
-                  onChange={(event) => setSearchQuery(event.target.value)}
+                  onChange={(event) => {
+                    setSearchQuery(event.target.value);
+                    setInspection(null);
+                    inspectionActive.current = false;
+                    sendRequest('grid', { type: 'searchChange', query: event.target.value });
+                  }}
                   placeholder="Search all columns"
                   aria-label="Search all columns"
                 />
@@ -514,6 +702,10 @@ export const App: React.FC = () => {
                     type="button"
                     onClick={() => {
                       setSearchQuery('');
+                      setActiveSearchQuery('');
+                      setInspection(null);
+                      inspectionActive.current = false;
+                      inspectionActive.current = false;
                       setLoading(true);
                       sendRequest('grid', { type: 'searchRows', query: '' });
                     }}
@@ -522,6 +714,28 @@ export const App: React.FC = () => {
                   </button>
                 )}
               </form>
+              {(inspection || activeSearchQuery) && (
+                <div className="result-scope" role="status">
+                  <span>
+                    {inspection
+                      ? `Inspecting ${inspection.column} · ${page.totalRows.toLocaleString()} matching rows · Export uses the full pipeline result (${datasetRowCount.toLocaleString()} rows)`
+                      : `Search results · ${page.totalRows.toLocaleString()} matching rows · pipeline result has ${datasetRowCount.toLocaleString()} rows`}
+                  </span>
+                  {inspection && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setInspection(null);
+                        inspectionActive.current = false;
+                        setLoading(true);
+                        sendRequest('grid', { type: 'searchRows', query: activeSearchQuery });
+                      }}
+                    >
+                      Clear inspection
+                    </button>
+                  )}
+                </div>
+              )}
               <DataGrid
                 columns={columns.map((column) => ({ name: column.name, type: column.type }))}
                 rows={rows}
@@ -542,7 +756,113 @@ export const App: React.FC = () => {
                 }}
                 onTransform={transform}
               />
+              {fillDialog && (
+                <div className="modal-backdrop" role="presentation">
+                  <form
+                    noValidate
+                    className="fill-dialog"
+                    role="dialog"
+                    aria-modal="true"
+                    aria-labelledby="fill-dialog-title"
+                    onKeyDown={(event) => {
+                      if (event.key === 'Escape') {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        closeFillDialog();
+                      }
+                      if (event.key !== 'Tab') return;
+                      const controls = event.currentTarget.querySelectorAll<HTMLElement>(
+                        'input, button:not(:disabled)',
+                      );
+                      const first = controls[0];
+                      const last = controls[controls.length - 1];
+                      if (
+                        event.shiftKey
+                          ? document.activeElement === first
+                          : document.activeElement === last
+                      ) {
+                        event.preventDefault();
+                        (event.shiftKey ? last : first)?.focus();
+                      }
+                    }}
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      const type =
+                        columns.find((item) => item.name === fillDialog.column)?.type ?? 'VARCHAR';
+                      const isText = /VARCHAR|TEXT|STRING|CHAR/i.test(type);
+                      const isNumeric = /INT|DOUBLE|FLOAT|REAL|DECIMAL/i.test(type);
+                      const isBoolean = /BOOL/i.test(type);
+                      const isDate = /DATE|TIME/i.test(type);
+                      if (isText && !fillDialog.value.trim()) {
+                        setFillError('Enter a replacement value.');
+                        return;
+                      }
+                      if (isNumeric && !/^-?(?:\d+\.?\d*|\.\d+)$/.test(fillDialog.value.trim())) {
+                        setFillError(`Enter a valid number for ${type}.`);
+                        return;
+                      }
+                      if (isBoolean && !/^(true|false)$/i.test(fillDialog.value.trim())) {
+                        setFillError('Enter true or false.');
+                        return;
+                      }
+                      if (isDate && Number.isNaN(Date.parse(fillDialog.value.trim()))) {
+                        setFillError(`Enter a valid ${type} value.`);
+                        return;
+                      }
+                      transform('fill_nulls', {
+                        column: fillDialog.column,
+                        value: fillDialog.value,
+                      });
+                      setFillDialog(null);
+                      setInspection(null);
+                      inspectionActive.current = false;
+                    }}
+                  >
+                    <h2 id="fill-dialog-title">Fill missing values</h2>
+                    <p>
+                      {qualityIssues
+                        .find(
+                          (issue) => issue.kind === 'nulls' && issue.column === fillDialog.column,
+                        )
+                        ?.count.toLocaleString() ?? 'Some'}{' '}
+                      cells in <strong>{fillDialog.column}</strong> will change. No rows will be
+                      removed.
+                    </p>
+                    <label htmlFor="fill-value">
+                      Replacement value ·{' '}
+                      {columns.find((item) => item.name === fillDialog.column)?.type}
+                    </label>
+                    <input
+                      id="fill-value"
+                      autoFocus
+                      value={fillDialog.value}
+                      onChange={(event) => {
+                        setFillError(null);
+                        setFillDialog({ ...fillDialog, value: event.target.value });
+                      }}
+                    />
+                    {fillError && <p role="alert">{fillError}</p>}
+                    <div className="form-actions">
+                      <button type="button" onClick={closeFillDialog}>
+                        Cancel
+                      </button>
+                      <button
+                        className="form-apply-btn"
+                        type="submit"
+                        disabled={!fillDialog.value.trim() || loading}
+                      >
+                        Apply
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              )}
               <div className="pagination-controls">
+                <span className="result-total">
+                  {customQueryActive ? 'Query result' : 'Pipeline result'}:{' '}
+                  {datasetRowCount.toLocaleString()} rows · showing{' '}
+                  {page.totalRows.toLocaleString()}
+                </span>
                 <button
                   disabled={page.offset === 0 || loading}
                   onClick={() => changePage(page.offset - page.limit)}

@@ -25,11 +25,16 @@ Run **Run QuackWrangler Extension** from the repository's Run and Debug view, th
 - Open data from a read-only workspace and confirm DuckDB spill storage is created under VS Code extension storage rather than a relative `.tmp` directory.
 - Open a folder and confirm supported files appear under their actual subfolders.
 - Open an HTTPS/S3 source. Confirm staged progress is visible, reaches 100%, and a network or format failure appears as an actionable error.
-- Confirm Operations starts collapsed, remains visibly labelled, and expands/collapses without covering the grid.
+- Confirm Operations starts collapsed and opens beside the grid in a wide editor or below it at 640 px and narrower. In a narrow split, verify the grid remains usable, Export opens above the content, and collapsing Operations restores the full grid space.
 - Resize columns, double-click a divider to auto-fit, inspect long/nested values, and verify resizing does not sort.
 - Select one and several rows; copy with and without headers in CSV and TSV formats.
 - Apply every operation: filter operators, deduplicate, rename, drop, add/formula, cast, fill nulls, sort, group/aggregate, pivot, and unpivot.
 - Apply a transform and confirm the success toast appears. Confirm undo and redo enable only when available; test `Cmd/Ctrl+Z`, `Cmd+Shift+Z`, and `Ctrl+Y`. Press `Enter` to submit an open operation form and `Escape` to close forms, cell inspectors, and quick-filter menus. Reorder transforms, use column quick-filter, and save/reopen a `.qw` workspace.
+- Open a file with nulls. Inspect a null finding and confirm the view is scoped to matching rows without adding a transform; clear inspection and confirm the full current result returns. Fill a value and confirm the impact text, apply, and undo. Use Export and confirm its count labels the full current result rather than only visible rows.
+- Save a `.qw` recipe and replay it on another open file. Verify unsupported or incompatible steps report a recoverable error. Export a supported recipe to Python and verify unsupported reader types/operations are refused; use Continue in Polars and confirm it exports the active full result to Parquet.
+- Replay a recipe on a file where a referenced column was renamed. Confirm the picker names the step and shows available column types, then select a replacement and verify the result. Repeat and cancel the picker; confirm the grid, active SQL result, and history do not change.
+- Replay a recipe that refers to a column created by a preceding Formula Builder step. Confirm the remapper uses the staged schema, and cancel a later-step picker to verify no partial steps are committed.
+- Force a recipe replay, transform, undo, and redo query failure. Confirm each failed operation leaves the previous rows, step history, and export scope unchanged. Test fills for text with leading zeros, numeric and decimal columns, booleans, dates, invalid input, and all-null columns.
 - Run read-only custom SQL and confirm write/DDL statements are rejected.
 - Open Data Quality and Visualize; check charts, scrolling, empty/error states, and expand/collapse behavior.
 - Join two files and union compatible files.

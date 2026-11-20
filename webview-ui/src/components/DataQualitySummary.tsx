@@ -11,10 +11,19 @@ export interface QualityIssue {
 interface DataQualitySummaryProps {
   issues: QualityIssue[];
   loading: boolean;
+  onInspect: (issue: QualityIssue) => void;
+  onFill: (column: string) => void;
+  onTransform: (type: string, params: Record<string, unknown>) => void;
 }
 
-export const DataQualitySummary: React.FC<DataQualitySummaryProps> = ({ issues, loading }) => {
-  const [open, setOpen] = useState(false);
+export const DataQualitySummary: React.FC<DataQualitySummaryProps> = ({
+  issues,
+  loading,
+  onInspect,
+  onFill,
+  onTransform,
+}) => {
+  const [open, setOpen] = useState(true);
   const status = loading
     ? 'Checking…'
     : issues.length
@@ -52,6 +61,38 @@ export const DataQualitySummary: React.FC<DataQualitySummaryProps> = ({ issues, 
                   {issue.kind === 'duplicates' ? '⧉' : issue.kind === 'nulls' ? '◌' : '◇'}
                 </span>
                 <p>{issue.message}</p>
+                {issue.column && issue.kind === 'nulls' && (
+                  <div className="quality-actions">
+                    <button type="button" onClick={() => onInspect(issue)}>
+                      Inspect rows
+                    </button>
+                    <button type="button" onClick={() => onFill(issue.column!)}>
+                      Fill missing values…
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        onTransform('filter_rows', {
+                          column: issue.column,
+                          operator: 'is_not_null',
+                          value: '',
+                        })
+                      }
+                    >
+                      Exclude null rows
+                    </button>
+                  </div>
+                )}
+                {!issue.column && issue.kind === 'duplicates' && (
+                  <div className="quality-actions">
+                    <button
+                      type="button"
+                      onClick={() => onTransform('deduplicate', { columns: [] })}
+                    >
+                      Remove duplicate rows
+                    </button>
+                  </div>
+                )}
               </div>
             ))
           ) : (

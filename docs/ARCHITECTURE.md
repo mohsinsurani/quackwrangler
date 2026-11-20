@@ -142,6 +142,10 @@ Join and union forms ask the extension host to select a second supported file. T
 - Recent files are capped at ten paths in VS Code `globalState`.
 - `.qw` files contain format version `1`, a source path, and transform types/parameters.
 - Loading a workspace rebuilds every transform through current validation instead of trusting serialized SQL.
+- In-editor recipe replay validates the candidate full query before replacing the active history; failed replay leaves rows, undo/redo, and export scope intact.
+- Replay offers replacements for missing structured input columns using the schema after the preceding candidate steps. It reuses a choice while the replacement remains available and commits only if the originating editor and result are still current. Raw SQL expressions and references to secondary-file columns are not rewritten.
+- The editor can replay a `.qw` transform sequence against the currently loaded source, again rebuilding each step through pipeline validation.
+- Polars handoff is an export boundary, not a second runtime: result handoff writes the active DuckDB result to Parquet; recipe handoff emits code only for supported source formats and explicitly supported transforms. Unsupported semantics produce an error and direct users to the exact-result Parquet handoff.
 
 ## Message protocol
 

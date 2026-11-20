@@ -1,7 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { WranglingSession } from '../../../src/transforms/pipeline.js';
 
 const mocks = vi.hoisted(() => {
   const posted: unknown[] = [];
+  let failCustomQuery = false;
+  let revision = 1;
   const panel = {
     filePath: undefined as string | undefined,
     postMessage: vi.fn((message: unknown) => posted.push(message)),
@@ -10,10 +13,24 @@ const mocks = vi.hoisted(() => {
   };
   return {
     posted,
+    setFailCustomQuery(value: boolean) {
+      failCustomQuery = value;
+    },
+    get failCustomQuery() {
+      return failCustomQuery;
+    },
+    setRevision(value: number) {
+      revision = value;
+    },
+    get revision() {
+      return revision;
+    },
     panel,
     executeCommand: vi.fn().mockResolvedValue(undefined),
     showOpenDialog: vi.fn(),
     showQuickPick: vi.fn(),
+    readFile: vi.fn(),
+    restoreValidated: vi.fn<WranglingSession['restoreValidated']>().mockResolvedValue(false),
     showWarningMessage: vi.fn(),
     showErrorMessage: vi.fn(),
     readDirectory: vi.fn(),
@@ -56,6 +73,11 @@ vi.mock('vscode', () => ({
   FileType: { File: 1, Directory: 2 },
 }));
 
+vi.mock('node:fs/promises', async () => {
+  const actual = await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises');
+  return { ...actual, readFile: mocks.readFile };
+});
+
 vi.mock('../../../src/duckdb/connection.js', () => ({
   DuckDBConnection: class {
     isConnected(): boolean {
@@ -65,8 +87,16 @@ vi.mock('../../../src/duckdb/connection.js', () => ({
     async close(): Promise<void> {}
     async query(sql: string): Promise<unknown> {
       if (sql.startsWith('DESCRIBE')) {
+        if (sql.includes('custom_query_schema') && mocks.failCustomQuery)
+          throw new Error('bad custom query');
+        if (sql.includes('preceding_pipeline_schema'))
+          return { columns: ['name', 'type', 'null'], rows: [['value', 'BIGINT', 'NO']] };
         return { columns: [], rows: [['value', 'BIGINT', 'NO']], rowCount: 1, duration: 0 };
       }
+      if (sql.includes('panel_relation'))
+        return { columns: ['value'], rows: [[1]], rowCount: 1, duration: 0 };
+      if (sql.startsWith('SELECT COUNT(*) FROM (WITH current_data'))
+        return { columns: ['count'], rows: [[1]], rowCount: 1, duration: 0 };
       if (sql.includes('COUNT(*)')) {
         return { columns: ['count'], rows: [[1]], rowCount: 1, duration: 0 };
       }
@@ -104,7 +134,7 @@ vi.mock('../../../src/transforms/pipeline.js', () => ({
       return false;
     }
     getRevision(): number {
-      return 1;
+      return mocks.revision;
     }
     getSql(): string {
       return 'SELECT * FROM "panel_relation"';
@@ -121,6 +151,23 @@ vi.mock('../../../src/transforms/pipeline.js', () => ({
         },
         result: { columns: ['value'], rows: [[1]], rowCount: 1 },
         page: { offset, limit, totalRows: 1 },
+      };
+    }
+    async applyValidated(): Promise<void> {}
+    async undoValidated(): Promise<void> {}
+    async redoValidated(): Promise<void> {}
+    restoreValidated = mocks.restoreValidated;
+    async removeValidated(): Promise<void> {}
+    async reorderValidated(): Promise<void> {}
+    async search(): Promise<unknown> {
+      return {
+        schema: {
+          columns: [{ name: 'value', type: 'BIGINT', nullable: false }],
+          rowCount: 1,
+          filePath: this.filePath,
+        },
+        result: { columns: ['value'], rows: [[1]], rowCount: 1 },
+        page: { offset: 0, limit: 100, totalRows: 1 },
       };
     }
   },
@@ -148,6 +195,8 @@ describe('custom-editor file opening flow', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.posted.length = 0;
+    mocks.setRevision(1);
+    mocks.setFailCustomQuery(false);
     configureCommands(
       { fsPath: '/extension' } as never,
       { appendLine: mocks.appendLine } as never,
@@ -314,10 +363,18 @@ describe('custom-editor file opening flow', () => {
       type: 'executeCustomQuery',
       sql: 'SELECT value FROM current_data WHERE value > 0',
     });
+    const sessionId = (
+      mocks.posted.find((message) => (message as { type?: string }).type === 'sessionUpdated') as {
+        sessionId: string;
+      }
+    ).sessionId;
     await handler({
       type: 'exportData',
       format: 'csv',
       outputPath: '/tmp/custom-query.csv',
+      sessionId,
+      revision: 1,
+      customQuerySql: 'SELECT value FROM current_data WHERE value > 0',
       requestId: 'export-1',
     });
 
@@ -333,6 +390,161 @@ describe('custom-editor file opening flow', () => {
       status: 'completed',
       requestId: 'export-1',
     });
+  });
+
+  it.each(['accept', 'cancel'] as const)(
+    'handles recipe column picker %s in the host',
+    async (action) => {
+      await openDataWranglerCustomEditor({ fsPath: '/data/initial.parquet' } as never, {} as never);
+      const handler = latestMessageHandler();
+      const sql = 'SELECT value FROM current_data WHERE value > 0';
+      await handler({ type: 'executeCustomQuery', sql });
+      expect(mocks.posted).toContainEqual(
+        expect.objectContaining({ type: 'customQueryResult', customQuerySql: sql }),
+      );
+      mocks.posted.length = 0;
+
+      const step = { type: 'rename_column', params: { oldName: 'old_value', newName: 'result' } };
+      const candidate = { name: 'value', type: 'BIGINT', nullable: false };
+      mocks.showOpenDialog.mockResolvedValueOnce([{ fsPath: '/data/example.qw' }]);
+      mocks.readFile.mockResolvedValueOnce(JSON.stringify({ version: 1, transforms: [step] }));
+      mocks.showQuickPick.mockResolvedValueOnce(
+        action === 'accept' ? { label: 'value' } : undefined,
+      );
+      mocks.restoreValidated.mockImplementationOnce(async (steps, replay) => {
+        expect(steps).toEqual([step]);
+        const replacement = await replay?.chooseColumn(
+          'old_value',
+          [candidate],
+          1,
+          'rename_column',
+        );
+        expect(replacement).toBe(action === 'accept' ? 'value' : undefined);
+        return replacement === 'value';
+      });
+
+      await handler({ type: 'openRecipePicker', requestId: 'replay' });
+
+      expect(mocks.readFile).toHaveBeenCalledWith('/data/example.qw', 'utf8');
+      expect(mocks.showQuickPick).toHaveBeenCalledWith(
+        [{ label: 'value', description: 'BIGINT' }],
+        {
+          title: 'Recipe step 1 · rename column',
+          placeHolder: 'Replace missing column “old_value”',
+        },
+      );
+      if (action === 'accept') {
+        expect(mocks.posted).toContainEqual(
+          expect.objectContaining({ type: 'sessionUpdated', requestId: 'replay' }),
+        );
+      } else {
+        expect(mocks.posted).toEqual([]);
+      }
+
+      mocks.posted.length = 0;
+      await handler({ type: 'pageChange', offset: 0, limit: 100 });
+      expect(mocks.posted).toContainEqual(
+        expect.objectContaining({
+          type: action === 'accept' ? 'sessionUpdated' : 'customQueryResult',
+        }),
+      );
+    },
+  );
+
+  it('does not activate a custom query that fails validation', async () => {
+    await openDataWranglerCustomEditor({ fsPath: '/data/initial.parquet' } as never, {} as never);
+    const handler = latestMessageHandler();
+    mocks.setFailCustomQuery(true);
+    await handler({ type: 'executeCustomQuery', sql: 'SELECT broken FROM current_data' });
+    mocks.setFailCustomQuery(false);
+    const sessionId = (
+      mocks.posted.find((message) => (message as { type?: string }).type === 'sessionUpdated') as {
+        sessionId: string;
+      }
+    ).sessionId;
+    await handler({
+      type: 'exportData',
+      format: 'csv',
+      outputPath: '/tmp/base.csv',
+      sessionId,
+      revision: 1,
+      customQuerySql: null,
+    });
+    expect(mocks.exportResults).toHaveBeenCalledWith(
+      expect.anything(),
+      'SELECT * FROM "panel_relation"',
+      '/tmp/base.csv',
+      'csv',
+    );
+  });
+
+  it('confirms export scope in the VS Code host and stops when dismissed', async () => {
+    await openDataWranglerCustomEditor({ fsPath: '/data/initial.parquet' } as never, {} as never);
+    const session = mocks.posted.find(
+      (message) => (message as { type?: string }).type === 'sessionUpdated',
+    ) as { sessionId: string; revision: number };
+    mocks.showQuickPick.mockResolvedValueOnce(undefined);
+    await latestMessageHandler()({
+      type: 'exportData',
+      format: 'csv',
+      sessionId: session.sessionId,
+      revision: session.revision,
+      customQuerySql: null,
+      requestId: 'cancel-export',
+    });
+    expect(mocks.showQuickPick).toHaveBeenCalledWith(
+      [expect.objectContaining({ label: 'Export' })],
+      { title: 'Export all 1 rows from the pipeline result?' },
+    );
+    expect(mocks.exportResults).not.toHaveBeenCalled();
+    expect(mocks.posted).toContainEqual({
+      type: 'exportComplete',
+      outputPath: '',
+      status: 'cancelled',
+      requestId: 'cancel-export',
+    });
+  });
+
+  it('rejects export requests if the pipeline revision changed after confirmation', async () => {
+    await openDataWranglerCustomEditor({ fsPath: '/data/initial.parquet' } as never, {} as never);
+    const handler = latestMessageHandler();
+    const sessionId = (
+      mocks.posted.find((message) => (message as { type?: string }).type === 'sessionUpdated') as {
+        sessionId: string;
+      }
+    ).sessionId;
+    mocks.setRevision(2);
+    await handler({
+      type: 'exportData',
+      format: 'csv',
+      outputPath: '/tmp/stale.csv',
+      sessionId,
+      revision: 1,
+      customQuerySql: null,
+    });
+    expect(mocks.exportResults).not.toHaveBeenCalled();
+    expect(mocks.posted).toContainEqual(
+      expect.objectContaining({ type: 'error', message: expect.stringContaining('data changed') }),
+    );
+  });
+
+  it('rejects stale search results without replacing the accepted filter scope', async () => {
+    await openDataWranglerCustomEditor({ fsPath: '/data/initial.parquet' } as never, {} as never);
+    const handler = latestMessageHandler();
+    mocks.posted.length = 0;
+    mocks.setFailCustomQuery(false);
+    await handler({ type: 'searchChange', query: 'draft only' });
+    await handler({ type: 'searchRows', query: 'accepted search' });
+    const search = mocks.posted.find(
+      (message) => (message as { type?: string }).type === 'searchResult',
+    ) as { scope: string; query: string };
+    expect(search).toMatchObject({ scope: 'search', query: 'accepted search' });
+    await handler({ type: 'searchChange', query: 'new draft' });
+    await handler({ type: 'pageChange', offset: 0, limit: 100 });
+    const latestSearch = mocks.posted
+      .filter((message) => (message as { type?: string }).type === 'searchResult')
+      .at(-1) as { query: string };
+    expect(latestSearch.query).toBe('accepted search');
   });
 });
 

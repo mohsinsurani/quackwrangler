@@ -4,8 +4,8 @@ The overview and demo are captures of the actual standalone React development pr
 
 1. Run `npm --prefix webview-ui run dev -- --host 127.0.0.1`.
 2. Open the printed local URL at a 1280×720 viewport.
-3. Capture three readable states: the default grid/profile view with the labelled Operations rail collapsed, the nested-value inspector opened from a `metadata` STRUCT cell, and the correlation heatmap expanded.
-4. Save the visualization frame as `quackwrangler-overview.jpg`.
+3. Capture three readable states: the default grid/profile view with the tools panel closed, the nested-value inspector opened from a `metadata` STRUCT cell, and the correlation heatmap expanded.
+4. Save the nested-value inspector frame as `quackwrangler-overview.jpg`.
 5. Assemble the three states into a 960×540 looping `quackwrangler-demo.gif`.
 6. Inspect both rendered assets and update their alt text if the demonstrated features change.
 

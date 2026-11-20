@@ -6,6 +6,8 @@ This benchmark compares QuackWrangler's production engine (`@duckdb/node-api`) w
 
 Requirements: Node.js, the repository's npm dependencies, and [uv](https://docs.astral.sh/uv/). Python packages are installed into uv's isolated script environment; they are benchmark tooling and are not QuackWrangler runtime dependencies.
 
+The isolated `uv` environment powers the opt-in Polars recipe execution test (`QW_POLARS_INTEGRATION=1 npm test -- tests/unit/polars/recipe.test.ts`). It pins Polars and PyArrow and compares its output with DuckDB on a Parquet fixture. Users running generated Python still install Polars in their own Python project/environment.
+
 ```bash
 npm ci
 npm run benchmark
@@ -47,12 +49,12 @@ The runners write machine-readable JSON and Markdown summaries under `benchmarks
 
 Committed result set:
 
-| Artifact | Meaning |
-| --- | --- |
-| `latest.json` / `latest.md` | Seven-run, one-million-row engine comparison |
-| `scalability.json` / `scalability.md` | Three-run 10K–10M scaling and peak RSS |
-| `scalability-50m.json` / `scalability-50m.md` | Exploratory one-sample 50M result |
-| `formats.json` / `formats.md` | Seven-run Parquet/CSV/NDJSON loading comparison |
+| Artifact                                      | Meaning                                         |
+| --------------------------------------------- | ----------------------------------------------- |
+| `latest.json` / `latest.md`                   | Seven-run, one-million-row engine comparison    |
+| `scalability.json` / `scalability.md`         | Three-run 10K–10M scaling and peak RSS          |
+| `scalability-50m.json` / `scalability-50m.md` | Exploratory one-sample 50M result               |
+| `formats.json` / `formats.md`                 | Seven-run Parquet/CSV/NDJSON loading comparison |
 
 Older timing values remain valid measurements when the renderer or failure schema evolves. Their Markdown summaries are regenerated into the current Status-column presentation without changing recorded timings.
 

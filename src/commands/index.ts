@@ -11,9 +11,10 @@ import { buildDbtSql, DbtExportStyle } from '../dbt/export.js';
 import { DuckDBConnection } from '../duckdb/connection.js';
 import { getFileMetadata, loadFile, prepareDataFileReader } from '../duckdb/parquet-loader.js';
 import { exportResults, normalizeReadOnlyQuery } from '../duckdb/query-engine.js';
+import { buildPolarsRecipe } from '../polars/recipe.js';
 import { schemaComparisonMarkdown } from '../schema/compare.js';
 import { WranglingSession } from '../transforms/pipeline.js';
-import { DataWranglerConfig } from '../types/index.js';
+import { DataWranglerConfig, PageInfo, QueryResult, TableSchema } from '../types/index.js';
 import { WebviewMessage } from '../types/index.js';
 import { redactedDiagnostic } from '../utils/diagnostics.js';
 import { isDuckDBMemoryError } from '../utils/duckdbErrors.js';
@@ -66,6 +67,7 @@ interface PanelState {
   sessionId: string;
   customQuerySql: string | null;
   searchQuery: string;
+  inspectionFilter: { column: string; operator: 'is_null' | 'is_not_null' } | null;
   relationName: string;
   // Each panel owns its DuckDBConnection so preserve_insertion_order and other
   // instance-global settings cannot bleed between panels.
@@ -83,6 +85,7 @@ function getPanelState(panel: DataWranglerPanel): PanelState {
       sessionId: newRelationName(),
       customQuerySql: null,
       searchQuery: '',
+      inspectionFilter: null,
       relationName: newRelationName(),
       connection: null,
       managedTempDir: undefined,
@@ -227,11 +230,14 @@ async function postCustomQuery(
   offset = 0,
   limit = 100,
   requestId?: string,
+  customQuerySql?: string,
 ): Promise<void> {
-  const { session, sessionId, customQuerySql } = getPanelState(panel);
+  const { session, sessionId, customQuerySql: activeCustomQuery } = getPanelState(panel);
+  customQuerySql ??= activeCustomQuery ?? undefined;
   if (!session || !customQuerySql) throw new Error('No custom query is active');
+  const querySql = customQuerySql;
   const revision = session.getRevision();
-  const sourceSql = getCustomQuerySource(session, customQuerySql);
+  const sourceSql = getCustomQuerySource(session, querySql);
   const conn = await getPanelConnection(panel);
   const [result, count, described] = await Promise.all([
     conn.query(`SELECT * FROM (${sourceSql}) AS custom_query_page LIMIT ${limit} OFFSET ${offset}`),
@@ -252,10 +258,63 @@ async function postCustomQuery(
     },
     result,
     page: { offset, limit, totalRows },
+    customQuerySql: querySql,
     requestId,
     sessionId,
     revision,
   });
+}
+
+async function queryCustomSql(
+  panel: DataWranglerPanel,
+  customQuerySql: string,
+  offset: number,
+  limit: number,
+): Promise<{
+  schema: TableSchema;
+  result: QueryResult;
+  page: PageInfo;
+  sessionId: string;
+  revision: number;
+}> {
+  const state = getPanelState(panel);
+  const session = state.session;
+  if (!session) throw new Error('Open a data file before running a query');
+  const revision = session.getRevision();
+  const sessionId = state.sessionId;
+  const sourceSql = getCustomQuerySource(session, customQuerySql);
+  const connection = await getPanelConnection(panel);
+  const [result, count, described] = await Promise.all([
+    connection.query(
+      `SELECT * FROM (${sourceSql}) AS custom_query_page LIMIT ${limit} OFFSET ${offset}`,
+    ),
+    connection.query(`SELECT COUNT(*) FROM (${sourceSql}) AS custom_query_count`),
+    connection.query(`DESCRIBE SELECT * FROM (${sourceSql}) AS custom_query_schema`),
+  ]);
+  return {
+    schema: {
+      columns: described.rows.map((row) => ({
+        name: String(row[0]),
+        type: String(row[1]),
+        nullable: String(row[2]).toUpperCase() === 'YES',
+      })),
+      rowCount: Number(count.rows[0]?.[0] ?? 0),
+      filePath: session.getFilePath(),
+    },
+    result,
+    page: { offset, limit, totalRows: Number(count.rows[0]?.[0] ?? 0) },
+    sessionId,
+    revision,
+  };
+}
+
+function postCustomQueryResult(
+  panel: DataWranglerPanel,
+  result: Awaited<ReturnType<typeof queryCustomSql>>,
+  customQuerySql: string,
+  requestId?: string,
+): void {
+  panel.postMessage({ type: 'customQueryResult', ...result, customQuerySql, requestId });
 }
 
 async function handleWebviewMessage(
@@ -295,53 +354,68 @@ async function handleWebviewMessage(
       }
       case 'applyTransform':
         if (!session) throw new Error('Open a data file before applying a transform');
-        state.customQuerySql = null;
-        state.searchQuery = '';
         if (['join_file', 'union_file'].includes(message.transform.type)) {
           await prepareDataFileReader(
             await getPanelConnection(panel),
             String(message.transform.params.filePath ?? ''),
           );
         }
-        session.apply(message.transform.type, message.transform.params);
+        await session.applyValidated(message.transform.type, message.transform.params);
+        state.customQuerySql = null;
+        state.searchQuery = '';
+        state.inspectionFilter = null;
         await postSession(panel, 0, getConfig().pageSize, message.requestId);
         return;
       case 'undo':
+        await session?.undoValidated();
         state.customQuerySql = null;
         state.searchQuery = '';
-        session?.undo();
+        state.inspectionFilter = null;
         await postSession(panel, 0, getConfig().pageSize, message.requestId);
         return;
       case 'redo':
+        await session?.redoValidated();
         state.customQuerySql = null;
         state.searchQuery = '';
-        session?.redo();
+        state.inspectionFilter = null;
         await postSession(panel, 0, getConfig().pageSize, message.requestId);
         return;
       case 'removeTransform':
+        await session?.removeValidated(message.id);
         state.customQuerySql = null;
         state.searchQuery = '';
-        session?.remove(message.id);
+        state.inspectionFilter = null;
         await postSession(panel, 0, getConfig().pageSize, message.requestId);
         return;
       case 'reorderTransforms':
+        await session?.reorderValidated(message.sourceId, message.targetId);
         state.customQuerySql = null;
         state.searchQuery = '';
-        session?.reorder(message.sourceId, message.targetId);
+        state.inspectionFilter = null;
         await postSession(panel, 0, getConfig().pageSize, message.requestId);
         return;
       case 'pageChange':
         if (state.customQuerySql)
           await postCustomQuery(panel, message.offset, message.limit, message.requestId);
-        else if (state.searchQuery && session) {
+        else if ((state.searchQuery || state.inspectionFilter) && session) {
           const query = state.searchQuery;
+          if (!query && !state.inspectionFilter) {
+            await postSession(panel, message.offset, message.limit, message.requestId);
+            return;
+          }
           const revision = session.getRevision();
           const sessionId = state.sessionId;
-          const searched = await session.search(query, message.offset, message.limit);
+          const searched = await session.search(
+            query,
+            message.offset,
+            message.limit,
+            state.inspectionFilter ?? undefined,
+          );
           panel.postMessage({
             type: 'searchResult',
             ...searched,
             query,
+            scope: state.inspectionFilter ? 'inspection' : 'search',
             requestId: message.requestId,
             sessionId,
             revision,
@@ -352,7 +426,8 @@ async function handleWebviewMessage(
         if (!session) throw new Error('Open a data file before searching');
         state.customQuerySql = null;
         state.searchQuery = message.query.trim();
-        if (!state.searchQuery) {
+        state.inspectionFilter = 'filter' in message ? (message.filter ?? null) : null;
+        if (!state.searchQuery && !state.inspectionFilter) {
           await postSession(panel, 0, getConfig().pageSize, message.requestId);
           return;
         }
@@ -360,30 +435,47 @@ async function handleWebviewMessage(
           const query = state.searchQuery;
           const revision = session.getRevision();
           const sessionId = state.sessionId;
-          const searched = await session.search(query, 0, 100);
+          const searched = await session.search(
+            query,
+            0,
+            100,
+            'filter' in message ? message.filter : undefined,
+          );
           panel.postMessage({
             type: 'searchResult',
             ...searched,
             query,
+            scope: state.inspectionFilter ? 'inspection' : 'search',
             requestId: message.requestId,
             sessionId,
             revision,
           });
         }
         return;
+      case 'searchChange':
+        return;
       case 'executeCustomQuery':
         if (!session) throw new Error('Open a data file before running a query');
-        state.searchQuery = '';
-        state.customQuerySql = normalizeReadOnlyQuery(message.sql);
-        await postCustomQuery(panel, 0, 100, message.requestId);
+        {
+          const normalizedSql = normalizeReadOnlyQuery(message.sql);
+          const result = await queryCustomSql(panel, normalizedSql, 0, 100);
+          if (getPanelState(panel).session !== session || result.revision !== session.getRevision())
+            throw new Error('The data changed while the query was running. Run the query again.');
+          state.searchQuery = '';
+          state.inspectionFilter = null;
+          state.customQuerySql = normalizedSql;
+          postCustomQueryResult(panel, result, normalizedSql, message.requestId);
+        }
         return;
       case 'clearCustomQuery':
         state.customQuerySql = null;
+        state.inspectionFilter = null;
         await postSession(panel, 0, getConfig().pageSize, message.requestId);
         return;
       case 'refresh':
         if (!session?.getFilePath()) return;
         state.customQuerySql = null;
+        state.inspectionFilter = null;
         await loadDataIntoPanel(panel, session.getFilePath(), message.requestId);
         return;
       case 'getStats':
@@ -426,18 +518,49 @@ async function handleWebviewMessage(
         return;
       case 'exportData': {
         if (!session) throw new Error('Open a data file before exporting');
-        const sourcePath = session.getFilePath();
+        const exportSession = session;
+        const exportSessionId = state.sessionId;
+        if (
+          message.sessionId !== exportSessionId ||
+          message.revision !== exportSession.getRevision()
+        )
+          throw new Error(
+            'The data changed before export started. Review the current result and try again.',
+          );
+        const sourcePath = exportSession.getFilePath();
         const remoteSource = /^(https?|s3):\/\//i.test(sourcePath);
         const defaultPath = remoteSource
           ? undefined
           : sourcePath.replace(/\.[^.]+$/, `_transformed.${message.format}`);
+        const exportSql = message.customQuerySql
+          ? getCustomQuerySource(exportSession, normalizeReadOnlyQuery(message.customQuerySql))
+          : exportSession.getSql();
+        const exportCount = await (
+          await getPanelConnection(panel)
+        ).query(`SELECT COUNT(*) FROM (${exportSql}) AS export_scope_count`);
+        const rowCount = Number(exportCount.rows[0]?.[0] ?? 0);
+        const approved =
+          message.outputPath ||
+          (await vscode.window.showQuickPick(
+            [
+              {
+                label: 'Export',
+                description: 'Temporary search and inspection filters are not included.',
+              },
+            ],
+            {
+              title: `Export all ${rowCount.toLocaleString()} rows from the ${message.customQuerySql ? 'query result' : 'pipeline result'}?`,
+            },
+          ));
         const target = message.outputPath
           ? vscode.Uri.file(message.outputPath)
-          : await vscode.window.showSaveDialog({
-              defaultUri: defaultPath ? vscode.Uri.file(defaultPath) : undefined,
-              filters: { [message.format.toUpperCase()]: [message.format] },
-              saveLabel: `Export ${message.format.toUpperCase()}`,
-            });
+          : approved
+            ? await vscode.window.showSaveDialog({
+                defaultUri: defaultPath ? vscode.Uri.file(defaultPath) : undefined,
+                filters: { [message.format.toUpperCase()]: [message.format] },
+                saveLabel: `Export all ${rowCount.toLocaleString()} rows`,
+              })
+            : undefined;
         if (!target) {
           panel.postMessage({
             type: 'exportComplete',
@@ -447,8 +570,16 @@ async function handleWebviewMessage(
           });
           return;
         }
+        if (
+          state.session !== exportSession ||
+          state.sessionId !== exportSessionId ||
+          exportSession.getRevision() !== message.revision
+        )
+          throw new Error(
+            'The data changed while choosing an export location. Review the current result and try again.',
+          );
         const conn = await getPanelConnection(panel);
-        await exportResults(conn, getActiveExportSql(state), target.fsPath, message.format);
+        await exportResults(conn, exportSql, target.fsPath, message.format);
         panel.postMessage({
           type: 'exportComplete',
           outputPath: target.fsPath,
@@ -460,6 +591,18 @@ async function handleWebviewMessage(
         );
         return;
       }
+      case 'saveRecipe':
+        await saveWorkspaceCommand(panel);
+        return;
+      case 'openRecipePicker':
+        await pickRecipeFile(panel, message.requestId);
+        return;
+      case 'replayRecipe':
+        await replayWorkspaceCommand(panel, message.filePath, message.requestId);
+        return;
+      case 'polarsHandoff':
+        await exportPolarsHandoff(panel, message);
+        return;
       default:
         return;
     }
@@ -633,11 +776,11 @@ export async function generateAITransformsCommand(
     let applied = 0;
     try {
       for (const suggestion of suggestions) {
-        session.apply(suggestion.type, suggestion.params);
+        await session.applyValidated(suggestion.type, suggestion.params);
         applied += 1;
       }
     } catch (error) {
-      while (applied-- > 0) session.undo();
+      while (applied-- > 0) await session.undoValidated();
       throw error;
     }
     await postSession(panel, 0, getConfig().pageSize, requestId);
@@ -866,8 +1009,8 @@ interface SavedWorkspace {
   transforms: Array<{ type: string; params: Record<string, unknown> }>;
 }
 
-export async function saveWorkspaceCommand(): Promise<void> {
-  const panel = DataWranglerPanel.currentPanel;
+export async function saveWorkspaceCommand(targetPanel?: DataWranglerPanel): Promise<void> {
+  const panel = targetPanel ?? DataWranglerPanel.currentPanel;
   const session = panel ? getPanelState(panel).session : null;
   if (!session) {
     vscode.window.showWarningMessage('Open a data file before saving a workspace.');
@@ -886,6 +1029,157 @@ export async function saveWorkspaceCommand(): Promise<void> {
   };
   await writeFile(target.fsPath, `${JSON.stringify(workspace, null, 2)}\n`, 'utf8');
   vscode.window.showInformationMessage(`Saved QuackWrangler workspace to ${target.fsPath}`);
+}
+
+async function replayWorkspaceCommand(
+  panel: DataWranglerPanel,
+  filePath?: string,
+  requestId?: string,
+): Promise<void> {
+  const state = getPanelState(panel);
+  const session = state.session;
+  if (!session) throw new Error('Open a data file before replaying a recipe');
+  const sessionId = state.sessionId;
+  const revision = session.getRevision();
+  const { customQuerySql, searchQuery, inspectionFilter } = state;
+  const assertCurrent = (): void => {
+    if (
+      state.session !== session ||
+      state.sessionId !== sessionId ||
+      session.getRevision() !== revision ||
+      state.customQuerySql !== customQuerySql ||
+      state.searchQuery !== searchQuery ||
+      state.inspectionFilter !== inspectionFilter
+    )
+      throw new Error(
+        'The editor changed while replaying the recipe. Run it again on the current result.',
+      );
+  };
+  let recipePath = filePath;
+  if (!recipePath) {
+    const selected = await vscode.window.showOpenDialog({
+      canSelectFiles: true,
+      canSelectMany: false,
+      filters: { 'QuackWrangler Workspace': ['qw'] },
+      openLabel: 'Choose recipe to replay',
+    });
+    recipePath = selected?.[0]?.fsPath;
+  }
+  if (!recipePath) return;
+  const parsed = JSON.parse(await readFile(recipePath, 'utf8')) as Partial<SavedWorkspace> | null;
+  if (
+    parsed?.version !== 1 ||
+    !Array.isArray(parsed.transforms) ||
+    parsed.transforms.some(
+      (step) =>
+        !step ||
+        typeof step !== 'object' ||
+        typeof step.type !== 'string' ||
+        !step.params ||
+        typeof step.params !== 'object' ||
+        Array.isArray(step.params),
+    )
+  )
+    throw new Error('This is not a valid QuackWrangler recipe file');
+  assertCurrent();
+  const committed = await session.restoreValidated(parsed.transforms, {
+    assertCurrent,
+    chooseColumn: async (missing, columns, step, operation) => {
+      const selected = await vscode.window.showQuickPick(
+        columns.map(({ name, type }) => ({ label: name, description: type })),
+        {
+          title: `Recipe step ${step} · ${operation.replaceAll('_', ' ')}`,
+          placeHolder: `Replace missing column “${missing}”`,
+        },
+      );
+      return selected?.label;
+    },
+  });
+  if (!committed) return;
+  state.customQuerySql = null;
+  state.searchQuery = '';
+  state.inspectionFilter = null;
+  await postSession(panel, 0, getConfig().pageSize, requestId);
+}
+
+async function pickRecipeFile(panel: DataWranglerPanel, requestId?: string): Promise<void> {
+  await replayWorkspaceCommand(panel, undefined, requestId);
+}
+
+async function exportPolarsHandoff(
+  panel: DataWranglerPanel,
+  message: Extract<WebviewMessage, { type: 'polarsHandoff' }>,
+): Promise<void> {
+  const state = getPanelState(panel);
+  const session = state.session;
+  if (!session) throw new Error('Open a data file before creating a Polars handoff');
+  const targetSession = session;
+  const targetSessionId = state.sessionId;
+  const targetRevision = targetSession.getRevision();
+  if (message.sessionId !== targetSessionId || message.revision !== targetRevision)
+    throw new Error(
+      'The data changed before the Polars handoff started. Review the current result and try again.',
+    );
+  const sourcePath = session.getFilePath();
+  const exportSql = message.customQuerySql
+    ? getCustomQuerySource(session, normalizeReadOnlyQuery(message.customQuerySql))
+    : session.getSql();
+  const mode = message.mode;
+  if (mode === 'recipe' && (message.customQuerySql || state.inspectionFilter))
+    throw new Error(
+      'The active view is a query or temporary inspection. Clear it before copying a source recipe, or use Continue in Polars to preserve the exact result.',
+    );
+  if (mode === 'result') {
+    const target = await vscode.window.showSaveDialog({
+      filters: { Parquet: ['parquet'] },
+      saveLabel: 'Export query result for Polars',
+    });
+    if (!target) return;
+    if (
+      state.session !== targetSession ||
+      state.sessionId !== targetSessionId ||
+      targetSession.getRevision() !== targetRevision
+    )
+      throw new Error(
+        'The data changed while choosing an export location. Review the current result and try again.',
+      );
+    await exportResults(await getPanelConnection(panel), exportSql, target.fsPath, 'parquet');
+    const document = await vscode.workspace.openTextDocument({
+      language: 'python',
+      content: `import polars as pl\n\n# Install Polars in your Python environment: python -m pip install polars\nresult = pl.scan_parquet(${JSON.stringify(target.fsPath)}).collect()\n`,
+    });
+    await vscode.window.showTextDocument(document, { preview: false });
+    return;
+  }
+  if (mode === 'recipe') {
+    const recipe = buildPolarsRecipe(sourcePath, session.getHistory());
+    const document = await vscode.workspace.openTextDocument({
+      language: 'python',
+      content: recipe,
+    });
+    await vscode.window.showTextDocument(document, { preview: false });
+    return;
+  }
+  const target = await vscode.window.showSaveDialog({
+    defaultUri: vscode.Uri.file(sourcePath.replace(/\.[^.]+$/, '_result.parquet')),
+    filters: { Parquet: ['parquet'] },
+    saveLabel: 'Export result for Polars',
+  });
+  if (!target) return;
+  if (
+    state.session !== targetSession ||
+    state.sessionId !== targetSessionId ||
+    targetSession.getRevision() !== targetRevision
+  )
+    throw new Error(
+      'The data changed while choosing an export location. Review the current result and try again.',
+    );
+  await exportResults(await getPanelConnection(panel), exportSql, target.fsPath, 'parquet');
+  const document = await vscode.workspace.openTextDocument({
+    language: 'python',
+    content: `import polars as pl\n\n# Install Polars in your Python environment: python -m pip install polars\nresult = pl.scan_parquet(${JSON.stringify(target.fsPath)}).collect()\n`,
+  });
+  await vscode.window.showTextDocument(document, { preview: false });
 }
 
 export async function openWorkspaceCommand(uri?: vscode.Uri): Promise<void> {
@@ -915,7 +1209,7 @@ export async function openWorkspaceCommand(uri?: vscode.Uri): Promise<void> {
   const panel = DataWranglerPanel.createOrShow(extensionUri, parsed.sourceFile);
   await loadDataIntoPanel(panel, parsed.sourceFile);
   const session = getPanelState(panel).session;
-  session?.restore(
+  await session?.restoreValidated(
     parsed.transforms.map((step) => ({ type: String(step.type), params: step.params ?? {} })),
   );
   await postSession(panel);

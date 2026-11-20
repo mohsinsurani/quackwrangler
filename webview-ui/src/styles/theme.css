@@ -287,17 +287,18 @@ button:disabled {
   min-height: 0;
   min-width: 0;
   display: grid;
-  grid-template-columns: minmax(220px, 260px) minmax(0, 1fr);
-  grid-template-rows: minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 320px);
+  grid-template-rows: auto minmax(0, 1fr);
   overflow: hidden;
 }
 
 .app-layout.operations-collapsed {
-  grid-template-columns: 42px minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .operations-pane {
-  grid-row: 1 / -1;
+  grid-column: 2;
+  grid-row: 2;
   min-height: 0;
   overflow: hidden;
   background: var(--surface);
@@ -619,12 +620,157 @@ button:disabled {
 }
 
 .grid-pane {
+  grid-column: 1;
+  grid-row: 2;
+  width: 100%;
+  flex: 1;
   min-width: 0;
   min-height: 0;
   display: flex;
   flex-direction: column;
   overflow: hidden;
   background: var(--bg);
+}
+
+.grid-content {
+  grid-column: 1 / -1;
+  grid-row: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: visible;
+}
+
+.workspace-actions {
+  position: relative;
+  z-index: 40;
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 38px;
+  padding: 4px 10px;
+  flex-wrap: wrap;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.workspace-actions button,
+.recipe-actions button,
+.quality-actions button {
+  min-height: 27px;
+  padding: 3px 9px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-raised);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.workspace-actions button:hover,
+.recipe-actions button:hover,
+.quality-actions button:hover {
+  background: var(--surface-hover);
+}
+
+.export-menu {
+  position: relative;
+}
+.export-menu-items {
+  position: absolute;
+  z-index: 50;
+  top: calc(100% + 4px);
+  right: 0;
+  display: grid;
+  min-width: 190px;
+  padding: 5px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-raised);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 25%);
+  overflow: visible;
+}
+.workspace-actions:has(.export-menu-items) {
+  overflow: visible;
+}
+.export-menu-items button {
+  text-align: left;
+  border: 0;
+}
+
+.recipe-actions {
+  display: grid;
+  gap: 6px;
+  padding: 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.result-scope {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 5px 10px;
+  color: var(--muted);
+  border-bottom: 1px solid var(--border);
+}
+
+.result-scope button {
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.quality-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 6px;
+}
+
+.modal-backdrop {
+  position: fixed;
+  z-index: 1100;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: rgb(0 0 0 / 48%);
+}
+
+.fill-dialog {
+  width: min(440px, 100%);
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-raised);
+  box-shadow: 0 14px 42px rgb(0 0 0 / 35%);
+}
+
+.fill-dialog h2 {
+  margin: 0 0 8px;
+  font-size: 16px;
+}
+.fill-dialog p {
+  color: var(--muted);
+}
+.fill-dialog input {
+  width: 100%;
+  margin: 6px 0 12px;
+  padding: 7px;
+  background: var(--input);
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+
+.app-layout.operations-collapsed .operations-expand {
+  display: none;
+}
+
+.pagination-controls .result-total {
+  margin-right: auto;
+  color: var(--muted);
 }
 
 .analysis-pane {
@@ -638,6 +784,21 @@ button:disabled {
   overscroll-behavior: contain;
   scrollbar-gutter: stable;
   background: var(--bg);
+}
+
+.app-layout.operations-collapsed .analysis-pane {
+  max-height: 42%;
+  overflow: hidden;
+}
+.app-layout.operations-collapsed .analysis-pane > .quality-summary,
+.app-layout.operations-collapsed .analysis-pane > .chart-panel {
+  max-height: 36px;
+  overflow: hidden;
+}
+.app-layout.operations-collapsed .analysis-pane > .quality-summary.open,
+.app-layout.operations-collapsed .analysis-pane > .chart-panel.open {
+  max-height: min(46%, 360px);
+  overflow: auto;
 }
 
 .analysis-pane > * {
@@ -1955,7 +2116,7 @@ button:disabled {
 
 @media (max-width: 780px) {
   .app-layout {
-    grid-template-columns: 210px minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr) minmax(230px, 42vw);
   }
 
   .data-info {
@@ -1972,16 +2133,19 @@ button:disabled {
 }
 
 @media (max-width: 640px) {
-  .app-layout,
-  .app-layout.operations-collapsed {
+  .app-layout {
     grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: minmax(120px, 26vh) minmax(0, 1fr);
+  }
+
+  .app-layout:not(.operations-collapsed) {
+    grid-template-rows: auto minmax(0, 3fr) minmax(0, 2fr);
   }
 
   .operations-pane {
-    grid-row: auto;
+    grid-column: 1;
+    grid-row: 3;
     border-right: 0;
-    border-bottom: 1px solid var(--border);
+    border-top: 1px solid var(--border);
   }
 
   .operations-header {

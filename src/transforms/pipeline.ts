@@ -28,6 +28,32 @@ function sqlValue(value: unknown): string {
   return quoteLiteral(text);
 }
 
+function safeFillType(value: string): string {
+  const type = value.toUpperCase().replace(/\s+/g, '');
+  if (
+    new Set([
+      'VARCHAR',
+      'TEXT',
+      'STRING',
+      'INTEGER',
+      'INT',
+      'BIGINT',
+      'SMALLINT',
+      'TINYINT',
+      'DOUBLE',
+      'FLOAT',
+      'REAL',
+      'BOOLEAN',
+      'DATE',
+      'TIMESTAMP',
+      'TIME',
+    ]).has(type) ||
+    /^DECIMAL\(\d{1,3},\d{1,3}\)$/.test(type)
+  )
+    return type;
+  throw new Error(`Unsupported fill target type: ${value}`);
+}
+
 function structuredFilterSql(params: Record<string, unknown>): string {
   if (typeof params.condition === 'string' && params.condition.trim()) return params.condition;
   const column = quoteIdentifier(requiredString(params, 'column'));
@@ -239,9 +265,13 @@ function operationSql(
         throw new Error('value is required for fill_nulls');
       }
       const rawValue = String(rawParam);
-      const value = /^-?\d+(\.\d+)?$|^(true|false|null)$/i.test(rawValue)
-        ? rawValue
-        : quoteLiteral(rawValue);
+      const targetType =
+        typeof params.targetType === 'string' ? safeFillType(params.targetType) : '';
+      const value = targetType
+        ? `CAST(${quoteLiteral(rawValue)} AS ${safeFillType(targetType)})`
+        : typeof rawParam === 'number' || typeof rawParam === 'boolean'
+          ? rawValue
+          : quoteLiteral(rawValue);
       return `SELECT * REPLACE (COALESCE(${quoteIdentifier(column)}, ${value}) AS ${quoteIdentifier(column)}) FROM current_data`;
     }
     case 'deduplicate': {
@@ -305,6 +335,109 @@ function operationSql(
 function descriptionFor(type: string, params: Record<string, unknown>): string {
   return `${type.replace(/_/g, ' ')}: ${Object.values(params).filter(Boolean).join(', ')}`;
 }
+
+interface RecipeReplayOptions {
+  chooseColumn: (
+    missing: string,
+    columns: ColumnInfo[],
+    step: number,
+    operation: string,
+  ) => Promise<string | undefined>;
+  assertCurrent: () => void;
+}
+
+async function remapRecipeInputs(
+  type: string,
+  params: Record<string, unknown>,
+  resolve: (name: string, commaSeparated?: boolean) => Promise<string>,
+): Promise<void> {
+  const field = async (key: string): Promise<void> => {
+    const value = params[key];
+    if (typeof value === 'string' && value.trim()) params[key] = await resolve(value);
+  };
+  const list = async (key: string): Promise<void> => {
+    const values = params[key];
+    if (!Array.isArray(values)) return field(key);
+    const mapped: unknown[] = [];
+    for (const value of values)
+      mapped.push(typeof value === 'string' && value ? await resolve(value) : value);
+    params[key] = mapped;
+  };
+  switch (type) {
+    case 'filterRows':
+    case 'filter_rows':
+      if (typeof params.condition === 'string' && params.condition.trim())
+        throw new Error(
+          'Custom SQL filters cannot be remapped automatically. Replace this step with a structured filter first.',
+        );
+      await field('column');
+      break;
+    case 'addColumn':
+    case 'add_column':
+      if (typeof params.expression === 'string' && params.expression.trim())
+        throw new Error(
+          'Raw SQL column expressions cannot be remapped automatically. Rebuild this step from the current schema first.',
+        );
+      break;
+    case 'sortRows':
+    case 'sort_rows':
+    case 'castType':
+    case 'cast_type':
+    case 'fillMissing':
+    case 'fill_nulls':
+    case 'extract_nested':
+    case 'flatten_nested':
+    case 'explode_nested':
+      await field('column');
+      break;
+    case 'renameColumn':
+    case 'rename_column':
+      await field('oldName');
+      break;
+    case 'dropColumn':
+    case 'drop_column':
+      await list(Array.isArray(params.columns) ? 'columns' : 'column');
+      break;
+    case 'deduplicate':
+      await list(params.columns == null ? 'column' : 'columns');
+      break;
+    case 'join_file':
+      await field('leftColumn');
+      break;
+    case 'aggregate':
+      await field('groupBy');
+      if (!(typeof params.aggregations === 'string' && params.aggregations.trim()))
+        await field('column');
+      break;
+    case 'formula_column':
+      if (typeof params.expression === 'string' && params.expression.trim())
+        throw new Error(
+          'Raw SQL formulas cannot be remapped automatically. Rebuild this formula with Formula Builder first.',
+        );
+      await field('column');
+      if (params.formula === 'date_diff' || params.formula === 'concat')
+        await field('secondColumn');
+      break;
+    case 'pivot':
+      await field('index');
+      await field('column');
+      await field('value');
+      break;
+    case 'unpivot': {
+      if (typeof params.columns !== 'string') break;
+      const mapped: string[] = [];
+      for (const name of params.columns
+        .split(',')
+        .map((name) => name.trim())
+        .filter(Boolean))
+        mapped.push(await resolve(name, true));
+      params.columns = mapped.join(', ');
+      break;
+    }
+  }
+}
+
+class RecipeReplayCancelled extends Error {}
 
 export function buildPipelineSQL(history: TransformOperation[], source = 'current_data'): string {
   if (history.length === 0) return `SELECT * FROM ${source}`;
@@ -386,6 +519,64 @@ export class WranglingSession {
     this.invalidateCaches();
   }
 
+  async applyValidated(type: string, params: Record<string, unknown>): Promise<void> {
+    if (type === 'fill_nulls' || type === 'fillMissing') {
+      const column = requiredString(params, 'column');
+      const info = (await this.getColumns()).find((item) => item.name === column);
+      if (!info) throw new Error(`Unknown column: ${column}`);
+      if (params.value === null || params.value === undefined || String(params.value) === '')
+        throw new Error('value is required for fill_nulls');
+      const supportedTypes = new Set([
+        'VARCHAR',
+        'TEXT',
+        'STRING',
+        'INTEGER',
+        'INT',
+        'BIGINT',
+        'SMALLINT',
+        'TINYINT',
+        'DOUBLE',
+        'FLOAT',
+        'REAL',
+        'DECIMAL',
+        'BOOLEAN',
+        'DATE',
+        'TIMESTAMP',
+        'TIME',
+      ]);
+      const baseType = info.type.toUpperCase().split('(')[0];
+      if (!supportedTypes.has(baseType))
+        throw new Error(`Fill missing values does not support ${info.type} columns yet`);
+      const castTarget = safeFillType(info.type);
+      const validationType = castTarget;
+      if (!['VARCHAR', 'TEXT', 'STRING'].includes(baseType))
+        await this.connection.query(
+          `SELECT CAST(${quoteLiteral(String(params.value))} AS ${validationType})`,
+        );
+      else if (typeof params.value !== 'string')
+        throw new Error('Text columns require a text replacement value');
+      params = { ...params, targetType: castTarget };
+    }
+    const sql = operationSql(type, params, (filePath) =>
+      getConnectionTableRef(this.connection, filePath),
+    );
+    const operation: TransformOperation = {
+      id: randomUUID(),
+      type,
+      params: structuredClone(params),
+      sql,
+      description: descriptionFor(type, params),
+    };
+    const startingRevision = this.revision;
+    const candidateHistory = [...this.history, operation];
+    const validation = await this.validateHistory(candidateHistory);
+    this.assertRevisionUnchanged(startingRevision);
+    this.history = candidateHistory;
+    this.redoStack = [];
+    this.invalidateCaches();
+    this.cacheValidation(validation);
+  }
+
   undo(): void {
     const step = this.history.pop();
     if (step) {
@@ -394,12 +585,54 @@ export class WranglingSession {
     }
   }
 
+  async undoValidated(): Promise<void> {
+    if (!this.history.length) return;
+    const removed = this.history[this.history.length - 1];
+    const startingRevision = this.revision;
+    const candidateHistory = this.history.slice(0, -1);
+    const validation = await this.validateHistory(candidateHistory);
+    this.assertRevisionUnchanged(startingRevision);
+    this.history = candidateHistory;
+    this.redoStack = [...this.redoStack, removed];
+    this.invalidateCaches();
+    this.cacheValidation(validation);
+  }
+
   redo(): void {
     const step = this.redoStack.pop();
     if (step) {
       this.history.push(step);
       this.invalidateCaches();
     }
+  }
+
+  async redoValidated(): Promise<void> {
+    if (!this.redoStack.length) return;
+    const restored = this.redoStack[this.redoStack.length - 1];
+    const startingRevision = this.revision;
+    const candidateHistory = [...this.history, restored];
+    const validation = await this.validateHistory(candidateHistory);
+    this.assertRevisionUnchanged(startingRevision);
+    this.history = candidateHistory;
+    this.redoStack = this.redoStack.slice(0, -1);
+    this.invalidateCaches();
+    this.cacheValidation(validation);
+  }
+
+  async removeValidated(id: string): Promise<void> {
+    const next = this.history.filter((step) => step.id !== id);
+    if (next.length !== this.history.length)
+      await this.restoreValidated(next.map(({ type, params }) => ({ type, params })));
+  }
+
+  async reorderValidated(sourceId: string, targetId: string): Promise<void> {
+    const next = this.getHistory();
+    const sourceIndex = next.findIndex((step) => step.id === sourceId);
+    const targetIndex = next.findIndex((step) => step.id === targetId);
+    if (sourceIndex < 0 || targetIndex < 0 || sourceIndex === targetIndex) return;
+    const [step] = next.splice(sourceIndex, 1);
+    next.splice(targetIndex, 0, step);
+    await this.restoreValidated(next.map(({ type, params }) => ({ type, params })));
   }
 
   remove(id: string): void {
@@ -435,11 +668,196 @@ export class WranglingSession {
     return this.redoStack.length > 0;
   }
   restore(history: Array<Pick<TransformOperation, 'type' | 'params'>>): void {
-    this.history = [];
+    const candidate = this.buildHistory(history);
+    this.history = candidate;
     this.redoStack = [];
     this.invalidateCaches();
-    for (const step of history) this.apply(step.type, step.params);
   }
+
+  async restoreValidated(
+    history: Array<Pick<TransformOperation, 'type' | 'params'>>,
+    replay?: RecipeReplayOptions,
+  ): Promise<boolean> {
+    const startingRevision = this.revision;
+    const assertCurrent = (): void => {
+      this.assertRevisionUnchanged(startingRevision);
+      replay?.assertCurrent();
+    };
+    let candidate: TransformOperation[];
+    try {
+      candidate = await this.buildValidatedHistory(history, replay && { ...replay, assertCurrent });
+    } catch (error) {
+      if (error instanceof RecipeReplayCancelled) return false;
+      throw error;
+    }
+    const validation = await this.validateHistory(candidate);
+    assertCurrent();
+    this.history = candidate;
+    this.redoStack = [];
+    this.invalidateCaches();
+    this.cacheValidation(validation);
+    return true;
+  }
+
+  private buildHistory(
+    history: Array<Pick<TransformOperation, 'type' | 'params'>>,
+  ): TransformOperation[] {
+    return history.map((step) => {
+      const params = structuredClone(step.params);
+      const sql = operationSql(step.type, params, (filePath) =>
+        getConnectionTableRef(this.connection, filePath),
+      );
+      return {
+        id: randomUUID(),
+        type: step.type,
+        params,
+        sql,
+        description: descriptionFor(step.type, params),
+      };
+    });
+  }
+
+  private async buildValidatedHistory(
+    history: Array<Pick<TransformOperation, 'type' | 'params'>>,
+    replay?: RecipeReplayOptions,
+  ): Promise<TransformOperation[]> {
+    const candidate: TransformOperation[] = [];
+    const replacements = new Map<string, string>();
+    for (const [index, step] of history.entries()) {
+      try {
+        let params = structuredClone(step.params);
+        const describeInput = async (): Promise<ColumnInfo[]> => {
+          const sql = buildPipelineSQL(candidate, this.relationName);
+          const described = await this.connection.query(
+            `DESCRIBE SELECT * FROM (${sql}) AS preceding_pipeline_schema`,
+          );
+          return described.rows.map((row) => ({
+            name: String(row[0]),
+            type: String(row[1]),
+            nullable: String(row[2]).toUpperCase() === 'YES',
+          }));
+        };
+        const columns = replay ? await describeInput() : undefined;
+        if (replay && columns) {
+          await remapRecipeInputs(step.type, params, async (name, commaSeparated) => {
+            const eligible = commaSeparated
+              ? columns.filter(
+                  (column) => !column.name.includes(',') && column.name.trim() === column.name,
+                )
+              : columns;
+            const actual =
+              eligible.find((column) => column.name === name) ??
+              eligible.find((column) => column.name.toLowerCase() === name.toLowerCase());
+            if (actual) return actual.name;
+            const saved = replacements.get(name.toLowerCase());
+            if (saved && eligible.some((column) => column.name === saved)) return saved;
+            replay.assertCurrent();
+            if (!eligible.length)
+              throw new Error(
+                `Step ${index + 1}: no replacement column is available for “${name}”.`,
+              );
+            const selected = await replay.chooseColumn(name, eligible, index + 1, step.type);
+            if (selected === undefined) throw new RecipeReplayCancelled();
+            replay.assertCurrent();
+            if (!eligible.some((column) => column.name === selected))
+              throw new Error('Invalid recipe column selection');
+            replacements.set(name.toLowerCase(), selected);
+            return selected;
+          });
+        }
+        if (step.type === 'fill_nulls' || step.type === 'fillMissing') {
+          const column = requiredString(params, 'column');
+          const info = (columns ?? (await describeInput())).find((item) => item.name === column);
+          if (!info) throw new Error(`Unknown column: ${column}`);
+          if (params.value === null || params.value === undefined || String(params.value) === '')
+            throw new Error('value is required for fill_nulls');
+          const baseType = info.type.toUpperCase().split('(')[0];
+          const supportedTypes = new Set([
+            'VARCHAR',
+            'TEXT',
+            'STRING',
+            'INTEGER',
+            'INT',
+            'BIGINT',
+            'SMALLINT',
+            'TINYINT',
+            'DOUBLE',
+            'FLOAT',
+            'REAL',
+            'DECIMAL',
+            'BOOLEAN',
+            'DATE',
+            'TIMESTAMP',
+            'TIME',
+          ]);
+          if (!supportedTypes.has(baseType))
+            throw new Error(`Fill missing values does not support ${info.type} columns yet`);
+          const targetType = safeFillType(info.type);
+          if (['VARCHAR', 'TEXT', 'STRING'].includes(baseType) && typeof params.value !== 'string')
+            throw new Error('Text columns require a text replacement value');
+          if (!['VARCHAR', 'TEXT', 'STRING'].includes(baseType))
+            await this.connection.query(
+              `SELECT CAST(${quoteLiteral(String(params.value))} AS ${targetType})`,
+            );
+          params = { ...params, targetType };
+        }
+        const sql = operationSql(step.type, params, (filePath) =>
+          getConnectionTableRef(this.connection, filePath),
+        );
+        candidate.push({
+          id: randomUUID(),
+          type: step.type,
+          params,
+          sql,
+          description: descriptionFor(step.type, params),
+        });
+      } catch (error) {
+        if (error instanceof RecipeReplayCancelled) throw error;
+        if (replay && error instanceof Error)
+          throw new Error(
+            `Step ${index + 1} (${step.type.replaceAll('_', ' ')}): ${error.message}`,
+          );
+        throw error;
+      }
+    }
+    return candidate;
+  }
+
+  private async validateHistory(history: TransformOperation[]): Promise<{
+    columns: ColumnInfo[];
+    rowCount: number;
+  }> {
+    const sql = buildPipelineSQL(history, this.relationName);
+    const described = await this.connection.query(
+      `DESCRIBE SELECT * FROM (${sql}) AS validated_pipeline_schema`,
+    );
+    const count = await this.connection.query(
+      `SELECT COUNT(*) FROM (${sql}) AS validated_pipeline_count`,
+    );
+    await this.connection.query(`SELECT * FROM (${sql}) AS validated_pipeline_page LIMIT 1`);
+    return {
+      columns: described.rows.map((row) => ({
+        name: String(row[0]),
+        type: String(row[1]),
+        nullable: String(row[2]).toUpperCase() === 'YES',
+      })),
+      rowCount: Number(count.rows[0]?.[0] ?? 0),
+    };
+  }
+
+  private cacheValidation(validation: { columns: ColumnInfo[]; rowCount: number }): void {
+    this.schemaCache = { revision: this.revision, columns: validation.columns };
+    this.rowCountCache = { revision: this.revision, value: validation.rowCount };
+    this.statisticsCache = undefined;
+  }
+
+  private assertRevisionUnchanged(revision: number): void {
+    if (this.revision !== revision)
+      throw new Error(
+        'The pipeline changed while a history update was validating; the older update was discarded.',
+      );
+  }
+
   getSql(): string {
     return buildPipelineSQL(this.history, this.relationName);
   }
@@ -467,6 +885,7 @@ export class WranglingSession {
     query: string,
     offset: number,
     limit: number,
+    filter?: { column: string; operator: 'is_null' | 'is_not_null' },
   ): Promise<{ schema: TableSchema; result: QueryResult; page: PageInfo }> {
     const sql = this.getSql();
     const columns = await this.getColumns(sql);
@@ -477,7 +896,13 @@ export class WranglingSession {
           `COALESCE(CAST(${quoteIdentifier(column.name)} AS VARCHAR), '') ILIKE '%${escaped}%'`,
       )
       .join(' OR ');
-    const searchedSql = `SELECT * FROM (${sql}) AS pipeline_search WHERE ${predicate || 'FALSE'}`;
+    const searchPredicate = predicate || 'TRUE';
+    const filterPredicate = filter
+      ? `${quoteIdentifier(filter.column)} ${filter.operator === 'is_null' ? 'IS NULL' : 'IS NOT NULL'}`
+      : '';
+    if (filter && !columns.some((column) => column.name === filter.column))
+      throw new Error(`Unknown filter column: ${filter.column}`);
+    const searchedSql = `SELECT * FROM (${sql}) AS pipeline_search WHERE (${searchPredicate})${filterPredicate ? ` AND (${filterPredicate})` : ''}`;
     const result = await this.connection.query(
       `SELECT *, COUNT(*) OVER () AS __qw_total_rows FROM (${searchedSql}) AS pipeline_search_page LIMIT ${limit} OFFSET ${offset}`,
     );

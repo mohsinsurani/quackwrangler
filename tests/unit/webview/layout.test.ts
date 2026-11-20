@@ -28,18 +28,15 @@ const chartSource = fs.readFileSync(
   path.join(projectRoot, 'webview-ui/src/components/ChartPanel.tsx'),
   'utf8',
 );
-const previewSource = fs.readFileSync(
-  path.join(projectRoot, 'webview-ui/src/main.tsx'),
-  'utf8',
-);
+const previewSource = fs.readFileSync(path.join(projectRoot, 'webview-ui/src/main.tsx'), 'utf8');
 const headerSource = fs.readFileSync(
   path.join(projectRoot, 'webview-ui/src/components/Header.tsx'),
   'utf8',
 );
 
-function rule(selector: string): string {
+function rule(selector: string, source = themeSource): string {
   const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  return themeSource.match(new RegExp(`${escaped}\\s*\\{([^}]+)\\}`))?.[1] ?? '';
+  return source.match(new RegExp(`${escaped}\\s*\\{([^}]+)\\}`))?.[1] ?? '';
 }
 
 describe('webview layout contracts', () => {
@@ -55,7 +52,7 @@ describe('webview layout contracts', () => {
   it('keeps the table usable when analysis panels are expanded', () => {
     expect(rule('.data-grid-container')).toContain('flex: 1 1 220px');
     expect(rule('.data-grid-container')).toContain('min-height: 160px');
-    expect(rule('.app-layout')).toContain('grid-template-rows: minmax(0, 1fr)');
+    expect(rule('.app-layout')).toContain('grid-template-rows: auto minmax(0, 1fr)');
     expect(rule('.app-layout')).toContain('overflow: hidden');
   });
 
@@ -87,11 +84,15 @@ describe('webview layout contracts', () => {
     expect(chartSource).toContain('setOpen(true)');
   });
 
-  it('stacks operations and data panes in narrow editors', () => {
-    expect(themeSource).toContain('@media (max-width: 640px)');
-    expect(themeSource).toContain('grid-template-columns: minmax(0, 1fr)');
-    expect(themeSource).toContain('grid-template-rows: minmax(120px, 26vh)');
-    expect(themeSource).toContain('grid-row: auto');
+  it('uses a full-width data canvas with a stacked tools pane in narrow editors', () => {
+    const narrow = themeSource.split('@media (max-width: 640px)')[1] ?? '';
+    expect(rule('.app-layout', narrow)).toContain('grid-template-columns: minmax(0, 1fr)');
+    expect(rule('.app-layout:not(.operations-collapsed)', narrow)).toMatch(
+      /grid-template-rows:\s*auto\s+minmax\([^)]+\)\s+minmax\([^)]+\)/,
+    );
+    expect(rule('.grid-pane')).toContain('grid-row: 2');
+    expect(rule('.operations-pane', narrow)).toContain('grid-column: 1');
+    expect(rule('.operations-pane', narrow)).toContain('grid-row: 3');
   });
 
   it('does not render a generated-code copy pane', () => {
@@ -100,15 +101,32 @@ describe('webview layout contracts', () => {
     expect(themeSource).not.toContain('.code-preview-panel');
   });
 
-  it('lets users collapse operations and expand the data workspace', () => {
+  it('keeps the grid primary and opens tools in a right-side panel', () => {
     expect(appSource).toContain('operationsCollapsed');
     expect(appSource).toContain('useState(true)');
     expect(operationsSource).toContain('aria-label="Collapse operations"');
-    expect(appSource).toContain('aria-label="Expand operations"');
-    expect(appSource).toContain('operations-expand-label">Operations');
+    expect(appSource).toContain('className="workspace-actions"');
+    expect(appSource).toContain('className="operations-pane"');
     expect(rule('.app-layout.operations-collapsed')).toContain(
-      'grid-template-columns: 42px minmax(0, 1fr)',
+      'grid-template-columns: minmax(0, 1fr)',
     );
+  });
+
+  it('gives each top-level work action a distinct target and prevents dropdown clipping', () => {
+    expect(appSource).toContain("postMessage({ type: 'openRecipePicker' })");
+    expect(appSource).toContain('setOperationsCollapsed(false)');
+    expect(rule('.operations-pane')).toContain('grid-column: 2');
+    expect(rule('.operations-pane')).toContain('grid-row: 2');
+    expect(rule('.grid-pane')).toContain('grid-column: 1');
+    expect(rule('.workspace-actions')).toContain('z-index: 40');
+    expect(themeSource).toContain('.workspace-actions:has(.export-menu-items)');
+  });
+
+  it('labels temporary search and inspection separately from export scope', () => {
+    expect(appSource).toContain('Export uses the full pipeline result');
+    expect(appSource).toContain('activeSearchQuery');
+    expect(appSource).toContain('Pipeline result');
+    expect(appSource).toContain('requestExport');
   });
 
   it('shows staged percentages while remote data is loading', () => {
@@ -253,7 +271,9 @@ describe('webview layout contracts', () => {
     expect(operationsSource).toContain('event.stopImmediatePropagation()');
     expect(gridSource).toContain('if (quickFilterMenu)');
     expect(gridSource).toContain('else if (inspectedCell)');
-    expect(appSource).not.toContain("document.querySelector<HTMLButtonElement>(\n        '.operations-panel .form-close'");
+    expect(appSource).not.toContain(
+      "document.querySelector<HTMLButtonElement>(\n        '.operations-panel .form-close'",
+    );
   });
 
   it('blocks repeated history and transform requests while loading', () => {
@@ -274,13 +294,15 @@ describe('webview layout contracts', () => {
   it('does not clear global loading when stats arrive (stats is independent)', () => {
     const statsBlock = appSource.slice(
       appSource.indexOf("message.type === 'stats'"),
-      appSource.indexOf("} else if", appSource.indexOf("message.type === 'stats'")),
+      appSource.indexOf('} else if', appSource.indexOf("message.type === 'stats'")),
     );
     expect(statsBlock).not.toContain('setLoading(false)');
   });
 
   it('correlates asynchronous grid, stats, chart, export, and AI responses', () => {
-    expect(appSource).toContain("type RequestSurface = 'grid' | 'stats' | 'chart' | 'export' | 'ai'");
+    expect(appSource).toContain(
+      "type RequestSurface = 'grid' | 'stats' | 'chart' | 'export' | 'ai'",
+    );
     expect(appSource).toContain('latestRequests.current.stats');
     expect(appSource).toContain('message.requestId !== latestRequests.current.chart');
     expect(appSource).toContain('message.sessionId !== sessionContext.current.sessionId');
@@ -332,15 +354,6 @@ describe('webview layout contracts', () => {
     expect(gridSource).toContain('role="columnheader"');
     expect(gridSource).toContain('aria-sort=');
     expect(gridSource).toContain("event.key === 'Enter' || event.key === ' '");
-  });
-
-  it('fixes responsive layout so operations-collapsed applies inside the narrow breakpoint', () => {
-    expect(themeSource).toContain('.app-layout.operations-collapsed');
-    const mediaBlock = themeSource.slice(
-      themeSource.indexOf('@media (max-width: 640px)'),
-      themeSource.indexOf('}', themeSource.lastIndexOf('@media (max-width: 640px)') + 200) + 1,
-    );
-    expect(mediaBlock).toContain('.app-layout.operations-collapsed');
   });
 
   it('includes a development preview message responder', () => {

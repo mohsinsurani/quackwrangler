@@ -94,6 +94,112 @@ beforeAll(async () => {
   connection.closeSync();
 });
 
+describe('recipe replay with column remapping', () => {
+  const recipe = [
+    { type: 'filter_rows', params: { column: 'old_region', operator: 'equals', value: 'east' } },
+    { type: 'rename_column', params: { oldName: 'old_region', newName: 'territory' } },
+    { type: 'sort_rows', params: { column: 'territory', direction: 'ASC' } },
+  ];
+
+  it('reuses a chosen input mapping and resolves later steps against the staged schema', async () => {
+    const connection = createAdapter();
+    const session = new WranglingSession(connection as never);
+    session.load('/tmp/target.csv');
+    const requests: string[] = [];
+    const applied = await session.restoreValidated(recipe, {
+      assertCurrent: () => {},
+      chooseColumn: async (missing, columns, step) => {
+        requests.push(`${step}:${missing}`);
+        expect(columns).toContainEqual(
+          expect.objectContaining({ name: 'region', type: 'VARCHAR' }),
+        );
+        return 'region';
+      },
+    });
+    expect(applied).toBe(true);
+    expect(requests).toEqual(['1:old_region']);
+    const { result } = await session.getPage(0, 10);
+    expect(result.columns).toContain('territory');
+    expect(result.rows.map((row) => row[3])).toEqual(['east', 'east']);
+    expect(recipe[1].params.oldName).toBe('old_region');
+  });
+
+  it('leaves history, redo and revision unchanged when a later mapping is cancelled', async () => {
+    const session = new WranglingSession(createAdapter() as never);
+    session.load('/tmp/target.csv');
+    session.apply('sort_rows', { column: 'id' });
+    session.apply('sort_rows', { column: 'name' });
+    session.undo();
+    const revision = session.getRevision();
+    const history = session.getHistory();
+    const requests: string[] = [];
+    expect(
+      await session.restoreValidated(
+        [...recipe, { type: 'drop_column', params: { column: 'missing_at_end' } }],
+        {
+          assertCurrent: () => {},
+          chooseColumn: async (missing) => {
+            requests.push(missing);
+            return missing === 'old_region' ? 'region' : undefined;
+          },
+        },
+      ),
+    ).toBe(false);
+    expect(requests).toEqual(['old_region', 'missing_at_end']);
+    expect(session.getHistory()).toEqual(history);
+    expect(session.getRevision()).toBe(revision);
+    expect(session.canRedo()).toBe(true);
+  });
+
+  it('does not prompt for a candidate column created by an earlier formula step', async () => {
+    const session = new WranglingSession(createAdapter() as never);
+    session.load('/tmp/target.csv');
+    const asked: string[] = [];
+    const replayed = await session.restoreValidated(
+      [
+        {
+          type: 'formula_column',
+          params: {
+            name: 'new_amount',
+            formula: 'if',
+            column: 'amount',
+            operator: 'greater_than',
+            compareValue: '10',
+            trueValue: 'large',
+            falseValue: 'small',
+          },
+        },
+        { type: 'sort_rows', params: { column: 'old_generated_name', direction: 'ASC' } },
+      ],
+      {
+        assertCurrent: () => {},
+        chooseColumn: async (missing, columns) => {
+          asked.push(missing);
+          expect(columns.map(({ name }) => name)).toContain('new_amount');
+          return 'new_amount';
+        },
+      },
+    );
+    expect(replayed).toBe(true);
+    expect(asked).toEqual(['old_generated_name']);
+    expect(session.getHistory()[1].params.column).toBe('new_amount');
+  });
+
+  it('refuses to remap a raw SQL filter expression', async () => {
+    const session = new WranglingSession(createAdapter() as never);
+    session.load('/tmp/target.csv');
+    const chooseColumn = vi.fn();
+    await expect(
+      session.restoreValidated([{ type: 'filter_rows', params: { condition: 'amount > 5' } }], {
+        assertCurrent: () => {},
+        chooseColumn,
+      }),
+    ).rejects.toThrow('Custom SQL filters cannot be remapped automatically');
+    expect(chooseColumn).not.toHaveBeenCalled();
+    expect(session.getHistory()).toHaveLength(0);
+  });
+});
+
 describe('transactional file promotion', () => {
   it('keeps the previous relation when promotion fails after dropping it', async () => {
     const source = join(tmpdir(), `quackwrangler-loader-${randomUUID()}.parquet`);
@@ -155,16 +261,14 @@ describe('supported file formats', () => {
   });
 
   it.each([
-    ['tsv', 'FORMAT CSV, DELIMITER \'\\t\', HEADER true'],
+    ['tsv', "FORMAT CSV, DELIMITER '\\t', HEADER true"],
     ['json', 'FORMAT JSON, ARRAY true'],
     ['jsonl', 'FORMAT JSON, ARRAY false'],
     ['ndjson', 'FORMAT JSON, ARRAY false'],
   ])('loads %s files through the shared loader', async (extension, copyOptions) => {
     const source = join(tmpdir(), `quackwrangler-format-${randomUUID()}.${extension}`);
     const writer = await database.connect();
-    await writer.run(
-      `COPY (SELECT 1 AS id, 'duck' AS name) TO '${source}' (${copyOptions})`,
-    );
+    await writer.run(`COPY (SELECT 1 AS id, 'duck' AS name) TO '${source}' (${copyOptions})`);
     writer.closeSync();
 
     const adapter = createAdapter();
@@ -187,47 +291,51 @@ describe('supported file formats', () => {
     expect(result.rows).toEqual([[1, 'duck']]);
   });
 
-  it
-    .skipIf(skipOptionalExtensionTests)
-    .each(['arrow', 'arrows', 'ipc'])('loads .%s Arrow IPC files', async (extension) => {
-    const source = join(tmpdir(), `quackwrangler-format-${randomUUID()}.${extension}`);
-    const writer = await database.connect();
-    try {
-      await writer.run('LOAD nanoarrow');
-    } catch {
-      await writer.run('INSTALL nanoarrow FROM community');
-      await writer.run('LOAD nanoarrow');
-    }
-    const ipc = await writer.run("SELECT * FROM to_arrow_ipc((SELECT 1 AS id, 'duck' AS name))");
-    const chunks = (await ipc.getRows()).map((row) => (row[0] as { bytes: Buffer }).bytes);
-    writer.closeSync();
-    await writeFile(source, Buffer.concat(chunks));
+  it.skipIf(skipOptionalExtensionTests).each(['arrow', 'arrows', 'ipc'])(
+    'loads .%s Arrow IPC files',
+    async (extension) => {
+      const source = join(tmpdir(), `quackwrangler-format-${randomUUID()}.${extension}`);
+      const writer = await database.connect();
+      try {
+        await writer.run('LOAD nanoarrow');
+      } catch {
+        await writer.run('INSTALL nanoarrow FROM community');
+        await writer.run('LOAD nanoarrow');
+      }
+      const ipc = await writer.run("SELECT * FROM to_arrow_ipc((SELECT 1 AS id, 'duck' AS name))");
+      const chunks = (await ipc.getRows()).map((row) => (row[0] as { bytes: Buffer }).bytes);
+      writer.closeSync();
+      await writeFile(source, Buffer.concat(chunks));
 
-    const adapter = createAdapter();
-    await prepareDataFileReader(adapter as never, source);
-    await loadFile(adapter as never, source, 'eager', 64, `format_${extension}_data`);
-    const result = await adapter.query(`SELECT * FROM format_${extension}_data`);
-    expect(result.rows).toEqual([[1, 'duck']]);
-  });
+      const adapter = createAdapter();
+      await prepareDataFileReader(adapter as never, source);
+      await loadFile(adapter as never, source, 'eager', 64, `format_${extension}_data`);
+      const result = await adapter.query(`SELECT * FROM format_${extension}_data`);
+      expect(result.rows).toEqual([[1, 'duck']]);
+    },
+  );
 
-  it.skipIf(skipOptionalExtensionTests)('loads ORC through the signed community extension', async () => {
-    const source = join(tmpdir(), `quackwrangler-format-${randomUUID()}.orc`);
-    const writer = await database.connect();
-    try {
-      await writer.run('LOAD orc');
-    } catch {
-      await writer.run('INSTALL orc FROM community');
-      await writer.run('LOAD orc');
-    }
-    await writer.run(`COPY (SELECT 1 AS id, 'duck' AS name) TO '${source}' (FORMAT ORC)`);
-    writer.closeSync();
+  it.skipIf(skipOptionalExtensionTests)(
+    'loads ORC through the signed community extension',
+    async () => {
+      const source = join(tmpdir(), `quackwrangler-format-${randomUUID()}.orc`);
+      const writer = await database.connect();
+      try {
+        await writer.run('LOAD orc');
+      } catch {
+        await writer.run('INSTALL orc FROM community');
+        await writer.run('LOAD orc');
+      }
+      await writer.run(`COPY (SELECT 1 AS id, 'duck' AS name) TO '${source}' (FORMAT ORC)`);
+      writer.closeSync();
 
-    const adapter = createAdapter();
-    await prepareDataFileReader(adapter as never, source);
-    await loadFile(adapter as never, source, 'eager', 64, 'format_orc_data');
-    const result = await adapter.query('SELECT * FROM format_orc_data');
-    expect(result.rows).toEqual([[1, 'duck']]);
-  });
+      const adapter = createAdapter();
+      await prepareDataFileReader(adapter as never, source);
+      await loadFile(adapter as never, source, 'eager', 64, 'format_orc_data');
+      const result = await adapter.query('SELECT * FROM format_orc_data');
+      expect(result.rows).toEqual([[1, 'duck']]);
+    },
+  );
 });
 
 describe('CSV type resolution', () => {

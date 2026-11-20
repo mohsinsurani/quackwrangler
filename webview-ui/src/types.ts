@@ -41,7 +41,12 @@ export type WebviewMessage = (
   | { type: 'removeTransform'; id: string }
   | { type: 'reorderTransforms'; sourceId: string; targetId: string }
   | { type: 'pageChange'; offset: number; limit: number }
-  | { type: 'searchRows'; query: string }
+  | {
+      type: 'searchRows';
+      query: string;
+      filter?: { column: string; operator: 'is_null' | 'is_not_null' };
+    }
+  | { type: 'searchChange'; query: string }
   | { type: 'executeCustomQuery'; sql: string }
   | {
       type: 'requestChart';
@@ -53,7 +58,24 @@ export type WebviewMessage = (
         aggregation?: 'COUNT' | 'SUM' | 'AVG' | 'MIN' | 'MAX';
       };
     }
-  | { type: 'exportData'; format: ExportFormat; outputPath?: string }
+  | {
+      type: 'exportData';
+      format: ExportFormat;
+      outputPath?: string;
+      sessionId: string;
+      revision: number;
+      customQuerySql: string | null;
+    }
+  | { type: 'saveRecipe' }
+  | { type: 'openRecipePicker' }
+  | { type: 'replayRecipe'; filePath?: string }
+  | {
+      type: 'polarsHandoff';
+      mode: 'result' | 'recipe';
+      sessionId: string;
+      revision: number;
+      customQuerySql: string | null;
+    }
 ) & { requestId?: string };
 
 export interface ExtensionMessage {

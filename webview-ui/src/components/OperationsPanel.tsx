@@ -16,6 +16,9 @@ interface OperationsPanelProps {
   onCollapse: () => void;
   secondaryFile?: { filePath: string; columns: string[] };
   onSelectSecondaryFile: () => void;
+  onSaveRecipe: () => void;
+  onReplayRecipe: () => void;
+  onPolarsHandoff: (mode: 'result' | 'recipe') => void;
 }
 
 interface OperationCategory {
@@ -431,6 +434,9 @@ export const OperationsPanel: React.FC<OperationsPanelProps> = React.memo(
     onCollapse,
     secondaryFile,
     onSelectSecondaryFile,
+    onSaveRecipe,
+    onReplayRecipe,
+    onPolarsHandoff,
   }) => {
     const [selectedOp, setSelectedOp] = useState<OperationDef | null>(null);
     const [formData, setFormData] = useState<Record<string, unknown>>({});
@@ -647,6 +653,20 @@ export const OperationsPanel: React.FC<OperationsPanelProps> = React.memo(
               ↷
             </button>
           </div>
+        </div>
+        <div className="recipe-actions">
+          <button type="button" onClick={onSaveRecipe}>
+            Save recipe (.qw)
+          </button>
+          <button type="button" onClick={onReplayRecipe}>
+            Run recipe on this file…
+          </button>
+          <button type="button" onClick={() => onPolarsHandoff('result')}>
+            Continue in Polars…
+          </button>
+          <button type="button" onClick={() => onPolarsHandoff('recipe')}>
+            Open Polars recipe
+          </button>
         </div>
 
         {transformSteps.length > 0 && (

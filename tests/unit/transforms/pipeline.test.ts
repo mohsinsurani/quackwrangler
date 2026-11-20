@@ -324,7 +324,7 @@ describe('WranglingSession', () => {
     );
   });
 
-  it('restores a saved workspace by validating and rebuilding its transforms', () => {
+  it('restores a saved workspace by rebuilding its transforms', () => {
     const session = new WranglingSession({} as any);
     session.load('/tmp/data.csv');
     session.restore([
@@ -338,6 +338,116 @@ describe('WranglingSession', () => {
 });
 
 describe('pipeline ordering and reshape transforms', () => {
+  it('preserves active history and redo state when candidate restore validation fails', async () => {
+    let fail = false;
+    const query = vi.fn(async (sql: string) => {
+      if (sql.startsWith('DESCRIBE')) return { rows: [['id', 'BIGINT', 'NO']] };
+      if (fail) throw new Error('Binder Error: missing column');
+      return { columns: ['id'], rows: [[1]], rowCount: 1, duration: 0 };
+    });
+    const session = new WranglingSession({ query } as never);
+    session.load('/tmp/data.csv');
+    session.apply('sort_rows', { column: 'id', direction: 'ASC' });
+    session.apply('filter_rows', { condition: 'id > 0' });
+    session.undo();
+    const priorHistory = session.getHistory();
+    const priorSql = session.getSql();
+    const priorRevision = session.getRevision();
+    const priorCanRedo = session.canRedo();
+    fail = true;
+    await expect(
+      session.restoreValidated([
+        { type: 'filter_rows', params: { column: 'missing_column', operator: 'is_null' } },
+      ]),
+    ).rejects.toThrow('missing column');
+    expect(session.getHistory()).toEqual(priorHistory);
+    expect(session.getSql()).toBe(priorSql);
+    expect(session.getRevision()).toBe(priorRevision);
+    expect(session.canRedo()).toBe(priorCanRedo);
+  });
+
+  it('does not retain failed apply steps after query validation fails', async () => {
+    let fail = false;
+    const query = vi.fn(async (sql: string) => {
+      if (sql.startsWith('DESCRIBE')) return { rows: [['id', 'BIGINT', 'NO']] };
+      if (fail) throw new Error('query validation failed');
+      return { columns: ['id'], rows: [[1]], rowCount: 1, duration: 0 };
+    });
+    const session = new WranglingSession({ query } as never);
+    session.load('/tmp/data.csv');
+    session.apply('sort_rows', { column: 'id', direction: 'ASC' });
+    const priorHistory = session.getHistory();
+    const priorRevision = session.getRevision();
+    fail = true;
+    await expect(session.applyValidated('filter_rows', { condition: 'id > 0' })).rejects.toThrow(
+      'query validation failed',
+    );
+    expect(session.getHistory()).toEqual(priorHistory);
+    expect(session.getRevision()).toBe(priorRevision);
+    expect(session.canRedo()).toBe(false);
+  });
+
+  it('does not let an older slow validation overwrite a newer mutation', async () => {
+    let releaseSlow!: () => void;
+    let slowStarted!: () => void;
+    const slowQuery = new Promise<void>((resolve) => {
+      releaseSlow = resolve;
+    });
+    const started = new Promise<void>((resolve) => {
+      slowStarted = resolve;
+    });
+    const query = vi.fn(async (sql: string) => {
+      if (sql.startsWith('DESCRIBE')) return { rows: [['id', 'BIGINT', 'NO']] };
+      if (sql.includes('older_slow_marker')) {
+        slowStarted();
+        await slowQuery;
+      }
+      return { columns: ['id'], rows: [[1]], rowCount: 1, duration: 0 };
+    });
+    const session = new WranglingSession({ query } as never);
+    session.load('/tmp/data.csv');
+    const staleMutation = session.applyValidated('add_column', {
+      name: 'older_slow_marker',
+      expression: '1',
+    });
+    await started;
+    await session.applyValidated('add_column', { name: 'newer_marker', expression: '2' });
+    releaseSlow();
+    await expect(staleMutation).rejects.toThrow('pipeline changed while a history update was validating');
+    expect(session.getHistory().map((step) => step.params.name)).toEqual(['newer_marker']);
+    expect(session.canUndo()).toBe(true);
+  });
+
+  it('resolves fill types from preceding candidate recipe steps', async () => {
+    const query = vi.fn(async (sql: string) => {
+      if (sql.startsWith('DESCRIBE') && sql.includes('RENAME'))
+        return { rows: [['new_name', 'VARCHAR', 'YES']] };
+      if (sql.startsWith('DESCRIBE')) return { rows: [['old_name', 'VARCHAR', 'YES']] };
+      return { columns: ['new_name'], rows: [[1]], rowCount: 1, duration: 0 };
+    });
+    const session = new WranglingSession({ query } as never);
+    session.load('/tmp/data.parquet');
+    await session.restoreValidated([
+      { type: 'rename_column', params: { oldName: 'old_name', newName: 'new_name' } },
+      { type: 'fill_nulls', params: { column: 'new_name', value: 'Unknown' } },
+    ]);
+    expect(session.getHistory()[1].params.targetType).toBe('VARCHAR');
+  });
+
+  it('validates the column type before adding a fill step', async () => {
+    const query = vi.fn(async (sql: string) => {
+      if (sql.startsWith('DESCRIBE')) return { rows: [['amount', 'INTEGER', 'YES']] };
+      if (sql.includes("'bad'") && sql.includes('INTEGER')) throw new Error('Conversion Error');
+      if (sql.startsWith('SELECT COUNT')) return { rows: [[1]] };
+      return { columns: ['amount'], rows: [[null]], rowCount: 1, duration: 0 };
+    });
+    const session = new WranglingSession({ query } as never);
+    session.load('/tmp/data.csv');
+    await expect(
+      session.applyValidated('fill_nulls', { column: 'amount', value: 'bad' }),
+    ).rejects.toThrow('Conversion Error');
+    expect(session.getHistory()).toHaveLength(0);
+  });
   it('reorders steps and regenerates pipeline order', () => {
     const session = new WranglingSession({} as never);
     session.load('/tmp/data.csv');
