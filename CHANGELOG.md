@@ -2,6 +2,8 @@
 
 All notable changes to QuackWrangler are documented here using [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
 ## [0.5.0] - 2026-11-20
 
 - Added a step-by-step column picker for missing input columns when replaying `.qw` recipes. Cancelling or failing validation leaves the current result intact.
