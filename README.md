@@ -44,24 +44,14 @@ QuackWrangler ships with DuckDB built in. Open CSV, Parquet, JSON, Excel, and OD
 - **Generate a cleaning plan:** store an AI provider key in VS Code SecretStorage, then use **AI plan**. Only your instruction, schema metadata, and redacted visual-transform history are sent; generated steps require approval and pass the normal transform validator.
 - **Compare schemas:** select multiple files with **Compare File Schemas**, or recursively inspect up to 100 files with **Detect Folder Schema Drift**.
 
-## What's new in 0.3.0
+## What's new in 0.5.0
 
-- Updated the embedded DuckDB runtime to 2.0.0-r.1 and refreshed project dependencies.
-- Fixed CSV loading failures on columns that look numeric but contain later text such as `ALL`, resolving types once per source so interactive queries stay fast.
-- Open editors now use independent DuckDB instances, so settings and data cannot bleed between panels.
-- Raised the default memory limit to 80% and added spill diagnostics for out-of-memory errors on large sources.
-- Refreshed the benchmark results for DuckDB 2.0.
-- Restored compatibility with older Explorer context menus that invoke the lowercase `quackwrangler.openfile` command.
-- Added staged file-open diagnostics and native error stacks under **View → Output → QuackWrangler**.
+- **Replay recipes on files with different column names.** Choose replacements when a `.qw` recipe references a missing column. Cancelling or failing validation leaves the current result and history intact.
+- **Act on missing values from Data Quality.** Inspect matching rows without changing the pipeline, or apply an undoable fill or exclusion.
+- **Continue in Polars.** Export the active result to Parquet and open a Python handoff, or generate an editable Polars recipe for supported transforms on local Parquet files.
+- **Keep the grid in view.** The top toolbar puts transforms, steps, recipes, and export within reach. The Operations panel sits beside the grid on wide editors and stacks below it in narrow splits. Standard exports show the result scope and row count before saving.
 
-## 0.2.0 highlights
-
-- Open every supported data format directly in the QuackWrangler custom editor, with independent state for every open tab. Optional DuckDB extensions load from the local cache and are downloaded only when missing.
-- Use the more visible **AI plan** action with OpenAI or an HTTPS OpenAI-compatible Responses API; stale and overlapping plans are safely discarded.
-- Load small local sources eagerly and large or remote sources lazily, with configurable thresholds, DuckDB threads, and insertion-order behavior.
-- Keep custom SQL, charts, profiles, exports, and Command Palette actions scoped to the correct editor even when asynchronous responses arrive late.
-- Export the active custom-query result, use reliable row selection and Select All, and retain the previous dataset if a refresh or source promotion fails.
-- Target dbt export at the focused editor and reject local-file or raw-expression transforms that cannot produce portable dbt SQL.
+See the [changelog](CHANGELOG.md#050---2026-11-20) for full release notes and earlier versions.
 
 ## Why QuackWrangler?
 
@@ -194,7 +184,7 @@ Alternatively, run **Extensions: Install from VSIX...** from the VS Code Command
 4. You can also right-click a supported file in Explorer and choose **Open in QuackWrangler**.
 5. Clicking a Parquet, CSV, or XLSX file opens the QuackWrangler visual editor by default. Other supported formats remain available through **Open in QuackWrangler** without replacing their normal VS Code editor association.
 6. Inspect column profiles and values in the synchronized data grid.
-7. Expand the labelled **Operations** rail, select an operation, enter its parameters, and apply it. Press `Enter` to apply an open form or `Escape` to close it.
+7. Select **Transform** in the top toolbar to open the Operations panel. Choose an operation, enter its parameters, and apply it. Press `Enter` to apply an open form or `Escape` to close it.
 8. Use `Cmd/Ctrl+Z` to undo and `Cmd+Shift+Z` or `Ctrl+Y` to redo; the toolbar actions are enabled only when the corresponding history action is available.
 9. Use **AI plan** to describe a goal and preview a validated visual transform plan, or use **Custom DuckDB query** to run one read-only `SELECT`, `WITH`, or `VALUES` statement.
 10. Export the complete transformed dataset, or the active custom-query result when the query view is open. You can also select rows and copy them as TSV, CSV, pipe-separated text, or JSON.
