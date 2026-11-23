@@ -28,7 +28,7 @@ describe('data file readers', () => {
     expect(detectFileType('/tmp/orders.xlsx')).toBe('xlsx');
     expect(detectFileType('https://example.com/orders.xlsx?download=1')).toBe('xlsx');
     expect(getTableRef('/tmp/orders.xlsx')).toBe(
-      "read_xlsx('/tmp/orders.xlsx', all_varchar=true)",
+      "read_xlsx('/tmp/orders.xlsx', all_varchar=true, header=true)",
     );
     expect(
       getTableRef('/tmp/orders.xlsx', 'xlsx', undefined, [
@@ -37,7 +37,7 @@ describe('data file readers', () => {
         { name: 'form', type: 'VARCHAR' },
       ]),
     ).toBe(
-      '(SELECT TRY_CAST("id" AS BIGINT) AS "id", TRY_CAST("amount" AS DOUBLE) AS "amount", "form" FROM read_xlsx(\'/tmp/orders.xlsx\', all_varchar=true))',
+      '(SELECT TRY_CAST("id" AS BIGINT) AS "id", TRY_CAST("amount" AS DOUBLE) AS "amount", "form" FROM read_xlsx(\'/tmp/orders.xlsx\', all_varchar=true, header=true))',
     );
   });
 
@@ -147,7 +147,7 @@ describe('data file readers', () => {
       'LOAD excel',
       'INSTALL excel',
       'LOAD excel',
-      "DESCRIBE SELECT * FROM read_xlsx('/tmp/orders.xlsx', all_varchar=true)",
+      "DESCRIBE SELECT * FROM read_xlsx('/tmp/orders.xlsx', all_varchar=true, header=true)",
     ]);
   });
 
@@ -157,14 +157,38 @@ describe('data file readers', () => {
         return { rows: [['id'], ['amount'], ['form']] };
       }
       if (sql.startsWith('DESCRIBE SELECT * FROM read_xlsx')) {
-        return { rows: [['id', 'DOUBLE'], ['amount', 'DOUBLE'], ['form', 'VARCHAR']] };
+        return {
+          rows: [
+            ['id', 'DOUBLE'],
+            ['amount', 'DOUBLE'],
+            ['form', 'VARCHAR'],
+          ],
+        };
       }
       return {
         rows: [
           [
-            '2', '0', '0', '2', '2', '0', '2',
-            '2', '1', '0', '2', '2', '0', '2',
-            '2', '1', '1', '2', '2', '0', '2',
+            '2',
+            '0',
+            '0',
+            '2',
+            '2',
+            '0',
+            '2',
+            '2',
+            '1',
+            '0',
+            '2',
+            '2',
+            '0',
+            '2',
+            '2',
+            '1',
+            '1',
+            '2',
+            '2',
+            '0',
+            '2',
           ],
         ],
       };
@@ -174,7 +198,7 @@ describe('data file readers', () => {
     await prepareSourceSchema(connection, '/tmp/orders.xlsx');
 
     expect(getConnectionTableRef(connection, '/tmp/orders.xlsx')).toBe(
-      '(SELECT TRY_CAST("id" AS BIGINT) AS "id", TRY_CAST("amount" AS DOUBLE) AS "amount", "form" FROM read_xlsx(\'/tmp/orders.xlsx\', all_varchar=true))',
+      '(SELECT TRY_CAST("id" AS BIGINT) AS "id", TRY_CAST("amount" AS DOUBLE) AS "amount", "form" FROM read_xlsx(\'/tmp/orders.xlsx\', all_varchar=true, header=true))',
     );
   });
 

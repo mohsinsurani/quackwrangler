@@ -431,6 +431,34 @@ describe('XLSX type resolution', () => {
     expect(values.rows).toEqual([['2024-03-04', '2024-03-04 12:34:56', '12:34:56', true]]);
   });
 
+  it('uses the first row of an XLSX sheet as column names', async () => {
+    const source = join(tmpdir(), `quackwrangler-header-${randomUUID()}.xlsx`);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(
+      workbook,
+      XLSX.utils.aoa_to_sheet([
+        ['sku', 'qty'],
+        ['A1', 5],
+        ['B2', 9],
+      ]),
+      'Data',
+    );
+    await writeFile(source, XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' }));
+
+    const adapter = createAdapter();
+    await prepareDataFileReader(adapter as never, source);
+    await loadFile(adapter as never, source, 'eager', 64, 'header_xlsx_data');
+
+    const described = await adapter.query('DESCRIBE SELECT * FROM header_xlsx_data');
+    expect(described.rows.map((row) => row[0])).toEqual(['sku', 'qty']);
+    const values = await adapter.query('SELECT * FROM header_xlsx_data ORDER BY sku');
+    // Numbers load as text first and are then typed safely, so qty comes back as digits.
+    expect(values.rows.map((row) => [row[0], Number(row[1])])).toEqual([
+      ['A1', 5],
+      ['B2', 9],
+    ]);
+  });
+
   it('loads a column containing numeric and textual cells', async () => {
     const source = join(tmpdir(), `quackwrangler-mixed-${randomUUID()}.xlsx`);
     // Minimal XLSX workbook with a numeric H2 and the text "tablet" in H3.
@@ -563,6 +591,89 @@ describe('reshape transforms execute in DuckDB', () => {
       valueColumn: 'metric_value',
     });
     expect(rows.length).toBeGreaterThan(3);
+  });
+});
+
+describe('combining files executes in DuckDB', () => {
+  // Real secondary CSV files, resolved through the same table reference used by the editor.
+  async function secondary(name: string, csv: string): Promise<string> {
+    const path = join(tmpdir(), `quackwrangler-${randomUUID()}-${name}.csv`);
+    await writeFile(path, csv);
+    return path;
+  }
+
+  async function run(type: string, params: Record<string, unknown>): Promise<unknown[][]> {
+    const connection = await database.connect();
+    try {
+      const session = new WranglingSession(createAdapter() as never);
+      session.load('/tmp/data.csv');
+      session.apply(type, params);
+      const result = await connection.run(session.getSql());
+      return await result.getRowsJson();
+    } finally {
+      connection.closeSync();
+    }
+  }
+
+  // Source regions: east, west, east. Lookup keys: east, north, west.
+  // Every source row matches; "north" is the only unmatched lookup row.
+  it.each([
+    ['INNER', 3],
+    ['LEFT', 3],
+    ['RIGHT', 4],
+    ['FULL', 4],
+  ])('%s join returns the expected row count', async (joinType, expectedRows) => {
+    const lookup = await secondary(
+      'regions',
+      'region_key,label\neast,East coast\nnorth,Far north\nwest,West coast\n',
+    );
+    const rows = await run('join_file', {
+      filePath: lookup,
+      joinType,
+      leftColumn: 'region',
+      rightColumn: 'region_key',
+    });
+    expect(rows).toHaveLength(expectedRows);
+  });
+
+  it('keeps unmatched source rows on a LEFT join with nulls on the right', async () => {
+    const lookup = await secondary('partial', 'region_key,label\neast,East coast\n');
+    const rows = await run('join_file', {
+      filePath: lookup,
+      joinType: 'LEFT',
+      leftColumn: 'region',
+      rightColumn: 'region_key',
+    });
+    expect(rows).toHaveLength(3);
+    const west = rows.find((row) => row.includes('west'));
+    expect(west).toBeDefined();
+    expect(west?.at(-1)).toBeNull();
+  });
+
+  it('rejects an unsupported join type before running SQL', () => {
+    const session = new WranglingSession({} as never);
+    session.load('/tmp/data.csv');
+    expect(() =>
+      session.apply('join_file', {
+        filePath: '/tmp/other.csv',
+        joinType: 'CROSS; DROP TABLE current_data',
+        leftColumn: 'id',
+        rightColumn: 'id',
+      }),
+    ).toThrow('Unsupported join type');
+  });
+
+  it('appends rows by column name and fills columns missing from either side with nulls', async () => {
+    // Different column order, one shared column (name), one new column (extra).
+    const other = await secondary('extra', 'extra,name\nhello,Gamma\n');
+    const rows = await run('union_file', { filePath: other });
+    expect(rows).toHaveLength(4);
+    const names = rows.map((row) => row[1]);
+    expect(names).toContain('Gamma');
+    // The appended row has no id/amount/region/nullable, and the original rows have no "extra".
+    const appended = rows.find((row) => row.includes('Gamma'));
+    expect(appended?.[0]).toBeNull();
+    expect(rows.slice(0, 3).every((row) => row.at(-1) === null)).toBe(true);
   });
 });
 
