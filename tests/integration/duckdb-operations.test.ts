@@ -1,7 +1,7 @@
-import { beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { DuckDBInstance } from '@duckdb/node-api';
 import { randomUUID } from 'node:crypto';
-import { writeFile } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { WranglingSession } from '../../src/transforms/pipeline';
@@ -432,7 +432,8 @@ describe('XLSX type resolution', () => {
   });
 
   it('uses the first row of an XLSX sheet as column names', async () => {
-    const source = join(tmpdir(), `quackwrangler-header-${randomUUID()}.xlsx`);
+    const directory = await mkdtemp(join(tmpdir(), 'quackwrangler-header-'));
+    const source = join(directory, 'header.xlsx');
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(
       workbook,
@@ -446,17 +447,21 @@ describe('XLSX type resolution', () => {
     await writeFile(source, XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' }));
 
     const adapter = createAdapter();
-    await prepareDataFileReader(adapter as never, source);
-    await loadFile(adapter as never, source, 'eager', 64, 'header_xlsx_data');
+    try {
+      await prepareDataFileReader(adapter as never, source);
+      await loadFile(adapter as never, source, 'eager', 64, 'header_xlsx_data');
 
-    const described = await adapter.query('DESCRIBE SELECT * FROM header_xlsx_data');
-    expect(described.rows.map((row) => row[0])).toEqual(['sku', 'qty']);
-    const values = await adapter.query('SELECT * FROM header_xlsx_data ORDER BY sku');
-    // Numbers load as text first and are then typed safely, so qty comes back as digits.
-    expect(values.rows.map((row) => [row[0], Number(row[1])])).toEqual([
-      ['A1', 5],
-      ['B2', 9],
-    ]);
+      const described = await adapter.query('DESCRIBE SELECT * FROM header_xlsx_data');
+      expect(described.rows.map((row) => row[0])).toEqual(['sku', 'qty']);
+      const values = await adapter.query('SELECT * FROM header_xlsx_data ORDER BY sku');
+      // Numbers load as text first and are then typed safely, so qty comes back as digits.
+      expect(values.rows.map((row) => [row[0], Number(row[1])])).toEqual([
+        ['A1', 5],
+        ['B2', 9],
+      ]);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
   });
 
   it('loads a column containing numeric and textual cells', async () => {
@@ -596,8 +601,17 @@ describe('reshape transforms execute in DuckDB', () => {
 
 describe('combining files executes in DuckDB', () => {
   // Real secondary CSV files, resolved through the same table reference used by the editor.
+  // They live in one private directory that is removed afterwards.
+  let directory: string;
+  beforeAll(async () => {
+    directory = await mkdtemp(join(tmpdir(), 'quackwrangler-combine-'));
+  });
+  afterAll(async () => {
+    await rm(directory, { recursive: true, force: true });
+  });
+
   async function secondary(name: string, csv: string): Promise<string> {
-    const path = join(tmpdir(), `quackwrangler-${randomUUID()}-${name}.csv`);
+    const path = join(directory, `${name}.csv`);
     await writeFile(path, csv);
     return path;
   }

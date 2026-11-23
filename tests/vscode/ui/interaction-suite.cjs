@@ -11,7 +11,10 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const ROOT = path.resolve(__dirname, '../../..');
-const OUT = process.env.QW_UI_OUT || require('node:os').tmpdir() + '/qw-ui-suite';
+// A private, freshly created folder holds every fixture and profile, so nothing is written to a
+// predictable shared path. QW_UI_OUT overrides it (the Linux/Docker runner and CI collect screenshots there).
+const OUT =
+  process.env.QW_UI_OUT || fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'qw-ui-'));
 const theme = process.argv[2] || 'Default Dark Modern';
 const width = process.argv[3] ? Number(process.argv[3]) : 0;
 // Window height used with a width override. Short windows catch the sticky header covering rows.
@@ -164,6 +167,17 @@ async function step(name, fn) {
       timeout: 40000,
     });
   let app = await launch('sales.csv');
+  // A run normally takes about a minute. If VS Code ever stalls, kill it and fail instead of
+  // hanging a CI job until its own timeout.
+  const watchdog = setTimeout(() => {
+    for (const r of results) console.log(`${r.ok ? 'PASS' : 'FAIL'}  ${r.name}`);
+    console.log('FAIL  suite setup  — watchdog: the run exceeded 5 minutes');
+    try {
+      app.process().kill('SIGKILL');
+    } catch {}
+    process.exit(2);
+  }, 300000);
+  watchdog.unref();
   let win;
   try {
     win = await app.firstWindow();
@@ -683,4 +697,7 @@ async function step(name, fn) {
     console.log(`${r.ok ? 'PASS' : 'FAIL'}  ${r.name}${r.detail ? '  — ' + r.detail : ''}`);
   if (errors.length) console.log('console errors:', [...new Set(errors)].slice(0, 5));
   process.exitCode = failed.length ? 1 : 0;
+  // Remove the private folder after a clean run; keep it (with screenshots) when something failed
+  // or when the caller chose the folder.
+  if (!failed.length && !process.env.QW_UI_OUT) fs.rmSync(OUT, { recursive: true, force: true });
 })();
