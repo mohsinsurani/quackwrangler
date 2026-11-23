@@ -2350,6 +2350,16 @@ button:disabled {
   .data-grid-container {
     min-height: 120px;
   }
+
+  /* In a short editor the sticky profiles (104px) and header (42px) would fill the whole grid
+     and leave no room for rows. Let the profiles scroll away; only the header stays pinned. */
+  .profile-grid-row {
+    position: relative;
+  }
+
+  .data-grid-row.header-row.with-profiles {
+    top: 0;
+  }
 }
 
 /* Very narrow editors (split panes): the footer keeps one row by dropping the result label

@@ -7,21 +7,26 @@ import { resolve } from 'node:path';
 const suite = resolve(import.meta.dirname, 'interaction-suite.cjs');
 const args = process.argv.slice(2);
 const matrix = args.length
-  ? [[args[0], args[1]]]
+  ? [[args[0], args[1], args[2]]]
   : [
       ['Default Dark Modern'],
       ['Default Light Modern'],
       ['Default High Contrast'],
       ['Default High Contrast Light'],
       ['Default Dark Modern', '700'],
+      // A narrow and short editor, like a split pane on a small laptop.
+      ['Default Dark Modern', '700', '560'],
     ];
 
 let failed = 0;
-for (const [theme, width] of matrix) {
+for (const [theme, width, height] of matrix) {
   let out = '';
   // VS Code sometimes opens the CSV as plain text under automation; retry the launch only.
   for (let attempt = 1; attempt <= 6; attempt++) {
-    const r = spawnSync('node', [suite, theme, ...(width ? [width] : [])], { encoding: 'utf8' });
+    const r = spawnSync('node', [suite, theme, ...(width ? [width] : [])], {
+      encoding: 'utf8',
+      env: { ...process.env, ...(height ? { QW_UI_HEIGHT: height } : {}) },
+    });
     out = r.stdout + r.stderr;
     // Retry only launch problems (VS Code closing early, or opening the CSV as plain text).
     const launchProblem = /suite setup\s+—/.test(out) || out.includes('webview did not render');

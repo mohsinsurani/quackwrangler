@@ -14,6 +14,8 @@ const ROOT = path.resolve(__dirname, '../../..');
 const OUT = process.env.QW_UI_OUT || require('node:os').tmpdir() + '/qw-ui-suite';
 const theme = process.argv[2] || 'Default Dark Modern';
 const width = process.argv[3] ? Number(process.argv[3]) : 0;
+// Window height used with a width override. Short windows catch the sticky header covering rows.
+const height = Number(process.env.QW_UI_HEIGHT || 760);
 // Keep the user-data path short: VS Code creates a Unix socket inside it and macOS limits that
 // path to 103 characters, so a long theme name makes VS Code exit immediately (listen EINVAL).
 const tag =
@@ -220,8 +222,8 @@ async function step(name, fn) {
     await win.keyboard.press('Escape').catch(() => {});
     if (width) {
       await app.evaluate(
-        ({ BrowserWindow }, w) => BrowserWindow.getAllWindows()[0].setSize(w, 760),
-        width,
+        ({ BrowserWindow }, [w, h]) => BrowserWindow.getAllWindows()[0].setSize(w, h),
+        [width, height],
       );
       await win.waitForTimeout(1500);
     }
@@ -675,7 +677,7 @@ async function step(name, fn) {
   }
   const failed = results.filter((r) => !r.ok);
   console.log(
-    `\n=== ${theme}${width ? ' @' + width : ''}: ${results.length - failed.length}/${results.length} passed ===`,
+    `\n=== ${theme}${width ? ' @' + width + (process.env.QW_UI_HEIGHT ? 'x' + height : '') : ''}: ${results.length - failed.length}/${results.length} passed ===`,
   );
   for (const r of results)
     console.log(`${r.ok ? 'PASS' : 'FAIL'}  ${r.name}${r.detail ? '  — ' + r.detail : ''}`);

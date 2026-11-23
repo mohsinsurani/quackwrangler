@@ -11,6 +11,7 @@ All notable changes to QuackWrangler are documented here using [Keep a Changelog
 - The grid footer combines result scope, page range, selection, View options, and pagination in a single row, including in very narrow split editors.
 - Operations and controls use VS Code Codicons instead of text symbols and emoji, bundled with the webview so they render offline and match light and dark themes. The webview now allows its own font source and loads assets by relative path.
 - Fixed applied-step chips being unreadable in light themes, the analysis tab strip being squeezed to one third of the width, and the toolbar overflowing in very narrow split editors.
+- Fixed short editors (about 560 px tall or less) where the pinned column profiles and header left no room for rows and the footer covered them; the profiles now scroll away and only the header stays pinned.
 - Fixed XLSX files showing spreadsheet coordinates (A1, B1) as column names instead of the header row.
 - Removed unused styles left over from the previous layout.
 - Pinned the Polars integration test to a release that is still installable; the previously pinned 1.43.0 was yanked from PyPI, which broke CI.
