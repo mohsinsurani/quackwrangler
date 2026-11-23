@@ -15,6 +15,11 @@ const step = (type: string, params: Record<string, unknown>): TransformOperation
   description: type,
 });
 
+// One pinned pair, used by every uv call. PyPI can yank releases (1.43.0 was yanked), so a
+// failure to resolve these means: pick the latest non-yanked Polars and update both here.
+const POLARS = 'polars==1.44.2';
+const PYARROW = 'pyarrow==25.0.0';
+
 describe('Polars recipe generation', () => {
   it.skipIf(process.env.QW_POLARS_INTEGRATION !== '1')(
     'runs generated supported recipes against Parquet with the installed Polars and DuckDB',
@@ -28,9 +33,9 @@ describe('Polars recipe generation', () => {
             'run',
             '--no-project',
             '--with',
-            'polars==1.43.0',
+            POLARS,
             '--with',
-            'pyarrow==25.0.0',
+            PYARROW,
             'python',
             '-c',
             `import polars as pl; pl.DataFrame({'id':['00123','00002','00003','00004'],'group':['b','a','a','a'],'n':[None,2,1,None]}).write_parquet(${JSON.stringify(source)})`,
@@ -48,7 +53,7 @@ describe('Polars recipe generation', () => {
         const python = `import json\n${recipe}\nprint(result.write_json())\n`;
         const run = spawnSync(
           'uv',
-          ['run', '--no-project', '--with', 'polars==1.43.0', 'python', '-c', python],
+          ['run', '--no-project', '--with', POLARS, 'python', '-c', python],
           { encoding: 'utf8' },
         );
         expect(run.status, run.stderr).toBe(0);
@@ -72,6 +77,8 @@ describe('Polars recipe generation', () => {
         await rm(dir, { recursive: true, force: true });
       }
     },
+    // A cold uv cache downloads Polars and PyArrow for each environment.
+    180_000,
   );
 
   it('rejects sources, filters, and selector-like identifiers whose semantics are not verified', () => {

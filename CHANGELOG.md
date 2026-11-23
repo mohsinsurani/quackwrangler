@@ -4,6 +4,18 @@ All notable changes to QuackWrangler are documented here using [Keep a Changelog
 
 ## [Unreleased]
 
+### Changed
+
+- Refreshed the data editor with a compact toolbar, tabbed analysis, searchable operations drawer, compact profiles, calmer grid styling, and consolidated view controls.
+- Numeric column profiles now show a ten-bin value histogram computed by DuckDB.
+- The grid footer combines result scope, page range, selection, View options, and pagination in a single row, including in very narrow split editors.
+- Operations and controls use VS Code Codicons instead of text symbols and emoji, bundled with the webview so they render offline and match light and dark themes. The webview now allows its own font source and loads assets by relative path.
+- Fixed applied-step chips being unreadable in light themes, the analysis tab strip being squeezed to one third of the width, and the toolbar overflowing in very narrow split editors.
+- Fixed XLSX files showing spreadsheet coordinates (A1, B1) as column names instead of the header row.
+- Removed unused styles left over from the previous layout.
+- Pinned the Polars integration test to a release that is still installable; the previously pinned 1.43.0 was yanked from PyPI, which broke CI.
+- Added `npm run test:ui`, an unattended real-VS Code interaction suite, `npm run test:ui:linux` to run it on Linux in Docker, and integration tests for joins and unions.
+
 ## [0.5.0] - 2026-11-20
 
 - Added a step-by-step column picker for missing input columns when replaying `.qw` recipes. Cancelling or failing validation leaves the current result intact.
@@ -18,7 +30,7 @@ All notable changes to QuackWrangler are documented here using [Keep a Changelog
 - Added grid-first editor controls, explicit result/source counts, one-click recipe save/replay, and Polars Parquet handoff or guarded recipe export for supported local sources and transforms.
 - Made transform apply and recipe replay validate resulting DuckDB queries before retaining history; invalid actions preserve the prior pipeline.
 - Added column-type-aware null-fill validation, export scope confirmation, and safer Polars recipe generation that opens a Python draft only for supported cases.
-- Verified generated Polars 1.43 recipes by executing them on Parquet fixtures; recipe export is now limited to Parquet sources and null filters, renames, drops, and sorts.
+- Verified generated Polars recipes by executing them on Parquet fixtures; recipe export is now limited to Parquet sources and null filters, renames, drops, and sorts.
 - Made transform apply, undo/redo, and recipe replay commit candidate histories only after validation; export and query results now preserve accepted session/revision scope.
 - Changed the recipe action label to **Open Polars recipe** and moved pinned Polars/PyArrow execution coverage into opt-in integration tests and CI setup.
 

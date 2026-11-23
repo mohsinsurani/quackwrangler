@@ -5,28 +5,37 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 10
-    labels: ["dependencies", "security"]
+    labels: ['dependencies', 'security']
     groups:
       extension-dependencies:
-        patterns: ["*"]
-        exclude-patterns: ["@azure/*", "@typescript-eslint/*", "@vscode/vsce"]
+        patterns: ['*']
+        exclude-patterns: ['@azure/*', '@typescript-eslint/*', '@vscode/vsce']
+    # These majors are intentionally held back. typescript-eslint only supports TypeScript < 6.1,
+    # and @types/vscode must match the oldest VS Code in engines.vscode so the extension cannot
+    # call APIs that older editors lack. Revisit when those constraints change.
+    ignore:
+      - dependency-name: 'typescript'
+        update-types: ['version-update:semver-major']
+      - dependency-name: 'eslint'
+        update-types: ['version-update:semver-major']
+      - dependency-name: '@types/vscode'
 
   - package-ecosystem: npm
     directory: /webview-ui
     schedule:
       interval: weekly
     open-pull-requests-limit: 10
-    labels: ["dependencies", "security"]
+    labels: ['dependencies', 'security']
     groups:
       webview-dependencies:
-        patterns: ["*"]
+        patterns: ['*']
 
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
     open-pull-requests-limit: 10
-    labels: ["dependencies", "security"]
+    labels: ['dependencies', 'security']
     groups:
       github-actions:
-        patterns: ["*"]
+        patterns: ['*']
