@@ -132,7 +132,7 @@ async function step(name, fn) {
       .split('\n')
       .map((line) => line.trim())
       .filter(Boolean);
-    results.push({ name, ok: false, detail: lines.slice(0, 6).join(' | ') });
+    results.push({ name, ok: false, detail: lines.slice(0, 14).join(' | ') });
   }
 }
 

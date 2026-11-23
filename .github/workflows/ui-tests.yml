@@ -19,6 +19,8 @@ jobs:
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 40
+    env:
+      QW_UI_OUT: ${{ runner.temp }}/qw-ui-suite
     strategy:
       fail-fast: false
       matrix:
@@ -90,3 +92,12 @@ jobs:
       - name: Run UI suite (virtual display)
         if: runner.os == 'Linux'
         run: xvfb-run -a -s "-screen 0 1280x800x24" npm run test:ui
+
+      - name: Upload screenshots
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ui-screenshots-${{ matrix.name }}
+          path: ${{ runner.temp }}/qw-ui-suite/*.png
+          if-no-files-found: ignore
+          retention-days: 7
