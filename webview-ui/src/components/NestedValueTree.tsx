@@ -72,7 +72,14 @@ const TreeNode: React.FC<{
           onClick={() => container && setExpanded((current) => !current)}
           aria-label={container ? `${expanded ? 'Collapse' : 'Expand'} ${name}` : `${name} value`}
         >
-          {container ? (expanded ? '⌄' : '›') : '·'}
+          {container ? (
+            <span
+              className={`codicon codicon-chevron-${expanded ? 'down' : 'right'}`}
+              aria-hidden="true"
+            />
+          ) : (
+            '·'
+          )}
         </button>
         <span className="nested-key" title={name}>
           {name}

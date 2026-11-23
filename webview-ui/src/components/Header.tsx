@@ -16,7 +16,7 @@ export const Header: React.FC<HeaderProps> = React.memo(
       <header className="header">
         <div className="header-top">
           <div className="header-title">
-            <span className="quack-icon">🦆</span>
+            <span className="quack-icon codicon codicon-table" aria-hidden="true" />
             <h1 className="file-name">{fileName || 'QuackWrangler'}</h1>
             {fileName && (
               <div className="data-info">
@@ -43,7 +43,10 @@ export const Header: React.FC<HeaderProps> = React.memo(
                 }
                 aria-busy={aiLoading}
               >
-                <span className="ai-plan-icon">{aiLoading ? '⏳' : '✦'}</span>
+                <span
+                  className={`ai-plan-icon codicon ${aiLoading ? 'codicon-loading codicon-modifier-spin' : 'codicon-sparkle'}`}
+                  aria-hidden="true"
+                />
                 <span>{aiLoading ? 'AI planning…' : 'AI plan'}</span>
               </button>
             )}

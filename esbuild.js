@@ -16,6 +16,9 @@ const webviewConfig = {
     '.tsx': 'tsx',
     '.ts': 'ts',
     '.css': 'css',
+    '.ttf': 'file',
+    '.woff': 'file',
+    '.woff2': 'file',
   },
   define: {
     'process.env.NODE_ENV': production ? '"production"' : '"development"',
@@ -85,10 +88,7 @@ async function main() {
     mkdirSync('dist', { recursive: true });
   }
 
-  for (const staleBundle of [
-    'dist/extension.js',
-    'dist/extension.js.map',
-  ]) {
+  for (const staleBundle of ['dist/extension.js', 'dist/extension.js.map']) {
     if (existsSync(staleBundle)) {
       unlinkSync(staleBundle);
     }

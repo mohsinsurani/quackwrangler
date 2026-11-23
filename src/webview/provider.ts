@@ -131,15 +131,18 @@ export class DataWranglerPanel {
     try {
       let html = fs.readFileSync(indexPath, 'utf8');
       html = html.replace(/<meta[^>]+http-equiv=["']Content-Security-Policy["'][^>]*>/gi, '');
-      html = html.replace(/(src|href)="\/?(assets\/[^\"]+)"/g, (_match, attribute, asset) => {
-        const uri = webview.asWebviewUri(
-          vscode.Uri.joinPath(extensionUri, 'dist', 'webview', asset),
-        );
-        return `${attribute}="${uri}"`;
-      });
+      html = html.replace(
+        /(src|href)="(?:\.\/|\/)?(assets\/[^\"]+)"/g,
+        (_match, attribute, asset) => {
+          const uri = webview.asWebviewUri(
+            vscode.Uri.joinPath(extensionUri, 'dist', 'webview', asset),
+          );
+          return `${attribute}="${uri}"`;
+        },
+      );
       return html.replace(
         '<head>',
-        `<head><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src ${webview.cspSource};">`,
+        `<head><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; font-src ${webview.cspSource}; script-src ${webview.cspSource};">`,
       );
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);

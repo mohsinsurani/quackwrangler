@@ -42,11 +42,16 @@ export const DataQualitySummary: React.FC<DataQualitySummaryProps> = ({
         aria-label={`${open ? 'Collapse' : 'Expand'} data quality`}
       >
         <span className="analysis-toggle-title">
-          <span className="analysis-icon">◇</span>Data quality
+          <span className="analysis-icon">
+            <span className="codicon codicon-checklist" aria-hidden="true" />
+          </span>
+          Data quality
         </span>
         <span className="analysis-toggle-meta">
           <b>{status}</b>
-          <span className="analysis-chevron">›</span>
+          <span className="analysis-chevron">
+            <span className="codicon codicon-chevron-right" aria-hidden="true" />
+          </span>
         </span>
       </button>
       {open && (
@@ -58,7 +63,10 @@ export const DataQualitySummary: React.FC<DataQualitySummaryProps> = ({
                 key={`${issue.kind}-${issue.column ?? ''}-${index}`}
               >
                 <span>
-                  {issue.kind === 'duplicates' ? '⧉' : issue.kind === 'nulls' ? '◌' : '◇'}
+                  <span
+                    className={`codicon codicon-${issue.kind === 'duplicates' ? 'copy' : issue.kind === 'nulls' ? 'circle-slash' : 'pulse'}`}
+                    aria-hidden="true"
+                  />
                 </span>
                 <p>{issue.message}</p>
                 {issue.column && issue.kind === 'nulls' && (

@@ -3,6 +3,8 @@ import react from '@vitejs/plugin-react';
 import { resolve } from 'path';
 
 export default defineConfig({
+  // Relative asset URLs let CSS-referenced fonts resolve inside the VS Code webview.
+  base: './',
   plugins: [react()],
   css: {
     modules: {

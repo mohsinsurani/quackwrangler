@@ -8,7 +8,6 @@ interface OperationsPanelProps {
   canUndo: boolean;
   canRedo: boolean;
   onTransform: (type: string, params: Record<string, unknown>) => void;
-  onExport: (format: 'parquet' | 'csv' | 'json') => void;
   onRemoveStep: (stepId: string) => void;
   onReorderSteps: (sourceId: string, targetId: string) => void;
   onUndo: () => void;
@@ -16,22 +15,49 @@ interface OperationsPanelProps {
   onCollapse: () => void;
   secondaryFile?: { filePath: string; columns: string[] };
   onSelectSecondaryFile: () => void;
-  onSaveRecipe: () => void;
-  onReplayRecipe: () => void;
-  onPolarsHandoff: (mode: 'result' | 'recipe') => void;
 }
 
 interface OperationCategory {
   name: string;
-  icon: string;
   operations: OperationDef[];
 }
 
 interface OperationDef {
   id: string;
   name: string;
-  icon: string;
   params: ParamDef[];
+}
+
+const operationCodicons: Record<string, string> = {
+  filter_rows: 'filter',
+  deduplicate: 'copy',
+  rename_column: 'edit',
+  drop_column: 'remove',
+  add_column: 'add',
+  formula_column: 'symbol-operator',
+  extract_nested: 'symbol-field',
+  flatten_nested: 'collapse-all',
+  explode_nested: 'expand-all',
+  cast_type: 'symbol-type-parameter',
+  fill_nulls: 'beaker',
+  sort_rows: 'sort-precedence',
+  aggregate: 'graph',
+  pivot: 'table',
+  unpivot: 'table',
+  join_file: 'combine',
+  union_file: 'git-merge',
+};
+
+const categoryCodicons: Record<string, string> = {
+  Filter: 'filter',
+  Transform: 'tools',
+  Aggregate: 'graph',
+  'Combine Files': 'combine',
+};
+
+function OperationIcon({ name, category = false }: { name: string; category?: boolean }) {
+  const icon = category ? categoryCodicons[name] : operationCodicons[name];
+  return <span className={`codicon codicon-${icon ?? 'circle-outline'}`} aria-hidden="true" />;
 }
 
 interface ParamDef {
@@ -64,12 +90,10 @@ const FILTER_OPERATOR_OPTIONS = [
 const OPERATION_CATEGORIES: OperationCategory[] = [
   {
     name: 'Filter',
-    icon: '🔍',
     operations: [
       {
         id: 'filter_rows',
         name: 'Filter Rows',
-        icon: '🔍',
         params: [
           { name: 'column', label: 'Column', type: 'column', required: true },
           {
@@ -87,19 +111,16 @@ const OPERATION_CATEGORIES: OperationCategory[] = [
       {
         id: 'deduplicate',
         name: 'Remove Duplicates',
-        icon: '✨',
         params: [{ name: 'columns', label: 'Columns', type: 'column', required: true }],
       },
     ],
   },
   {
     name: 'Transform',
-    icon: '🔄',
     operations: [
       {
         id: 'rename_column',
         name: 'Rename Column',
-        icon: '✏️',
         params: [
           { name: 'oldName', label: 'From', type: 'column', required: true },
           { name: 'newName', label: 'To', type: 'text', required: true },
@@ -108,13 +129,11 @@ const OPERATION_CATEGORIES: OperationCategory[] = [
       {
         id: 'drop_column',
         name: 'Drop Column',
-        icon: '🗑️',
         params: [{ name: 'column', label: 'Column', type: 'column', required: true }],
       },
       {
         id: 'add_column',
         name: 'Add Column',
-        icon: '➕',
         params: [
           { name: 'name', label: 'Name', type: 'text', required: true },
           { name: 'expression', label: 'Expression', type: 'text', required: true },
@@ -123,7 +142,6 @@ const OPERATION_CATEGORIES: OperationCategory[] = [
       {
         id: 'formula_column',
         name: 'Formula Builder',
-        icon: 'ƒ',
         params: [
           { name: 'name', label: 'New Column Name', type: 'text', required: true },
           {
@@ -189,7 +207,6 @@ const OPERATION_CATEGORIES: OperationCategory[] = [
       {
         id: 'extract_nested',
         name: 'Extract Nested Field',
-        icon: '⌁',
         params: [
           { name: 'column', label: 'Nested Column', type: 'column', required: true },
           {
@@ -204,7 +221,6 @@ const OPERATION_CATEGORIES: OperationCategory[] = [
       {
         id: 'flatten_nested',
         name: 'Flatten Object',
-        icon: '⇲',
         params: [
           { name: 'column', label: 'Object Column', type: 'column', required: true },
           { name: 'path', label: 'Nested JSON Pointer (optional)', type: 'text', required: false },
@@ -213,7 +229,6 @@ const OPERATION_CATEGORIES: OperationCategory[] = [
       {
         id: 'explode_nested',
         name: 'Explode Array',
-        icon: '⇵',
         params: [
           { name: 'column', label: 'Array Column', type: 'column', required: true },
           { name: 'path', label: 'Nested JSON Pointer (optional)', type: 'text', required: false },
@@ -223,7 +238,6 @@ const OPERATION_CATEGORIES: OperationCategory[] = [
       {
         id: 'cast_type',
         name: 'Cast Type',
-        icon: '🔀',
         params: [
           { name: 'column', label: 'Column', type: 'column', required: true },
           {
@@ -245,7 +259,6 @@ const OPERATION_CATEGORIES: OperationCategory[] = [
       {
         id: 'fill_nulls',
         name: 'Fill Nulls',
-        icon: '🔧',
         params: [
           { name: 'column', label: 'Column', type: 'column', required: true },
           { name: 'value', label: 'Fill Value', type: 'text', required: true },
@@ -254,7 +267,6 @@ const OPERATION_CATEGORIES: OperationCategory[] = [
       {
         id: 'sort_rows',
         name: 'Sort',
-        icon: '↕️',
         params: [
           { name: 'column', label: 'Column', type: 'column', required: true },
           {
@@ -273,12 +285,10 @@ const OPERATION_CATEGORIES: OperationCategory[] = [
   },
   {
     name: 'Aggregate',
-    icon: '📊',
     operations: [
       {
         id: 'aggregate',
         name: 'Group & Aggregate',
-        icon: '📊',
         params: [
           { name: 'groupBy', label: 'Group By', type: 'column', required: false },
           {
@@ -303,7 +313,6 @@ const OPERATION_CATEGORIES: OperationCategory[] = [
       {
         id: 'pivot',
         name: 'Pivot',
-        icon: '↔️',
         params: [
           { name: 'index', label: 'Row / Index Column', type: 'column', required: true },
           { name: 'column', label: 'Column to Pivot', type: 'column', required: true },
@@ -327,7 +336,6 @@ const OPERATION_CATEGORIES: OperationCategory[] = [
       {
         id: 'unpivot',
         name: 'Unpivot',
-        icon: '↕️',
         params: [
           {
             name: 'columns',
@@ -355,12 +363,10 @@ const OPERATION_CATEGORIES: OperationCategory[] = [
   },
   {
     name: 'Combine Files',
-    icon: '⑂',
     operations: [
       {
         id: 'join_file',
         name: 'Join Another File',
-        icon: '⑂',
         params: [
           { name: 'filePath', label: 'Second File', type: 'file', required: true },
           {
@@ -388,32 +394,7 @@ const OPERATION_CATEGORIES: OperationCategory[] = [
       {
         id: 'union_file',
         name: 'Append / Union File',
-        icon: '↧',
         params: [{ name: 'filePath', label: 'File to Append', type: 'file', required: true }],
-      },
-    ],
-  },
-  {
-    name: 'Export',
-    icon: '📤',
-    operations: [
-      {
-        id: 'export_parquet',
-        name: 'Export Parquet',
-        icon: '📁',
-        params: [],
-      },
-      {
-        id: 'export_csv',
-        name: 'Export CSV',
-        icon: '📄',
-        params: [],
-      },
-      {
-        id: 'export_json',
-        name: 'Export JSON',
-        icon: '📋',
-        params: [],
       },
     ],
   },
@@ -426,7 +407,6 @@ export const OperationsPanel: React.FC<OperationsPanelProps> = React.memo(
     canUndo,
     canRedo,
     onTransform,
-    onExport,
     onRemoveStep,
     onReorderSteps,
     onUndo,
@@ -434,14 +414,12 @@ export const OperationsPanel: React.FC<OperationsPanelProps> = React.memo(
     onCollapse,
     secondaryFile,
     onSelectSecondaryFile,
-    onSaveRecipe,
-    onReplayRecipe,
-    onPolarsHandoff,
   }) => {
     const [selectedOp, setSelectedOp] = useState<OperationDef | null>(null);
     const [formData, setFormData] = useState<Record<string, unknown>>({});
     const [formError, setFormError] = useState('');
     const [draggedStep, setDraggedStep] = useState<string | null>(null);
+    const [operationSearch, setOperationSearch] = useState('');
     const [expandedCategories, setExpandedCategories] = useState<Set<string>>(
       new Set(OPERATION_CATEGORIES.map((c) => c.name)),
     );
@@ -460,10 +438,6 @@ export const OperationsPanel: React.FC<OperationsPanelProps> = React.memo(
 
     const handleSelectOp = useCallback(
       (op: OperationDef) => {
-        if (op.id.startsWith('export_')) {
-          onExport(op.id.slice('export_'.length) as 'parquet' | 'csv' | 'json');
-          return;
-        }
         setSelectedOp(op);
         setFormError('');
         const initial: Record<string, unknown> = {};
@@ -478,7 +452,7 @@ export const OperationsPanel: React.FC<OperationsPanelProps> = React.memo(
         });
         setFormData(initial);
       },
-      [columns, onExport],
+      [columns],
     );
 
     const handleParamChange = useCallback((name: string, value: unknown) => {
@@ -630,7 +604,7 @@ export const OperationsPanel: React.FC<OperationsPanelProps> = React.memo(
               title="Collapse operations"
               aria-label="Collapse operations"
             >
-              ‹
+              <span className="codicon codicon-close" aria-hidden="true" />
             </button>
           </div>
           <div className="undo-redo-buttons">
@@ -641,7 +615,7 @@ export const OperationsPanel: React.FC<OperationsPanelProps> = React.memo(
               title="Undo last transform"
               aria-label="Undo last transform"
             >
-              ↶
+              Undo
             </button>
             <button
               className="redo-btn"
@@ -650,28 +624,13 @@ export const OperationsPanel: React.FC<OperationsPanelProps> = React.memo(
               title="Redo last undo"
               aria-label="Redo last undo"
             >
-              ↷
+              Redo
             </button>
           </div>
         </div>
-        <div className="recipe-actions">
-          <button type="button" onClick={onSaveRecipe}>
-            Save recipe (.qw)
-          </button>
-          <button type="button" onClick={onReplayRecipe}>
-            Run recipe on this file…
-          </button>
-          <button type="button" onClick={() => onPolarsHandoff('result')}>
-            Continue in Polars…
-          </button>
-          <button type="button" onClick={() => onPolarsHandoff('recipe')}>
-            Open Polars recipe
-          </button>
-        </div>
-
         {transformSteps.length > 0 && (
           <div className="active-transforms">
-            <div className="active-transforms-label">Active Transforms</div>
+            <div className="active-transforms-label">Applied steps · {transformSteps.length}</div>
             <div className="transform-chips">
               {transformSteps.map((step, idx) => (
                 <div
@@ -684,14 +643,16 @@ export const OperationsPanel: React.FC<OperationsPanelProps> = React.memo(
                   onDragEnd={handleDragEnd}
                 >
                   <span className="chip-index">{idx + 1}</span>
-                  <span className="chip-name">{step.name}</span>
+                  <span className="chip-name">
+                    {step.description || step.name.replaceAll('_', ' ')}
+                  </span>
                   <button
                     className="chip-remove"
                     onClick={() => onRemoveStep(step.id)}
                     title={`Remove ${step.name}`}
                     aria-label={`Remove ${step.name} transform`}
                   >
-                    ×
+                    <span className="codicon codicon-close" aria-hidden="true" />
                   </button>
                 </div>
               ))}
@@ -699,51 +660,71 @@ export const OperationsPanel: React.FC<OperationsPanelProps> = React.memo(
           </div>
         )}
 
+        <input
+          className="operation-search"
+          type="search"
+          value={operationSearch}
+          onChange={(event) => setOperationSearch(event.target.value)}
+          placeholder="Find an operation…"
+          aria-label="Find an operation"
+        />
         <div className="operations-categories">
-          {OPERATION_CATEGORIES.map((category) => (
-            <div key={category.name} className="operation-category">
-              <button
-                className="category-header"
-                onClick={() => toggleCategory(category.name)}
-                aria-expanded={expandedCategories.has(category.name)}
-              >
-                <span className="category-icon">{category.icon}</span>
-                <span className="category-name">{category.name}</span>
-                <span
-                  className={`category-chevron ${expandedCategories.has(category.name) ? 'expanded' : ''}`}
+          {OPERATION_CATEGORIES.map((category) => {
+            const matchingOperations = category.operations.filter((operation) =>
+              operation.name.toLowerCase().includes(operationSearch.trim().toLowerCase()),
+            );
+            if (operationSearch && matchingOperations.length === 0) return null;
+            return (
+              <div key={category.name} className="operation-category">
+                <button
+                  className="category-header"
+                  onClick={() => toggleCategory(category.name)}
+                  aria-expanded={operationSearch ? true : expandedCategories.has(category.name)}
                 >
-                  ›
-                </span>
-              </button>
-              {expandedCategories.has(category.name) && (
-                <div className="category-operations">
-                  {category.operations.map((op) => (
-                    <button
-                      key={op.id}
-                      className={`operation-btn ${selectedOp?.id === op.id ? 'selected' : ''}`}
-                      onClick={() => handleSelectOp(op)}
-                    >
-                      <span className="op-icon">{op.icon}</span>
-                      <span className="op-name">{op.name}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          ))}
+                  <span className="category-icon">
+                    <OperationIcon name={category.name} category />
+                  </span>
+                  <span className="category-name">{category.name}</span>
+                  <span
+                    className={`category-chevron ${expandedCategories.has(category.name) ? 'expanded' : ''}`}
+                  >
+                    <span className="codicon codicon-chevron-right" aria-hidden="true" />
+                  </span>
+                </button>
+                {(operationSearch || expandedCategories.has(category.name)) && (
+                  <div className="category-operations">
+                    {matchingOperations.map((op) => (
+                      <button
+                        key={op.id}
+                        className={`operation-btn ${selectedOp?.id === op.id ? 'selected' : ''}`}
+                        onClick={() => handleSelectOp(op)}
+                      >
+                        <span className="op-icon">
+                          <OperationIcon name={op.id} />
+                        </span>
+                        <span className="op-name">{op.name}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
 
         {selectedOp && (
           <div className="operation-form">
             <div className="form-header">
-              <span className="form-icon">{selectedOp.icon}</span>
+              <span className="form-icon">
+                <OperationIcon name={selectedOp.id} />
+              </span>
               <span className="form-title">{selectedOp.name}</span>
               <button
                 className="form-close"
                 onClick={handleCancel}
                 aria-label={`Close ${selectedOp.name} form`}
               >
-                ×
+                <span className="codicon codicon-close" aria-hidden="true" />
               </button>
             </div>
             <div className="form-body">
