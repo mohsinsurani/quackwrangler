@@ -25,7 +25,9 @@ Run **Run QuackWrangler Extension** from the repository's Run and Debug view, th
 - Open data from a read-only workspace and confirm DuckDB spill storage is created under VS Code extension storage rather than a relative `.tmp` directory.
 - Open a folder and confirm supported files appear under their actual subfolders.
 - Open an HTTPS/S3 source. Confirm staged progress is visible, reaches 100%, and a network or format failure appears as an actionable error.
-- Confirm Operations starts collapsed and opens beside the grid in a wide editor or below it at 640 px and narrower. In a narrow split, verify the grid remains usable, Export opens above the content, and collapsing Operations restores the full grid space.
+- Confirm Operations starts collapsed. At desktop width verify it opens beside the usable grid; at 640 px and narrower verify it opens as a dismissible slide-over drawer while rows remain visible. Confirm Escape/backdrop/collapse dismissal, and that Export and Recipe menus remain usable.
+- Check Quality, Charts, and SQL analysis tabs, including empty states and repeated tab toggling. Search operation names and confirm matching categories expand without changing transform behavior.
+- Verify compact profile type/missing/distinct summaries, numeric range markers where available, hover-only nested-cell detail badges, numeric alignment, and that the Copy selected button only appears once rows are selected. Inspect the View menu and selected-row copy action.
 - Resize columns, double-click a divider to auto-fit, inspect long/nested values, and verify resizing does not sort.
 - Select one and several rows; copy with and without headers in CSV and TSV formats.
 - Apply every operation: filter operators, deduplicate, rename, drop, add/formula, cast, fill nulls, sort, group/aggregate, pivot, and unpivot.
@@ -47,7 +49,17 @@ Run **Run QuackWrangler Extension** from the repository's Run and Debug view, th
 
 - Compare README capabilities against the command palette and operation panel.
 - Capture the current UI at 1280×720 using the fixture in `webview-ui/src/main.tsx`.
-- Ensure the overview image and demo GIF show the default collapsed Operations rail, current profiles/grid, Data Quality, and Visualize UI.
+- Ensure the overview image and demo GIF show the current compact toolbar, Quality / Charts / SQL tabs, column profiles with histograms, the one-row footer, and the nested-value inspector.
 - Check README links, Marketplace description, privacy statement, installation steps, changelog, and release notes.
 
 Record any manual failure before release. A passing unit suite does not replace the Extension Development Host smoke test.
+
+## Automated UI check in real VS Code
+
+Run `npm run test:ui` before a release. It launches VS Code unattended (no file pickers or prompts), opens each fixture itself, and exercises the editor in the Dark, Light, High Contrast and High Contrast Light themes plus a 700 px window. It covers paging, sorting, the Export and Recipe menus, search, the Tools drawer (apply, undo, redo, remove), Quality, Charts, SQL (including a rejected write), selection and copy, TSV/JSON/XLSX loading, the nested-value tree, the join form, dbt command visibility, overflow, and text contrast.
+
+It needs a built extension and a local VS Code (`QW_VSCODE_PATH` overrides the location).
+
+`npm run test:ui:linux` runs the same suite on Linux inside Docker (desktop VS Code under a virtual display, with Linux-native dependencies installed in the container). It runs arm64 by default; set `QW_UI_PLATFORM=linux/amd64` for x64, which runs under emulation and is much slower, so pass a single theme, for example `QW_UI_PLATFORM=linux/amd64 npm run test:ui:linux -- "Default Dark Modern"`.
+
+Verified: macOS arm64 and Linux arm64 (all four themes plus a 700 px window), and Linux x64 (all four themes). Windows cannot be run from a Mac or Linux host, so it needs a manual pass of the visual items above on a Windows machine. The AI plan flow and remote HTTPS/S3 sources are not covered and remain manual. Plain HTTP loading through DuckDB's `httpfs` was checked once against a local server; HTTPS certificates and S3 credentials were not.

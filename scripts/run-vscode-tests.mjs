@@ -20,6 +20,7 @@ await Promise.all([
 await Promise.all([
   copyFile(resolve(root, 'tests/fixtures/sample.csv'), resolve(workspace, 'first.csv')),
   copyFile(resolve(root, 'tests/fixtures/sample.csv'), resolve(workspace, 'second.csv')),
+  writeFile(resolve(workspace, 'ui-real.csv'), 'name,amount\nalpha,10\nbeta,20\ngamma,30\n'),
   writeFile(
     resolve(userData, 'User/settings.json'),
     JSON.stringify({

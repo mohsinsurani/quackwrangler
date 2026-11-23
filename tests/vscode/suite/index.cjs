@@ -71,11 +71,11 @@ async function run() {
 
   const root = vscode.workspace.workspaceFolders?.[0]?.uri;
   assert.ok(root, 'The Extension Host test workspace must be open');
-  await vscode.commands.executeCommand(
-    'vscode.open',
-    vscode.Uri.joinPath(root, 'direct.xlsx'),
+  await vscode.commands.executeCommand('vscode.open', vscode.Uri.joinPath(root, 'direct.xlsx'));
+  await waitFor(
+    'direct XLSX opening in the QuackWrangler editor',
+    () => dataEditorTabs().length === 1,
   );
-  await waitFor('direct XLSX opening in the QuackWrangler editor', () => dataEditorTabs().length === 1);
   assert.equal(
     vscode.window.tabGroups.activeTabGroup.activeTab?.input?.viewType,
     'quackwrangler.dataEditor',
@@ -87,7 +87,10 @@ async function run() {
     'quackwrangler.openfile',
     vscode.Uri.joinPath(root, 'first.csv'),
   );
-  await waitFor('the legacy lowercase command to open a panel', () => dataEditorTabs().length === 1);
+  await waitFor(
+    'the legacy lowercase command to open a panel',
+    () => dataEditorTabs().length === 1,
+  );
   await closeAllEditors();
 
   await openFixture('first.csv');
@@ -120,6 +123,15 @@ async function run() {
     () => dataEditorTabs().length === 1,
   );
 
+  await closeAllEditors();
+  await openFixture('ui-real.csv');
+  const realTab = await waitFor('real-data editor tab', () => dataEditorTabs()[0]);
+  assert.equal(realTab.label, 'ui-real.csv');
+  assert.ok(
+    realTab.input instanceof vscode.TabInputCustom ||
+      realTab.input instanceof vscode.TabInputWebview,
+  );
+  assert.ok(realTab.input instanceof vscode.TabInputCustom);
   await closeAllEditors();
   console.log('QuackWrangler VS Code host tests passed');
 }

@@ -372,7 +372,9 @@
     "benchmark:scalability": "node benchmarks/scalability.mjs",
     "benchmark:formats": "node benchmarks/formats.mjs",
     "benchmark:all": "npm run benchmark && npm run benchmark:scalability && npm run benchmark:formats",
-    "prepare": "husky"
+    "prepare": "husky",
+    "test:ui": "npm run build && node tests/vscode/ui/run-all.mjs",
+    "test:ui:linux": "bash tests/vscode/ui/linux/run.sh"
   },
   "dependencies": {
     "@duckdb/node-api": "^2.0.0-r.1",
@@ -391,6 +393,7 @@
     "eslint-plugin-react-hooks": "^7.1.1",
     "husky": "^9.1.7",
     "lint-staged": "^17.6.1",
+    "playwright-core": "^1.65.1",
     "prettier": "^3.10.1",
     "typescript": "^6.0.3",
     "vitest": "^5.1.1"
