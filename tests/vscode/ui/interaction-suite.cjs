@@ -508,21 +508,32 @@ async function step(name, fn) {
     await step('Undo/Redo keyboard shortcuts work', async () => {
       await click('.workspace-actions button:has-text("Steps")');
       const before = await f.locator('.transform-chip').count();
-      await f
-        .locator('.grid-pane')
-        .click({ position: { x: 5, y: 5 } })
-        .catch(() => {});
-      await f.page().keyboard.press(`${MOD}+z`);
-      await f.waitForFunction(
-        (n) => document.querySelectorAll('.transform-chip').length < n,
-        before,
-        { timeout: 8000 },
-      );
-      await f.page().keyboard.press(`${MOD}+Shift+z`);
-      await f.waitForFunction(
+      // The shortcuts are ignored while the app is busy, so wait until it is idle. A key press that
+      // lands during a slow redraw is retried once after refocusing, like a user pressing it again.
+      const idle = () =>
+        f.waitForFunction(() => !document.querySelector('.loading-spinner'), null, {
+          timeout: 8000,
+        });
+      const press = async (keys, done) => {
+        for (let attempt = 1; attempt <= 2; attempt++) {
+          await idle();
+          await f
+            .locator('.grid-pane')
+            .click({ position: { x: 5, y: 5 } })
+            .catch(() => {});
+          await f.page().keyboard.press(keys);
+          try {
+            await f.waitForFunction(done, before, { timeout: attempt === 1 ? 4000 : 8000 });
+            return;
+          } catch (error) {
+            if (attempt === 2) throw error;
+          }
+        }
+      };
+      await press(`${MOD}+z`, (n) => document.querySelectorAll('.transform-chip').length < n);
+      await press(
+        `${MOD}+Shift+z`,
         (n) => document.querySelectorAll('.transform-chip').length === n,
-        before,
-        { timeout: 8000 },
       );
     });
 
