@@ -127,7 +127,12 @@ async function step(name, fn) {
     const detail = await fn();
     results.push({ name, ok: true, detail });
   } catch (e) {
-    results.push({ name, ok: false, detail: String(e.message || e).split('\n')[0] });
+    // Keep Playwright's call log (what it was waiting for) so CI failures are diagnosable.
+    const lines = String(e.message || e)
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(Boolean);
+    results.push({ name, ok: false, detail: lines.slice(0, 6).join(' | ') });
   }
 }
 
