@@ -130,6 +130,9 @@ const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
 const databaseFixtures = { duckdb: false, sqlite: false };
 const databaseReady = (async () => {
   const ws = path.join(OUT, 'ws');
+  // CI reuses one output folder for every theme, so start from clean files each time.
+  for (const name of ['shop.duckdb', 'shop.duckdb.wal', 'app.sqlite', 'legacy.db', 'Thumbs.db'])
+    fs.rmSync(path.join(ws, name), { force: true });
   try {
     const { DuckDBInstance } = require(path.join(ROOT, 'node_modules/@duckdb/node-api'));
     const file = path.join(ws, 'shop.duckdb');
@@ -146,8 +149,11 @@ const databaseReady = (async () => {
       await connection.run(sql);
     connection.closeSync();
     databaseFixtures.duckdb = true;
-  } catch {
-    /* DuckDB unavailable: the database checks are skipped */
+  } catch (error) {
+    console.log(
+      'NOTE  DuckDB fixture not created, database checks skipped:',
+      String(error).slice(0, 160),
+    );
   }
   try {
     const { DatabaseSync } = require('node:sqlite');
@@ -161,8 +167,11 @@ const databaseReady = (async () => {
     fs.copyFileSync(path.join(ws, 'app.sqlite'), path.join(ws, 'legacy.db'));
     fs.writeFileSync(path.join(ws, 'Thumbs.db'), 'not a database');
     databaseFixtures.sqlite = true;
-  } catch {
-    /* node:sqlite unavailable on this Node: the SQLite check is skipped */
+  } catch (error) {
+    console.log(
+      'NOTE  SQLite fixture not created, SQLite checks skipped:',
+      String(error).slice(0, 160),
+    );
   }
 })();
 
