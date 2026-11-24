@@ -176,18 +176,17 @@ function xlsxValuePredicate(column: string, expression: string): string {
   return `NULLIF(TRIM(CAST(${id} AS VARCHAR)), '') IS NOT NULL AND ${expression}`;
 }
 
+// Excel sheets keep their column names in the first row, so every read uses header=true.
 async function resolveXlsxColumnTypes(
   connection: DuckDBConnection,
   filePath: string,
-  header = false,
 ): Promise<XlsxColumnType[]> {
-  const headerOption = header ? ', header=true' : '';
-  const source = `read_xlsx(${quoteLiteral(filePath)}, all_varchar=true${headerOption})`;
+  const source = `read_xlsx(${quoteLiteral(filePath)}, all_varchar=true, header=true)`;
   const schema = await connection.query(`DESCRIBE SELECT * FROM ${source}`);
   const names = schema.rows.map((row: unknown[]) => String(row[0]));
   if (names.length === 0) return [];
   const nativeSchema = await connection.query(
-    `DESCRIBE SELECT * FROM read_xlsx(${quoteLiteral(filePath)}${header ? ', header=true' : ''})`,
+    `DESCRIBE SELECT * FROM read_xlsx(${quoteLiteral(filePath)}, header=true)`,
   );
   const nativeTypes = new Map(
     nativeSchema.rows.map((row: unknown[]) => [String(row[0]), String(row[1]).toUpperCase()]),
@@ -256,7 +255,7 @@ export async function prepareSourceSchema(
   const type = fileType || detectFileType(filePath);
   if (type === 'xls') {
     const readerPath = await resolveReaderPath(connection, filePath);
-    const columns = await resolveXlsxColumnTypes(connection, readerPath, true);
+    const columns = await resolveXlsxColumnTypes(connection, readerPath);
     if (columns.length > 0) {
       cacheXlsxColumnTypes(connection, readerPath, columns);
       cacheXlsxColumnTypes(connection, filePath, columns);
@@ -280,7 +279,6 @@ export function getTableRef(
   fileType?: FileType,
   csvColumns?: CsvColumnType[],
   xlsxColumns?: XlsxColumnType[],
-  xlsxHeader = false,
 ): string {
   const type = fileType || detectFileType(filePath);
   const readFn = getReadFunction(type);
@@ -293,7 +291,7 @@ export function getTableRef(
     return `read_csv_auto(${quoteLiteral(filePath)})`;
   }
   if (type === 'xlsx') {
-    const source = `${readFn}(${quoteLiteral(filePath)}, all_varchar=true${xlsxHeader ? ', header=true' : ''})`;
+    const source = `${readFn}(${quoteLiteral(filePath)}, all_varchar=true, header=true)`;
     if (!xlsxColumns || xlsxColumns.length === 0) return source;
     const projection = xlsxColumns
       .map(({ name, type: targetType, excelSerial }) => {
@@ -342,7 +340,6 @@ export function getConnectionTableRef(
     getCachedCsvColumnTypes(connection, filePath),
     getCachedXlsxColumnTypes(connection, readerPath) ??
       getCachedXlsxColumnTypes(connection, filePath),
-    legacyXls,
   );
 }
 

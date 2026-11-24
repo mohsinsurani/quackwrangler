@@ -40,12 +40,12 @@ function rule(selector: string, source = themeSource): string {
 }
 
 describe('webview layout contracts', () => {
-  it('keeps analysis controls in a dedicated scroll region above the data grid', () => {
-    expect(appSource).toContain('<div className="analysis-pane">');
-    expect(appSource.indexOf('<div className="analysis-pane">')).toBeLessThan(
+  it('keeps analysis tabs in a dedicated region above the data grid', () => {
+    expect(appSource).toContain('className={`analysis-pane ${analysisTab ?');
+    expect(appSource.indexOf('className={`analysis-pane ${analysisTab ?')).toBeLessThan(
       appSource.indexOf('<DataGrid'),
     );
-    expect(rule('.analysis-pane')).toContain('overflow-y: auto');
+    expect(rule('.analysis-pane.analysis-open')).toContain('overflow: auto');
     expect(rule('.analysis-pane')).toContain('max-height:');
   });
 
@@ -71,7 +71,7 @@ describe('webview layout contracts', () => {
 
   it('keeps search outside analysis content and uses explicit disclosure buttons', () => {
     expect(appSource.search(/<form\s+className="grid-search"/)).toBeGreaterThan(
-      appSource.indexOf('<div className="analysis-pane">'),
+      appSource.indexOf('className={`analysis-pane ${analysisTab ?'),
     );
     expect(rule('.grid-search')).toContain('flex: none');
     expect(rule('.analysis-toggle')).toContain('position: sticky');
@@ -84,15 +84,11 @@ describe('webview layout contracts', () => {
     expect(chartSource).toContain('setOpen(true)');
   });
 
-  it('uses a full-width data canvas with a stacked tools pane in narrow editors', () => {
+  it('uses a full-width data canvas with a responsive tools drawer in narrow editors', () => {
     const narrow = themeSource.split('@media (max-width: 640px)')[1] ?? '';
-    expect(rule('.app-layout', narrow)).toContain('grid-template-columns: minmax(0, 1fr)');
-    expect(rule('.app-layout:not(.operations-collapsed)', narrow)).toMatch(
-      /grid-template-rows:\s*auto\s+minmax\([^)]+\)\s+minmax\([^)]+\)/,
-    );
-    expect(rule('.grid-pane')).toContain('grid-row: 2');
-    expect(rule('.operations-pane', narrow)).toContain('grid-column: 1');
-    expect(rule('.operations-pane', narrow)).toContain('grid-row: 3');
+    expect(rule('.operations-open .operations-pane')).toContain('position: fixed');
+    expect(themeSource).toContain('.operations-backdrop {\n  display: none;');
+    expect(themeSource).toContain('.operations-open .operations-backdrop {\n    position: fixed;');
   });
 
   it('does not render a generated-code copy pane', () => {
@@ -112,6 +108,52 @@ describe('webview layout contracts', () => {
     );
   });
 
+  it('provides one analysis tab strip and one recipe menu', () => {
+    expect(appSource).toContain('role="tablist" aria-label="Data analysis"');
+    expect(appSource).toContain('Recipe');
+    expect(appSource).toContain('codicon-chevron-down');
+    expect(appSource).toContain('Quality');
+    expect(appSource).toContain('Charts');
+    expect(operationsSource).not.toContain('Save recipe (.qw)');
+    expect(operationsSource).not.toContain('Continue in Polars…');
+  });
+
+  it('keeps pagination in the data-grid footer and exposes profile histograms', () => {
+    expect(appSource).not.toContain('className="pagination-controls"');
+    expect(gridSource).toContain('className="footer-pagination"');
+    expect(gridSource).toContain('className="footer-scope"');
+    expect(profilesSource).toContain('className="profile-histogram"');
+    expect(profilesSource).toContain('histogram.map');
+  });
+
+  it('uses consistent drawn operation icons rather than emoji labels', () => {
+    expect(appSource).toContain("import '@vscode/codicons/dist/codicon.css'");
+    expect(operationsSource).toContain('codicon-');
+  });
+
+  it('uses Codicons instead of decorative text glyphs and emoji in components', () => {
+    const dir = path.join(projectRoot, 'webview-ui/src/components');
+    const sources = [
+      appSource,
+      ...fs.readdirSync(dir).map((name) => fs.readFileSync(path.join(dir, name), 'utf8')),
+    ].join('\n');
+    // Allowed: × / › inside prose or math labels (e.g. "year × revenue", breadcrumb text).
+    expect(sources).not.toMatch(/[✦⏳🦆📊▾⌕↔◇▦○]/u);
+    expect(sources).not.toMatch(/>\s*[×›‹]\s*</);
+  });
+
+  it('lets the VS Code webview load the bundled codicon font', () => {
+    const viteConfig = fs.readFileSync(path.join(projectRoot, 'webview-ui/vite.config.ts'), 'utf8');
+    const providerSource = fs.readFileSync(
+      path.join(projectRoot, 'src/webview/provider.ts'),
+      'utf8',
+    );
+    // Root-absolute asset URLs do not resolve inside a webview, so CSS fonts must be relative.
+    expect(viteConfig).toContain("base: './'");
+    expect(providerSource).toContain('font-src ${webview.cspSource}');
+    expect(providerSource).toContain('(?:\\.\\/|\\/)?(assets');
+  });
+
   it('gives each top-level work action a distinct target and prevents dropdown clipping', () => {
     expect(appSource).toContain("postMessage({ type: 'openRecipePicker' })");
     expect(appSource).toContain('setOperationsCollapsed(false)');
@@ -120,6 +162,8 @@ describe('webview layout contracts', () => {
     expect(rule('.grid-pane')).toContain('grid-column: 1');
     expect(rule('.workspace-actions')).toContain('z-index: 40');
     expect(themeSource).toContain('.workspace-actions:has(.export-menu-items)');
+    expect(rule('.type-number,\n.type-float')).toContain('color: var(--text)');
+    expect(themeSource).toContain('.footer-options');
   });
 
   it('labels temporary search and inspection separately from export scope', () => {
@@ -175,7 +219,8 @@ describe('webview layout contracts', () => {
     expect(gridSource).toContain('aria-label="Cell content display"');
     expect(gridSource).toContain("cellDisplayMode === 'wrap' ? 54 : ROW_HEIGHT");
     expect(gridSource).toContain('cellText.length > 18');
-    expect(gridSource).toContain("'View' : 'More'");
+    expect(gridSource).toContain("'fields'}");
+    expect(gridSource).toContain("'More'}");
     expect(rule('.wrap-cells .cell-value')).toContain('-webkit-line-clamp: 2');
   });
 
@@ -187,7 +232,8 @@ describe('webview layout contracts', () => {
     expect(gridSource).toContain('<option value="pipe">Pipe</option>');
     expect(gridSource).toContain("'Select all rows'");
     expect(gridSource).toContain('aria-label={`Select row ${rowIndex + 1}`}');
-    expect(gridSource).toContain('Copy selected');
+    expect(gridSource).toContain('copy-selected-word');
+    expect(gridSource).toContain('aria-label={`Copy ${selectedRowIndexes.length} selected row');
     expect(gridSource).toContain('checked={includeHeaders}');
   });
 
@@ -230,7 +276,7 @@ describe('webview layout contracts', () => {
     expect(profilesSource).toContain('Missing:');
     expect(profilesSource).toContain('Distinct:');
     expect(rule('.profile-grid-row')).toContain('position: sticky');
-    expect(rule('.profile-card')).toContain('height: 126px');
+    expect(rule('.profile-card')).toContain('height: 104px');
     expect(rule('.column-profiles')).toContain('padding: 0');
   });
 
@@ -338,7 +384,9 @@ describe('webview layout contracts', () => {
   });
 
   it('adds aria-expanded to category disclosure buttons', () => {
-    expect(operationsSource).toContain('aria-expanded={expandedCategories.has(category.name)}');
+    expect(operationsSource).toContain(
+      'operationSearch ? true : expandedCategories.has(category.name)',
+    );
   });
 
   it('labels the form close and chip remove buttons', () => {

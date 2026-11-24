@@ -19,14 +19,20 @@ interface DataGridProps {
   onRowSelect?: (row: number) => void;
   profiles?: ColumnProfile[];
   profileTotalRows?: number;
+  pageOffset: number;
+  pageLimit: number;
+  pageTotalRows: number;
+  resultLabel: string;
+  resultRowCount: number;
+  onPageChange: (offset: number) => void;
   profilesLoading?: boolean;
   profilesEnabled?: boolean;
   onQuickFilter?: (column: string, operator: string, value?: unknown) => void;
   onTransform?: (type: string, params: Record<string, unknown>) => void;
 }
 
-const ROW_HEIGHT = 28;
-const PROFILE_HEIGHT = 126;
+const ROW_HEIGHT = 30;
+const PROFILE_HEIGHT = 104;
 const HEADER_HEIGHT = 42;
 const BUFFER_SIZE = 10;
 type ColumnWidthMode = 'compact' | 'fit' | 'wide';
@@ -155,6 +161,12 @@ export const DataGrid: React.FC<DataGridProps> = ({
   onRowSelect,
   profiles = [],
   profileTotalRows = 0,
+  pageOffset,
+  pageLimit,
+  pageTotalRows,
+  resultLabel,
+  resultRowCount,
+  onPageChange,
   profilesLoading = false,
   profilesEnabled = true,
   onQuickFilter,
@@ -471,10 +483,13 @@ export const DataGrid: React.FC<DataGridProps> = ({
                   aria-label={`Auto-fit ${col.name} column`}
                   title={`Auto-fit ${col.name} to its content`}
                 >
-                  ↔
+                  <span className="codicon codicon-arrow-both" aria-hidden="true" />
                 </button>
                 {sortBy === col.name && (
-                  <span className="sort-indicator">{sortDirection === 'asc' ? ' ↑' : ' ↓'}</span>
+                  <span
+                    className={`sort-indicator codicon codicon-arrow-${sortDirection === 'asc' ? 'up' : 'down'}`}
+                    aria-hidden="true"
+                  />
                 )}
                 <span
                   className="column-resizer"
@@ -562,7 +577,9 @@ export const DataGrid: React.FC<DataGridProps> = ({
                           <span className="cell-value">{cellText}</span>
                           {canInspect && (
                             <span className="metadata-badge">
-                              {cell !== null && typeof cell === 'object' ? 'View' : 'More'}
+                              {cell !== null && typeof cell === 'object'
+                                ? `${Array.isArray(cell) ? cell.length : Object.keys(cell).length} ${Array.isArray(cell) ? 'items' : 'fields'}`
+                                : 'More'}
                             </span>
                           )}
                         </div>
@@ -586,7 +603,7 @@ export const DataGrid: React.FC<DataGridProps> = ({
                 onClick={() => setInspectedCell(null)}
                 aria-label="Close cell inspector"
               >
-                ×
+                <span className="codicon codicon-close" aria-hidden="true" />
               </button>
             </header>
             {inspectedCell.value !== null && typeof inspectedCell.value === 'object' ? (
@@ -708,93 +725,127 @@ export const DataGrid: React.FC<DataGridProps> = ({
         )}
       </div>
       <div className="data-grid-footer">
-        <span className="row-count">{rows.length.toLocaleString()} rows</span>
-        <span className="col-count">{columns.length} columns</span>
-        <span className="selected-count">
-          {selectedRowIndexes.length.toLocaleString()} selected
+        <span className="footer-scope">
+          {resultLabel}: {resultRowCount.toLocaleString()}
         </span>
+        <span className="footer-range">
+          {pageTotalRows === 0 ? 0 : pageOffset + 1}–
+          {Math.min(pageOffset + pageLimit, pageTotalRows)} / {pageTotalRows.toLocaleString()}
+        </span>
+        {selectedRowIndexes.length > 0 && (
+          <span className="selected-count">
+            {selectedRowIndexes.length.toLocaleString()} selected
+          </span>
+        )}
         {copyStatus && (
           <span className="copy-status" role="status">
             {copyStatus}
           </span>
         )}
-        <label className="include-headers">
-          <input
-            type="checkbox"
-            checked={includeHeaders}
-            onChange={(event) => setIncludeHeaders(event.target.checked)}
-          />
-          Headers
-        </label>
-        <label className="row-copy-format">
-          Row copy
-          <select
-            value={rowCopyFormat}
-            onChange={(event) => setRowCopyFormat(event.target.value as RowCopyFormat)}
-            aria-label="Row copy format"
-          >
-            <option value="tsv">TSV</option>
-            <option value="csv">CSV</option>
-            <option value="pipe">Pipe</option>
-            <option value="json">JSON</option>
-          </select>
-        </label>
-        <button
-          className="copy-selected-button"
-          type="button"
-          disabled={selectedRowIndexes.length === 0}
-          onClick={() => {
-            const selected = selectedRowIndexes.map((index) => rows[index]);
-            void copyToClipboard(
-              serializeRows(selected, columns, rowCopyFormat, includeHeaders),
-              `${selected.length} row${selected.length === 1 ? '' : 's'} copied`,
-            );
-          }}
-        >
-          Copy selected
-        </button>
-        <div className="column-width-controls" role="group" aria-label="Table column width">
+        <div className="footer-options">
+          {selectedRowIndexes.length > 0 && (
+            <button
+              className="copy-selected-button"
+              type="button"
+              aria-label={`Copy ${selectedRowIndexes.length} selected row${selectedRowIndexes.length === 1 ? '' : 's'}`}
+              title={`Copy ${selectedRowIndexes.length} selected row${selectedRowIndexes.length === 1 ? '' : 's'}`}
+              onClick={() => {
+                const selected = selectedRowIndexes.map((index) => rows[index]);
+                void copyToClipboard(
+                  serializeRows(selected, columns, rowCopyFormat, includeHeaders),
+                  `${selected.length} row${selected.length === 1 ? '' : 's'} copied`,
+                );
+              }}
+            >
+              Copy<span className="copy-selected-word"> selected</span>
+            </button>
+          )}
+          <details className="view-options">
+            <summary>View</summary>
+            <div className="view-options-menu">
+              <label className="include-headers">
+                <input
+                  type="checkbox"
+                  checked={includeHeaders}
+                  onChange={(event) => setIncludeHeaders(event.target.checked)}
+                />
+                Headers
+              </label>
+              <label className="row-copy-format">
+                Row copy
+                <select
+                  value={rowCopyFormat}
+                  onChange={(event) => setRowCopyFormat(event.target.value as RowCopyFormat)}
+                  aria-label="Row copy format"
+                >
+                  <option value="tsv">TSV</option>
+                  <option value="csv">CSV</option>
+                  <option value="pipe">Pipe</option>
+                  <option value="json">JSON</option>
+                </select>
+              </label>
+              <div className="column-width-controls" role="group" aria-label="Table column width">
+                <button
+                  type="button"
+                  className={
+                    Object.keys(columnWidths).length === columns.length && columns.length > 0
+                      ? 'active'
+                      : ''
+                  }
+                  onClick={autoFitAllColumns}
+                  title="Size every column to its longest loaded value"
+                >
+                  Auto-fit
+                </button>
+                {(['compact', 'fit', 'wide'] as ColumnWidthMode[]).map((mode) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    className={
+                      columnWidthMode === mode && Object.keys(columnWidths).length === 0
+                        ? 'active'
+                        : ''
+                    }
+                    onClick={() => setWidthMode(mode)}
+                  >
+                    {mode[0].toUpperCase() + mode.slice(1)}
+                  </button>
+                ))}
+              </div>
+              <div className="cell-display-controls" role="group" aria-label="Cell content display">
+                {(['clip', 'wrap'] as CellDisplayMode[]).map((mode) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    className={cellDisplayMode === mode ? 'active' : ''}
+                    onClick={() => setCellDisplayMode(mode)}
+                  >
+                    {mode === 'wrap' ? 'Wrap cells' : 'Clip cells'}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </details>
+        </div>
+        <div className="footer-pagination">
           <button
             type="button"
-            className={
-              Object.keys(columnWidths).length === columns.length && columns.length > 0
-                ? 'active'
-                : ''
-            }
-            onClick={autoFitAllColumns}
-            title="Size every column to its longest loaded value"
+            disabled={pageOffset === 0}
+            aria-label="Previous page"
+            title="Previous page"
+            onClick={() => onPageChange(pageOffset - pageLimit)}
           >
-            Auto-fit
+            <span className="codicon codicon-chevron-left" aria-hidden="true" />
           </button>
-          {(['compact', 'fit', 'wide'] as ColumnWidthMode[]).map((mode) => (
-            <button
-              key={mode}
-              type="button"
-              className={
-                columnWidthMode === mode && Object.keys(columnWidths).length === 0 ? 'active' : ''
-              }
-              onClick={() => setWidthMode(mode)}
-            >
-              {mode[0].toUpperCase() + mode.slice(1)}
-            </button>
-          ))}
-        </div>
-        <div className="cell-display-controls" role="group" aria-label="Cell content display">
-          {(['clip', 'wrap'] as CellDisplayMode[]).map((mode) => (
-            <button
-              key={mode}
-              type="button"
-              className={cellDisplayMode === mode ? 'active' : ''}
-              onClick={() => setCellDisplayMode(mode)}
-              title={
-                mode === 'wrap'
-                  ? 'Wrap long cell values onto two lines'
-                  : 'Keep rows compact and clip long values'
-              }
-            >
-              {mode === 'wrap' ? 'Wrap' : 'Clip'}
-            </button>
-          ))}
+          <button
+            type="button"
+            disabled={pageOffset + pageLimit >= pageTotalRows}
+            aria-label="Next page"
+            title="Next page"
+            onClick={() => onPageChange(pageOffset + pageLimit)}
+          >
+            <span className="codicon codicon-chevron-right" aria-hidden="true" />
+          </button>
         </div>
       </div>
     </div>

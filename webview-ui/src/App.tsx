@@ -10,6 +10,7 @@ import { QueryConsole } from './components/QueryConsole';
 import { useVSCodeAPI } from './hooks/useVSCodeAPI';
 import type { ColumnInfo, TransformStep } from './types';
 import './styles/theme.css';
+import '@vscode/codicons/dist/codicon.css';
 
 interface PageState {
   offset: number;
@@ -78,6 +79,23 @@ function transformLabel(type: string): string {
   return label.charAt(0).toUpperCase() + label.slice(1);
 }
 
+function stepLabel(step: TransformStep): string {
+  const names: Record<string, string> = {
+    filter_rows: 'Filter',
+    filterRows: 'Filter',
+    formula_column: 'Formula',
+    add_column: 'Add column',
+    rename_column: 'Rename',
+    drop_column: 'Drop column',
+    fill_nulls: 'Fill missing',
+    sort_rows: 'Sort',
+    deduplicate: 'Remove duplicates',
+  };
+  const name = names[step.name] ?? transformLabel(step.name);
+  const column = step.params.column ?? step.params.oldName ?? step.params.name;
+  return typeof column === 'string' && column ? `${name} · ${column}` : name;
+}
+
 export const App: React.FC = () => {
   const { postMessage, onMessage } = useVSCodeAPI();
   const [filePath, setFilePath] = useState('');
@@ -91,6 +109,7 @@ export const App: React.FC = () => {
   const [sortBy, setSortBy] = useState<string>();
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
   const [stats, setStats] = useState<ColumnProfile[]>([]);
+  const [statsLoading, setStatsLoading] = useState(false);
   const [customQueryActive, setCustomQueryActive] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeSearchQuery, setActiveSearchQuery] = useState('');
@@ -101,6 +120,9 @@ export const App: React.FC = () => {
   const [chartLoading, setChartLoading] = useState(false);
   const [operationsCollapsed, setOperationsCollapsed] = useState(true);
   const [exportMenuOpen, setExportMenuOpen] = useState(false);
+  const [recipeMenuOpen, setRecipeMenuOpen] = useState(false);
+  const [analysisTab, setAnalysisTab] = useState<'quality' | 'charts' | 'sql' | null>(null);
+  const [showSearch, setShowSearch] = useState(false);
   const [inspection, setInspection] = useState<{ column: string; operator: string } | null>(null);
   const [fillDialog, setFillDialog] = useState<{ column: string; value: string } | null>(null);
   const [fillError, setFillError] = useState<string | null>(null);
@@ -118,6 +140,7 @@ export const App: React.FC = () => {
   const [secondaryFile, setSecondaryFile] = useState<{ filePath: string; columns: string[] }>();
   const searchInputRef = useRef<HTMLInputElement>(null);
   const exportButtonRef = useRef<HTMLButtonElement>(null);
+  const recipeButtonRef = useRef<HTMLButtonElement>(null);
   const exportFocusPending = useRef(false);
   const fillTriggerRef = useRef<HTMLElement | null>(null);
   const pendingTransform = useRef<string | null>(null);
@@ -221,7 +244,13 @@ export const App: React.FC = () => {
         const history = update.history.map((item) => ({
           id: item.id,
           name: item.type,
-          description: item.description,
+          description: stepLabel({
+            id: item.id,
+            name: item.type,
+            description: item.description,
+            params: item.params,
+            timestamp: 0,
+          }),
           params: item.params,
           timestamp: 0,
         }));
@@ -233,6 +262,7 @@ export const App: React.FC = () => {
         setPage({ ...update.page, scope: 'pipeline' });
         setDatasetRowCount(update.schema.rowCount);
         setStats([]);
+        setStatsLoading(true);
         setQualityIssues([]);
         setChartConfig(undefined);
         setChartRows([]);
@@ -275,6 +305,7 @@ export const App: React.FC = () => {
         setRows(queryResult.result.rows);
         setPage({ ...queryResult.page, scope: 'query' });
         setStats([]);
+        setStatsLoading(true);
         setCustomQueryActive(true);
         setActiveQuerySql(queryResult.customQuerySql);
         setActiveSearchQuery('');
@@ -322,6 +353,7 @@ export const App: React.FC = () => {
         )
           return;
         setStats(message.stats);
+        setStatsLoading(false);
         setQualityIssues(message.quality?.issues ?? []);
         // Stats is an independent background request — do not clear global loading,
         // which may be for an unrelated transform or query that is still in flight.
@@ -387,13 +419,19 @@ export const App: React.FC = () => {
     const handleShortcut = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'f' && filePath) {
         event.preventDefault();
-        searchInputRef.current?.focus();
-        searchInputRef.current?.select();
+        setShowSearch(true);
+        requestAnimationFrame(() => {
+          searchInputRef.current?.focus();
+          searchInputRef.current?.select();
+        });
+      } else if (event.key === 'Escape' && !event.defaultPrevented && !operationsCollapsed) {
+        event.preventDefault();
+        setOperationsCollapsed(true);
       }
     };
     window.addEventListener('keydown', handleShortcut);
     return () => window.removeEventListener('keydown', handleShortcut);
-  }, [filePath]);
+  }, [filePath, operationsCollapsed]);
 
   useEffect(() => {
     if (!filePath) return;
@@ -490,19 +528,42 @@ export const App: React.FC = () => {
           <small title={loadingProgress.source}>{loadingProgress.source}</small>
         </div>
       )}
-      <div className={`app-layout ${operationsCollapsed ? 'operations-collapsed' : ''}`}>
+      <div
+        className={`app-layout ${operationsCollapsed ? 'operations-collapsed' : 'operations-open'}`}
+      >
         <div className="grid-content">
           {filePath ? (
             <>
               <div className="workspace-actions">
-                <button type="button" onClick={() => setOperationsCollapsed(false)}>
+                <button
+                  type="button"
+                  className={operationsCollapsed ? '' : 'active'}
+                  onClick={() => setOperationsCollapsed((value) => !value)}
+                  aria-expanded={!operationsCollapsed}
+                >
                   Transform
                 </button>
-                <button type="button" onClick={() => setOperationsCollapsed(false)}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setOperationsCollapsed(false);
+                    window.setTimeout(
+                      () =>
+                        document
+                          .querySelector('.active-transforms')
+                          ?.scrollIntoView({ block: 'nearest' }),
+                      0,
+                    );
+                  }}
+                >
                   Steps · {steps.length}
                 </button>
                 <div
                   className="export-menu"
+                  onBlur={(event) => {
+                    if (!event.currentTarget.contains(event.relatedTarget as Node | null))
+                      setExportMenuOpen(false);
+                  }}
                   onKeyDown={(event) => {
                     if (event.key !== 'Escape' || !exportMenuOpen) return;
                     event.preventDefault();
@@ -517,7 +578,7 @@ export const App: React.FC = () => {
                     onClick={() => setExportMenuOpen((value) => !value)}
                     aria-expanded={exportMenuOpen}
                   >
-                    Export ▾
+                    Export <span className="codicon codicon-chevron-down" aria-hidden="true" />
                   </button>
                   {exportMenuOpen && (
                     <div className="export-menu-items" role="menu">
@@ -536,6 +597,7 @@ export const App: React.FC = () => {
                         </button>
                       ))}
                       <button
+                        className="menu-secondary"
                         type="button"
                         role="menuitem"
                         disabled={Boolean(inspection)}
@@ -547,6 +609,7 @@ export const App: React.FC = () => {
                         Continue in Polars…
                       </button>
                       <button
+                        className="menu-secondary"
                         type="button"
                         role="menuitem"
                         disabled={Boolean(inspection)}
@@ -560,25 +623,75 @@ export const App: React.FC = () => {
                     </div>
                   )}
                 </div>
-                <button type="button" onClick={() => sendRequest('grid', { type: 'saveRecipe' })}>
-                  Save recipe
-                </button>
-                <button type="button" onClick={() => postMessage({ type: 'openRecipePicker' })}>
-                  Run recipe…
-                </button>
-                {operationsCollapsed && (
+                <div
+                  className="recipe-menu"
+                  onBlur={(event) => {
+                    if (!event.currentTarget.contains(event.relatedTarget as Node | null))
+                      setRecipeMenuOpen(false);
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key !== 'Escape' || !recipeMenuOpen) return;
+                    event.preventDefault();
+                    setRecipeMenuOpen(false);
+                    recipeButtonRef.current?.focus();
+                  }}
+                >
                   <button
-                    className="operations-expand"
+                    ref={recipeButtonRef}
                     type="button"
-                    onClick={() => setOperationsCollapsed(false)}
+                    aria-expanded={recipeMenuOpen}
+                    onClick={() => setRecipeMenuOpen((value) => !value)}
                   >
-                    Tools
+                    Recipe <span className="codicon codicon-chevron-down" aria-hidden="true" />
                   </button>
-                )}
+                  {recipeMenuOpen && (
+                    <div className="export-menu-items" role="menu">
+                      <button
+                        type="button"
+                        role="menuitem"
+                        onClick={() => {
+                          setRecipeMenuOpen(false);
+                          sendRequest('grid', { type: 'saveRecipe' });
+                        }}
+                      >
+                        Save recipe…
+                      </button>
+                      <button
+                        type="button"
+                        role="menuitem"
+                        onClick={() => {
+                          setRecipeMenuOpen(false);
+                          postMessage({ type: 'openRecipePicker' });
+                        }}
+                      >
+                        Run recipe…
+                      </button>
+                    </div>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  className="toolbar-search"
+                  aria-label="Open search"
+                  onClick={() => {
+                    setShowSearch(true);
+                    requestAnimationFrame(() => searchInputRef.current?.focus());
+                  }}
+                >
+                  <span className="codicon codicon-search" aria-hidden="true" />
+                </button>
               </div>
             </>
           ) : null}
         </div>
+        {!operationsCollapsed && (
+          <button
+            className="operations-backdrop"
+            type="button"
+            aria-label="Close tools panel"
+            onClick={() => setOperationsCollapsed(true)}
+          />
+        )}
         {!operationsCollapsed && (
           <div className="operations-pane">
             <OperationsPanel
@@ -587,10 +700,6 @@ export const App: React.FC = () => {
               canUndo={canUndo && !loading}
               canRedo={canRedo && !loading}
               onTransform={transform}
-              onExport={requestExport}
-              onSaveRecipe={() => sendRequest('grid', { type: 'saveRecipe' })}
-              onReplayRecipe={() => postMessage({ type: 'openRecipePicker' })}
-              onPolarsHandoff={requestPolarsHandoff}
               onRemoveStep={(id) => {
                 if (loading) return;
                 setLoading(true);
@@ -618,20 +727,47 @@ export const App: React.FC = () => {
         <div className="grid-pane">
           {filePath ? (
             <>
-              <div className="analysis-pane">
-                <QueryConsole
-                  loading={loading}
-                  active={customQueryActive}
-                  onRun={(sql) => {
-                    setLoading(true);
-                    sendRequest('grid', { type: 'executeCustomQuery', sql });
-                  }}
-                  onClear={() => {
-                    setLoading(true);
-                    sendRequest('grid', { type: 'clearCustomQuery' });
-                  }}
-                />
-                {!customQueryActive && !operationsCollapsed && (
+              <div className={`analysis-pane ${analysisTab ? 'analysis-open' : ''}`}>
+                {!customQueryActive && (
+                  <div className="analysis-tabs" role="tablist" aria-label="Data analysis">
+                    {(
+                      [
+                        [
+                          'quality',
+                          `Quality${qualityIssues.length ? ` · ${qualityIssues.length}` : ''}`,
+                        ],
+                        ['charts', 'Charts'],
+                        ['sql', 'SQL'],
+                      ] as const
+                    ).map(([tab, label]) => (
+                      <button
+                        key={tab}
+                        type="button"
+                        role="tab"
+                        aria-selected={analysisTab === tab}
+                        className={analysisTab === tab ? 'active' : ''}
+                        onClick={() => setAnalysisTab((current) => (current === tab ? null : tab))}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {customQueryActive || analysisTab === 'sql' ? (
+                  <QueryConsole
+                    loading={loading}
+                    active={customQueryActive}
+                    onRun={(sql) => {
+                      setLoading(true);
+                      sendRequest('grid', { type: 'executeCustomQuery', sql });
+                    }}
+                    onClear={() => {
+                      setLoading(true);
+                      sendRequest('grid', { type: 'clearCustomQuery' });
+                    }}
+                  />
+                ) : null}
+                {!customQueryActive && analysisTab === 'quality' && (
                   <DataQualitySummary
                     issues={qualityIssues}
                     loading={loading && stats.length === 0}
@@ -657,7 +793,7 @@ export const App: React.FC = () => {
                     onTransform={transform}
                   />
                 )}
-                {!customQueryActive && !operationsCollapsed && (
+                {!customQueryActive && analysisTab === 'charts' && (
                   <ChartPanel
                     columns={columns}
                     config={chartConfig}
@@ -673,6 +809,18 @@ export const App: React.FC = () => {
               </div>
               <form
                 className="grid-search"
+                hidden={!showSearch && !activeSearchQuery && !inspection}
+                onKeyDown={(event) => {
+                  if (event.key !== 'Escape' || (!showSearch && !searchQuery)) return;
+                  event.preventDefault();
+                  setShowSearch(false);
+                  setSearchQuery('');
+                  setActiveSearchQuery('');
+                  setInspection(null);
+                  searchInputRef.current?.blur();
+                  setLoading(true);
+                  sendRequest('grid', { type: 'searchRows', query: '' });
+                }}
                 onSubmit={(event) => {
                   event.preventDefault();
                   setInspection(null);
@@ -704,7 +852,6 @@ export const App: React.FC = () => {
                       setSearchQuery('');
                       setActiveSearchQuery('');
                       setInspection(null);
-                      inspectionActive.current = false;
                       inspectionActive.current = false;
                       setLoading(true);
                       sendRequest('grid', { type: 'searchRows', query: '' });
@@ -743,8 +890,14 @@ export const App: React.FC = () => {
                 sortDirection={sortDirection}
                 profiles={customQueryActive ? [] : stats}
                 profileTotalRows={datasetRowCount}
-                profilesLoading={!customQueryActive && loading && stats.length === 0}
+                resultLabel={customQueryActive ? 'Query result' : 'Pipeline result'}
+                resultRowCount={datasetRowCount}
+                onPageChange={changePage}
+                pageOffset={page.offset}
+                pageLimit={page.limit}
+                pageTotalRows={page.totalRows}
                 profilesEnabled={!customQueryActive}
+                profilesLoading={!customQueryActive && statsLoading}
                 onSort={(column) => {
                   const direction = sortBy === column && sortDirection === 'asc' ? 'desc' : 'asc';
                   setSortBy(column);
@@ -857,34 +1010,12 @@ export const App: React.FC = () => {
                   </form>
                 </div>
               )}
-              <div className="pagination-controls">
-                <span className="result-total">
-                  {customQueryActive ? 'Query result' : 'Pipeline result'}:{' '}
-                  {datasetRowCount.toLocaleString()} rows · showing{' '}
-                  {page.totalRows.toLocaleString()}
-                </span>
-                <button
-                  disabled={page.offset === 0 || loading}
-                  onClick={() => changePage(page.offset - page.limit)}
-                >
-                  Previous
-                </button>
-                <span>
-                  {page.totalRows === 0 ? 0 : page.offset + 1}–
-                  {Math.min(page.offset + page.limit, page.totalRows)} of{' '}
-                  {page.totalRows.toLocaleString()}
-                </span>
-                <button
-                  disabled={page.offset + page.limit >= page.totalRows || loading}
-                  onClick={() => changePage(page.offset + page.limit)}
-                >
-                  Next
-                </button>
-              </div>
             </>
           ) : (
             <div className="empty-state">
-              <div className="empty-icon">📊</div>
+              <div className="empty-icon">
+                <span className="codicon codicon-table" aria-hidden="true" />
+              </div>
               <h2>No data loaded</h2>
               <p>
                 Open a supported file directly, or select a folder to browse its data files by

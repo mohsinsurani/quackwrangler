@@ -1,0 +1,105 @@
+name: UI tests (real VS Code)
+
+# Runs the interaction suite in desktop VS Code on Windows, Linux and macOS runners.
+# It is slow, so it runs on demand and when the suite, the webview, or this workflow changes.
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'tests/vscode/ui/**'
+      - 'webview-ui/**'
+      - '.github/workflows/ui-tests.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  ui:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: windows-x64
+            runner: windows-2025
+            vscode: win32-x64-archive
+          - name: windows-arm64
+            runner: windows-11-arm
+            vscode: win32-arm64-archive
+          - name: linux-x64
+            runner: ubuntu-24.04
+            vscode: linux-x64
+          - name: macos-arm64
+            runner: macos-15
+            vscode: darwin-arm64
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --include=optional
+
+      - name: Install webview dependencies
+        working-directory: webview-ui
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Install desktop VS Code
+        shell: bash
+        run: |
+          set -euo pipefail
+          dest="$RUNNER_TEMP/vscode"
+          mkdir -p "$dest"
+          url="https://update.code.visualstudio.com/latest/${{ matrix.vscode }}/stable"
+          case "${{ matrix.vscode }}" in
+            win32-*)
+              curl -fsSL "$url" -o "$dest/vscode.zip"
+              unzip -q "$dest/vscode.zip" -d "$dest/app"
+              echo "QW_VSCODE_PATH=$(cygpath -w "$dest/app/Code.exe")" >> "$GITHUB_ENV"
+              ;;
+            linux-*)
+              curl -fsSL "$url" -o "$dest/vscode.tar.gz"
+              tar -xzf "$dest/vscode.tar.gz" -C "$dest"
+              sudo apt-get update
+              sudo apt-get install -y --no-install-recommends xvfb libasound2t64 libxkbfile1 libsecret-1-0
+              echo "QW_VSCODE_PATH=$dest/VSCode-linux-x64/code" >> "$GITHUB_ENV"
+              echo "QW_VSCODE_ARGS=--no-sandbox --disable-gpu --disable-dev-shm-usage" >> "$GITHUB_ENV"
+              ;;
+            darwin-*)
+              curl -fsSL "$url" -o "$dest/vscode.zip"
+              unzip -q "$dest/vscode.zip" -d "$dest"
+              echo "QW_VSCODE_PATH=$dest/Visual Studio Code.app/Contents/MacOS/Code" >> "$GITHUB_ENV"
+              ;;
+          esac
+
+      - name: Choose screenshot folder
+        shell: bash
+        run: echo "QW_UI_OUT=$RUNNER_TEMP/qw-ui-suite" >> "$GITHUB_ENV"
+
+      - name: Run UI suite
+        if: runner.os != 'Linux'
+        run: npm run test:ui
+
+      - name: Run UI suite (virtual display)
+        if: runner.os == 'Linux'
+        run: xvfb-run -a -s "-screen 0 1280x800x24" npm run test:ui
+
+      - name: Upload screenshots
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ui-screenshots-${{ matrix.name }}
+          path: ${{ runner.temp }}/qw-ui-suite/*.png
+          if-no-files-found: ignore
+          retention-days: 7

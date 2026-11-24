@@ -29,6 +29,7 @@ export interface ColumnStatistics {
   p50?: number;
   p90?: number;
   p99?: number;
+  histogram?: number[];
 }
 
 export type ChartType = 'histogram' | 'bar' | 'scatter' | 'line' | 'box' | 'correlation';

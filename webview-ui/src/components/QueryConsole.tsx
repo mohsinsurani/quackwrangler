@@ -9,7 +9,8 @@ interface QueryConsoleProps {
 
 export const QueryConsole: React.FC<QueryConsoleProps> = ({ loading, active, onRun, onClear }) => {
   const [sql, setSql] = useState('SELECT * FROM current_data LIMIT 100');
-  const [open, setOpen] = useState(false);
+  // The SQL tab is the only way to reach this panel, so it opens expanded.
+  const [open, setOpen] = useState(true);
 
   useEffect(() => {
     if (active) setOpen(true);
@@ -23,9 +24,11 @@ export const QueryConsole: React.FC<QueryConsoleProps> = ({ loading, active, onR
         onClick={() => setOpen((value) => !value)}
       >
         <span>
-          <b>⌘</b> Custom DuckDB query
+          <b className="codicon codicon-terminal" aria-hidden="true" /> Custom DuckDB query
         </span>
-        <span className="query-console-chevron">›</span>
+        <span className="query-console-chevron">
+          <span className="codicon codicon-chevron-right" aria-hidden="true" />
+        </span>
       </button>
       {open && (
         <div className="query-console-body">

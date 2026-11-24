@@ -259,7 +259,7 @@ export const ChartPanel: React.FC<ChartPanelProps> = ({
   const [xColumn, setXColumn] = useState('');
   const [yColumn, setYColumn] = useState('');
   const [aggregation, setAggregation] = useState<NonNullable<ChartConfig['aggregation']>>('COUNT');
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(true);
   const xOptions = type === 'bar' ? columns : numericColumns;
   const requiresY =
     type === 'scatter' || type === 'line' || (type === 'bar' && aggregation !== 'COUNT');
@@ -303,7 +303,9 @@ export const ChartPanel: React.FC<ChartPanelProps> = ({
         </span>
         <span className="analysis-toggle-meta">
           <small>DuckDB charts</small>
-          <span className="analysis-chevron">›</span>
+          <span className="analysis-chevron">
+            <span className="codicon codicon-chevron-right" aria-hidden="true" />
+          </span>
         </span>
       </button>
       {open && (
@@ -374,7 +376,7 @@ export const ChartPanel: React.FC<ChartPanelProps> = ({
               Create chart
             </button>
           </div>
-          <div className="chart-canvas">
+          <div className="chart-canvas" hidden={!config && !loading}>
             {loading ? (
               <div className="chart-empty">Building chart…</div>
             ) : config && rows.length > 0 ? (

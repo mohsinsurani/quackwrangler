@@ -1,7 +1,33 @@
 import { describe, expect, it, vi } from 'vitest';
 import { buildPipelineSQL, WranglingSession } from '../../../src/transforms/pipeline';
+import { DuckDBInstance } from '@duckdb/node-api';
 
 describe('WranglingSession', () => {
+  it('calculates ten real histogram bins in DuckDB statistics', async () => {
+    const database = await DuckDBInstance.create(':memory:');
+    const connection = await database.connect();
+    const session = new WranglingSession({
+      query: async (sql: string) => {
+        const result = await connection.run(sql);
+        const rows = await result.getRowsJson();
+        return { columns: result.columnNames(), rows, rowCount: rows.length, duration: 0 };
+      },
+    } as never);
+    try {
+      await connection.run(
+        'CREATE TABLE histogram_fixture AS SELECT i::DOUBLE AS amount FROM range(100) AS t(i)',
+      );
+      session.load('/tmp/histogram_fixture.parquet');
+      // This session relation normally comes from a prepared source view; bind the
+      // test fixture under the session's relation name before collecting stats.
+      await connection.run('CREATE VIEW current_data AS SELECT * FROM histogram_fixture');
+      const [profile] = await session.getStatistics();
+      expect(profile.histogram).toHaveLength(10);
+      expect(profile.histogram?.reduce((sum, count) => sum + count, 0)).toBe(100);
+    } finally {
+      connection.closeSync();
+    }
+  });
   it('chains transforms through immutable CTE steps', () => {
     const session = new WranglingSession({} as any);
     session.load('/tmp/data.csv');
@@ -109,7 +135,9 @@ describe('WranglingSession', () => {
     const query = vi
       .fn()
       .mockResolvedValueOnce({ rows: [['amount', 'DECIMAL(12,2)', 'YES']] })
-      .mockResolvedValueOnce({ rows: [[1, 5, 2, 12, 7]] });
+      .mockResolvedValueOnce({
+        rows: [[1, 5, 2, 12, 7, 3, 6, 8, [2, 2, 2, 2, 2, 2, 2, 2, 2, 2]]],
+      });
     const session = new WranglingSession({ query } as any);
     session.load('/tmp/data.json');
 
@@ -117,7 +145,15 @@ describe('WranglingSession', () => {
     const statsSql = query.mock.calls[1][0] as string;
 
     expect(statsSql).toContain('AVG("amount")');
-    expect(profile).toMatchObject({ min: 2, max: 12, mean: 7 });
+    expect(profile).toMatchObject({
+      min: 2,
+      max: 12,
+      mean: 7,
+      p50: 3,
+      p90: 6,
+      p99: 8,
+      histogram: [2, 2, 2, 2, 2, 2, 2, 2, 2, 2],
+    });
   });
 
   it.each([
@@ -413,7 +449,9 @@ describe('pipeline ordering and reshape transforms', () => {
     await started;
     await session.applyValidated('add_column', { name: 'newer_marker', expression: '2' });
     releaseSlow();
-    await expect(staleMutation).rejects.toThrow('pipeline changed while a history update was validating');
+    await expect(staleMutation).rejects.toThrow(
+      'pipeline changed while a history update was validating',
+    );
     expect(session.getHistory().map((step) => step.params.name)).toEqual(['newer_marker']);
     expect(session.canUndo()).toBe(true);
   });

@@ -49,7 +49,7 @@ QuackWrangler ships with DuckDB built in. Open CSV, Parquet, JSON, Excel, and OD
 - **Replay recipes on files with different column names.** Choose replacements when a `.qw` recipe references a missing column. Cancelling or failing validation leaves the current result and history intact.
 - **Act on missing values from Data Quality.** Inspect matching rows without changing the pipeline, or apply an undoable fill or exclusion.
 - **Continue in Polars.** Export the active result to Parquet and open a Python handoff, or generate an editable Polars recipe for supported transforms on local Parquet files.
-- **Keep the grid in view.** The top toolbar puts transforms, steps, recipes, and export within reach. The Operations panel sits beside the grid on wide editors and stacks below it in narrow splits. Standard exports show the result scope and row count before saving.
+- **Keep the grid in view.** The compact toolbar puts transforms, steps, recipes, and export within reach. The searchable Operations panel opens beside the grid on wide editors and as a slide-over drawer in narrow splits. Quality, Charts, and SQL share one analysis tab strip.
 
 See the [changelog](CHANGELOG.md#050---2026-11-20) for full release notes and earlier versions.
 

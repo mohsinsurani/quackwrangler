@@ -11,6 +11,7 @@ export interface ColumnProfile {
   p50?: number;
   p90?: number;
   p99?: number;
+  histogram?: number[];
 }
 
 interface ColumnProfilesProps {
@@ -47,11 +48,12 @@ export const ColumnProfiles: React.FC<ColumnProfilesProps> = ({
     aria-label="Column profiles"
   >
     <div className="profile-gutter" title="Column profiles">
-      {loading && profiles.length === 0 ? <span className="profile-spinner" /> : '▥'}
+      {loading && profiles.length === 0 ? <span className="profile-spinner" /> : ''}
     </div>
     {columns.map((column) => {
       const profile = profiles.find((item) => item.name === column.name);
       if (!profile) {
+        const activeLoading = loading && profiles.length === 0;
         return (
           <article className="profile-card profile-placeholder" key={column.name}>
             <header className="profile-card-header">
@@ -60,7 +62,7 @@ export const ColumnProfiles: React.FC<ColumnProfilesProps> = ({
                 {column.type}
               </span>
             </header>
-            <span>{loading ? 'Profiling…' : 'No profile available'}</span>
+            <span>{activeLoading ? 'Profiling…' : 'Profile unavailable'}</span>
           </article>
         );
       }
@@ -80,6 +82,8 @@ export const ColumnProfiles: React.FC<ColumnProfilesProps> = ({
               Math.min(100, ((profile.mean - numericMin) / (numericMax - numericMin)) * 100),
             )
           : undefined;
+      const histogram = profile.histogram ?? percentileHistogram(profile, validCount);
+      const histogramMax = Math.max(...histogram, 1);
 
       return (
         <article className="profile-card" key={profile.name}>
@@ -99,13 +103,27 @@ export const ColumnProfiles: React.FC<ColumnProfilesProps> = ({
             </span>
           </div>
           <div
-            className="quality-bar"
+            className={`quality-bar ${nullPercent >= 20 ? 'quality-poor' : nullPercent >= 5 ? 'quality-warning' : ''}`}
             title={`${validPercent.toFixed(1)}% valid · ${nullPercent.toFixed(1)}% missing`}
           >
             <span className="quality-valid" style={{ width: `${validPercent}%` }} />
             <span className="quality-null" style={{ width: `${nullPercent}%` }} />
           </div>
-          {numericMin !== undefined && numericMax !== undefined ? (
+          {histogram.length > 0 ? (
+            <div
+              className="profile-histogram"
+              role="img"
+              aria-label={`Value distribution for ${profile.name}`}
+              title={`Distribution · ${profile.nullCount.toLocaleString()} missing values`}
+            >
+              {histogram.map((count, index) => (
+                <span
+                  key={index}
+                  style={{ height: `${Math.max(8, (count / histogramMax) * 100)}%` }}
+                />
+              ))}
+            </div>
+          ) : numericMin !== undefined && numericMax !== undefined ? (
             <div className="range-profile">
               <div className="range-track">
                 {meanPosition !== undefined && (
@@ -122,22 +140,25 @@ export const ColumnProfiles: React.FC<ColumnProfilesProps> = ({
                 <span title={`Maximum ${compact(numericMax)}`}>{compact(numericMax)}</span>
               </div>
             </div>
-          ) : (
+          ) : profile.min !== undefined || profile.max !== undefined ? (
             <div className="value-range">
-              <span>
-                <small>Min</small>
-                <b title={compact(profile.min)}>{compact(profile.min)}</b>
-              </span>
-              <span>
-                <small>Max</small>
-                <b title={compact(profile.max)}>{compact(profile.max)}</b>
-              </span>
+              <span title={`Minimum ${compact(profile.min)}`}>{compact(profile.min)}</span>
+              <span title={`Maximum ${compact(profile.max)}`}>{compact(profile.max)}</span>
             </div>
-          )}
+          ) : null}
         </article>
       );
     })}
   </div>
 );
+
+function percentileHistogram(profile: ColumnProfile, validCount: number): number[] {
+  if (profile.p50 === undefined || profile.p90 === undefined || profile.p99 === undefined)
+    return [];
+  const p50 = Math.floor(validCount * 0.5);
+  const p90 = Math.floor(validCount * 0.9);
+  const p99 = Math.floor(validCount * 0.99);
+  return [p50, p90 - p50, p99 - p90, validCount - p99];
+}
 
 export default ColumnProfiles;

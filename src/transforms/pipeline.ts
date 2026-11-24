@@ -957,6 +957,7 @@ export class WranglingSession {
                   `QUANTILE_CONT(${id}, 0.5)`,
                   `QUANTILE_CONT(${id}, 0.9)`,
                   `QUANTILE_CONT(${id}, 0.99)`,
+                  `(WITH histogram_source AS (${sql}), histogram_bounds AS (SELECT MIN(${id}) AS low_value, MAX(${id}) AS high_value FROM histogram_source), histogram_counts AS (SELECT ${Array.from({ length: 10 }, (_, bin) => `COUNT(*) FILTER (WHERE histogram_source.${id} >= histogram_bounds.low_value + (histogram_bounds.high_value - histogram_bounds.low_value) * ${bin / 10} AND histogram_source.${id} ${bin === 9 ? '<=' : '<'} histogram_bounds.low_value + (histogram_bounds.high_value - histogram_bounds.low_value) * ${(bin + 1) / 10}) AS bin_${bin}`).join(', ')} FROM histogram_source CROSS JOIN histogram_bounds) SELECT list_value(${Array.from({ length: 10 }, (_, bin) => `bin_${bin}`).join(', ')}) FROM histogram_counts)`,
                 ]
               : []),
           ];
@@ -964,6 +965,7 @@ export class WranglingSession {
             `SELECT ${aggregates.join(', ')} FROM (${sql}) AS pipeline_stats`,
           );
           const values = result.rows[0] ?? [];
+          const percentileOffset = orderedScalar ? 4 : 2;
           const numberAt = (index: number): number | undefined => {
             if (values[index] === null || values[index] === undefined) return undefined;
             const v = Number(values[index]);
@@ -976,10 +978,16 @@ export class WranglingSession {
             distinctCount: Number(values[1] ?? 0),
             min: orderedScalar ? values[2] : undefined,
             max: orderedScalar ? values[3] : undefined,
-            mean: numeric ? numberAt(4) : undefined,
-            p50: numeric ? numberAt(5) : undefined,
-            p90: numeric ? numberAt(6) : undefined,
-            p99: numeric ? numberAt(7) : undefined,
+            mean: numeric ? numberAt(percentileOffset) : undefined,
+            p50: numeric ? numberAt(percentileOffset + 1) : undefined,
+            p90: numeric ? numberAt(percentileOffset + 2) : undefined,
+            p99: numeric ? numberAt(percentileOffset + 3) : undefined,
+            histogram:
+              numeric && Array.isArray(values[percentileOffset + 4])
+                ? Array.from(values[percentileOffset + 4] as Iterable<unknown>, (value) =>
+                    Number(value),
+                  )
+                : undefined,
           };
         }),
       );

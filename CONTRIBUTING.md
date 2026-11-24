@@ -71,6 +71,7 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for current runtime boundaries 
 - UI interaction contracts currently use source-level tests under `tests/unit/webview`; add behavioral component tests when a DOM test environment is introduced.
 - File-opening, extension-storage, and contextual dbt changes need focused unit tests plus an Extension Development Host smoke test because VS Code owns those boundaries.
 - Run `npm run test:vscode` for the automated Extension Host lifecycle checks before completing the remaining visual smoke tests.
+- Run `npm run test:ui` after visible UI changes. It drives desktop VS Code through the real editor in every default theme; `npm run test:ui:linux` runs it on Linux in Docker, and the `UI tests (real VS Code)` workflow runs it on Windows, Linux and macOS.
 - Keep fixtures small and free of private data.
 - Preserve successful benchmark artifacts and their generation dates. Never rewrite a failed or exploratory result as an OOM without supporting evidence.
 - Coverage cannot decrease below the enforced baseline. The project is working toward 80% global statement coverage as VS Code-host and React interaction tests are added.

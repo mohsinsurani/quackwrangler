@@ -87,6 +87,8 @@ if (isDevelopment) {
   // Respond to webview messages that the real extension host would handle,
   // so interactive actions don't leave the preview stuck in a loading state.
   window.addEventListener('message', (event: MessageEvent) => {
+    // The preview only talks to itself, so reject messages from any other origin.
+    if (event.origin !== window.location.origin && event.origin !== 'null') return;
     if (!event.data || typeof event.data.type !== 'string' || !event.data.__fromWebview) return;
     const { type, requestId } = event.data as { type: string; requestId?: string };
     const replySession = () =>
@@ -175,6 +177,12 @@ if (isDevelopment) {
                 type: column.type,
                 nullCount: index < 2 ? 0 : index * 17,
                 distinctCount: 20 + index * 31,
+                min: index === 1 ? 1930 : index === 3 ? 1.2 : undefined,
+                max: index === 1 ? 2029 : index === 3 ? 36.84 : undefined,
+                mean: index === 1 ? 1979.5 : index === 3 ? 19.02 : undefined,
+                p50: index === 1 ? 1980 : index === 3 ? 19 : undefined,
+                p90: index === 1 ? 2020 : index === 3 ? 33 : undefined,
+                p99: index === 1 ? 2028 : index === 3 ? 36 : undefined,
               })),
               quality: {
                 duplicateRows: 0,
@@ -218,7 +226,13 @@ if (isDevelopment) {
                 rows: [
                   ['year', 'year', 1],
                   ['year', 'attendance', 0.78],
+                  ['year', 'revenue', 0.42],
+                  ['attendance', 'year', 0.78],
                   ['attendance', 'attendance', 1],
+                  ['attendance', 'revenue', 0.63],
+                  ['revenue', 'year', 0.42],
+                  ['revenue', 'attendance', 0.63],
+                  ['revenue', 'revenue', 1],
                 ],
               },
               requestId,
