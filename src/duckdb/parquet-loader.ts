@@ -4,6 +4,7 @@ import * as path from 'path';
 import * as XLSX from '@e965/xlsx';
 
 import { TableSchema, ColumnInfo } from '../types/index.js';
+import { isDatabaseFile } from '../utils/fileDetector.js';
 
 import { DuckDBConnection } from './connection.js';
 import { CsvColumnType, csvTypesOption, resolveCsvColumnTypes } from './csv-schema.js';
@@ -21,6 +22,7 @@ export type FileType =
   | 'ods'
   | 'arrow'
   | 'orc'
+  | 'database'
   | 'unknown';
 
 export type LoadingMode = 'auto' | 'eager' | 'lazy';
@@ -73,7 +75,7 @@ export function detectFileType(filePath: string): FileType {
     case '.orc':
       return 'orc';
     default:
-      return 'unknown';
+      return isDatabaseFile(cleanPath) ? 'database' : 'unknown';
   }
 }
 
@@ -97,6 +99,10 @@ function getReadFunction(fileType: FileType): string {
       return 'read_arrow';
     case 'orc':
       return 'read_orc';
+    case 'database':
+      throw new Error(
+        'Database files open one table at a time and cannot be used as a join, union, or schema comparison source yet. Open the table, export it to Parquet or CSV, and use that file.',
+      );
     default:
       throw new Error(`Unsupported file type: ${fileType}`);
   }
@@ -343,18 +349,16 @@ export function getConnectionTableRef(
   );
 }
 
-async function prepareFileReader(connection: DuckDBConnection, fileType: FileType): Promise<void> {
-  const extension =
-    fileType === 'xlsx' || fileType === 'xls'
-      ? 'excel'
-      : fileType === 'ods'
-        ? 'spatial'
-        : fileType === 'arrow'
-          ? 'nanoarrow'
-          : fileType === 'orc'
-            ? 'orc'
-            : undefined;
-  if (!extension) return;
+/**
+ * Loads a signed DuckDB extension, installing it on first use. A cached copy loads without
+ * network access, so only a missing extension needs a connection.
+ */
+export async function ensureDuckDBExtension(
+  connection: DuckDBConnection,
+  extension: string,
+  purpose: string,
+  community = false,
+): Promise<void> {
   const loaded = preparedExtensions.get(connection) ?? new Set<string>();
   preparedExtensions.set(connection, loaded);
   if (loaded.has(extension)) return;
@@ -367,17 +371,36 @@ async function prepareFileReader(connection: DuckDBConnection, fileType: FileTyp
     // DuckDB version/platform has not downloaded it before.
   }
   try {
-    const communityExtension = extension === 'nanoarrow' || extension === 'orc';
     await connection.query(
-      communityExtension ? `INSTALL ${extension} FROM community` : `INSTALL ${extension}`,
+      community ? `INSTALL ${extension} FROM community` : `INSTALL ${extension}`,
     );
     await connection.query(`LOAD ${extension}`);
     loaded.add(extension);
   } catch (error) {
     throw new Error(
-      `Opening ${fileType} requires DuckDB's signed ${extension} extension. Check your internet connection and try again. ${error}`,
+      `Opening ${purpose} requires DuckDB's signed ${extension} extension. Check your internet connection and try again. ${error}`,
     );
   }
+}
+
+async function prepareFileReader(connection: DuckDBConnection, fileType: FileType): Promise<void> {
+  const extension =
+    fileType === 'xlsx' || fileType === 'xls'
+      ? 'excel'
+      : fileType === 'ods'
+        ? 'spatial'
+        : fileType === 'arrow'
+          ? 'nanoarrow'
+          : fileType === 'orc'
+            ? 'orc'
+            : undefined;
+  if (!extension) return;
+  await ensureDuckDBExtension(
+    connection,
+    extension,
+    fileType,
+    extension === 'nanoarrow' || extension === 'orc',
+  );
 }
 
 export async function prepareDataFileReader(
@@ -461,6 +484,21 @@ export async function loadFile(
   const tableRef = getConnectionTableRef(connection, filePath, fileType);
   const resolvedMode = await resolveLoadingMode(filePath, mode, eagerFileSizeLimitMb);
 
+  await promoteRelation(connection, tableRef, resolvedMode, relationName, `file ${filePath}`);
+  return resolvedMode;
+}
+
+/**
+ * Builds the panel relation from a reader reference in a staging object, then promotes it in one
+ * transaction so a failed load leaves the previous relation untouched.
+ */
+export async function promoteRelation(
+  connection: DuckDBConnection,
+  tableRef: string,
+  resolvedMode: 'eager' | 'lazy',
+  relationName: string,
+  description: string,
+): Promise<void> {
   const suffix = `${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
   const stagingView = `${relationName}_staging_${suffix}`;
   const stagingTable = `${relationName}_materialized_${suffix}`;
@@ -489,7 +527,6 @@ export async function loadFile(
   } catch (error) {
     await connection.query(`DROP VIEW IF EXISTS ${stagingViewId}`).catch(() => undefined);
     await connection.query(`DROP TABLE IF EXISTS ${stagingTableId}`).catch(() => undefined);
-    throw new Error(`Failed to load file ${filePath}: ${error}`);
+    throw new Error(`Failed to load ${description}: ${error}`);
   }
-  return resolvedMode;
 }

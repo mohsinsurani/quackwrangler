@@ -120,6 +120,19 @@ describe('data file readers', () => {
     ]);
   });
 
+  it('maps database extensions to the database type and refuses to read them as one table', () => {
+    for (const name of ['a.duckdb', 'a.ddb', 'a.sqlite', 'a.sqlite3', 'a.db', 'a.db3', 'A.DB']) {
+      expect(detectFileType(`/tmp/${name}`)).toBe('database');
+    }
+    expect(() => getTableRef('/tmp/shop.duckdb')).toThrow(/one table at a time/);
+  });
+
+  it('does not run a reader query for a database path', async () => {
+    const query = vi.fn().mockResolvedValue({ rows: [] });
+    await prepareDataFileReader({ query } as never, '/tmp/shop.duckdb');
+    expect(query).not.toHaveBeenCalled();
+  });
+
   it('prepares the spatial extension before opening ODS sources', async () => {
     let installed = false;
     const query = vi.fn().mockImplementation(async (sql: string) => {

@@ -17,6 +17,19 @@ export interface TransformStep {
   timestamp: number;
 }
 
+export interface DatabaseTable {
+  schema: string;
+  name: string;
+  view: boolean;
+}
+
+export interface DatabaseInfo {
+  kind: 'duckdb' | 'sqlite';
+  tables: DatabaseTable[];
+  selected: DatabaseTable;
+  textColumns: boolean;
+}
+
 export type ExportFormat = 'parquet' | 'csv' | 'json';
 
 export type WebviewMessage = (
@@ -25,6 +38,7 @@ export type WebviewMessage = (
   | { type: 'openFolderPicker' }
   | { type: 'selectSecondaryFile' }
   | { type: 'refresh' }
+  | { type: 'selectTable'; schema: string; name: string }
   | { type: 'getStats' }
   | { type: 'generateAITransforms' }
   | {

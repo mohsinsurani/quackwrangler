@@ -11,6 +11,20 @@ export interface TableSchema {
   filePath: string;
 }
 
+export interface DatabaseTable {
+  schema: string;
+  name: string;
+  view: boolean;
+}
+
+export interface DatabaseInfo {
+  kind: 'duckdb' | 'sqlite';
+  tables: DatabaseTable[];
+  selected: DatabaseTable;
+  /** SQLite columns mixed text and numbers, so every column is read as text. */
+  textColumns: boolean;
+}
+
 export interface QueryResult {
   columns: string[];
   rows: unknown[][];
@@ -113,6 +127,7 @@ export type WebviewMessage =
   | ({ type: 'openFolderPicker' } & RequestMessage)
   | ({ type: 'selectSecondaryFile' } & RequestMessage)
   | ({ type: 'refresh' } & RequestMessage)
+  | ({ type: 'selectTable'; schema: string; name: string } & RequestMessage)
   | ({ type: 'removeTransform'; id: string } & RequestMessage)
   | ({ type: 'reorderTransforms'; sourceId: string; targetId: string } & RequestMessage)
   | ({
@@ -178,6 +193,7 @@ export type ExtensionMessage =
       page: PageInfo;
       canUndo: boolean;
       canRedo: boolean;
+      database?: DatabaseInfo;
     } & ResponseContext &
       SessionContext)
   | ({ type: 'stats'; stats: ColumnStatistics[]; quality: DataQualitySummary } & ResponseContext &

@@ -32,7 +32,9 @@
     "data visualization",
     "data exploration",
     "data cleaning",
-    "analytics"
+    "analytics",
+    "sqlite",
+    "sqlite viewer"
   ],
   "galleryBanner": {
     "color": "#111719",
@@ -75,7 +77,13 @@
     "workspaceContains:**/*.arrow",
     "workspaceContains:**/*.arrows",
     "workspaceContains:**/*.ipc",
-    "workspaceContains:**/*.orc"
+    "workspaceContains:**/*.orc",
+    "workspaceContains:**/*.duckdb",
+    "workspaceContains:**/*.ddb",
+    "workspaceContains:**/*.sqlite",
+    "workspaceContains:**/*.sqlite3",
+    "workspaceContains:**/*.db",
+    "workspaceContains:**/*.db3"
   ],
   "contributes": {
     "customEditors": [
@@ -121,6 +129,24 @@
           },
           {
             "filenamePattern": "*.orc"
+          },
+          {
+            "filenamePattern": "*.duckdb"
+          },
+          {
+            "filenamePattern": "*.ddb"
+          },
+          {
+            "filenamePattern": "*.sqlite"
+          },
+          {
+            "filenamePattern": "*.sqlite3"
+          },
+          {
+            "filenamePattern": "*.db"
+          },
+          {
+            "filenamePattern": "*.db3"
           }
         ],
         "priority": "default"
@@ -220,14 +246,14 @@
         },
         {
           "command": "quackwrangler.openDataWrangler",
-          "when": "resourceExtname == .parquet || resourceExtname == .csv || resourceExtname == .tsv || resourceExtname == .json || resourceExtname == .jsonl || resourceExtname == .ndjson || resourceExtname == .xlsx || resourceExtname == .xls || resourceExtname == .ods || resourceExtname == .arrow || resourceExtname == .arrows || resourceExtname == .ipc || resourceExtname == .orc",
+          "when": "resourceExtname == .parquet || resourceExtname == .csv || resourceExtname == .tsv || resourceExtname == .json || resourceExtname == .jsonl || resourceExtname == .ndjson || resourceExtname == .xlsx || resourceExtname == .xls || resourceExtname == .ods || resourceExtname == .arrow || resourceExtname == .arrows || resourceExtname == .ipc || resourceExtname == .orc || resourceExtname == .duckdb || resourceExtname == .ddb || resourceExtname == .sqlite || resourceExtname == .sqlite3 || resourceExtname == .db || resourceExtname == .db3",
           "group": "navigation"
         }
       ],
       "explorer/context": [
         {
           "command": "quackwrangler.openFile",
-          "when": "resourceExtname == .parquet || resourceExtname == .csv || resourceExtname == .json || resourceExtname == .tsv || resourceExtname == .jsonl || resourceExtname == .ndjson || resourceExtname == .xlsx || resourceExtname == .xls || resourceExtname == .ods || resourceExtname == .arrow || resourceExtname == .arrows || resourceExtname == .ipc || resourceExtname == .orc",
+          "when": "resourceExtname == .parquet || resourceExtname == .csv || resourceExtname == .json || resourceExtname == .tsv || resourceExtname == .jsonl || resourceExtname == .ndjson || resourceExtname == .xlsx || resourceExtname == .xls || resourceExtname == .ods || resourceExtname == .arrow || resourceExtname == .arrows || resourceExtname == .ipc || resourceExtname == .orc || resourceExtname == .duckdb || resourceExtname == .ddb || resourceExtname == .sqlite || resourceExtname == .sqlite3 || resourceExtname == .db || resourceExtname == .db3",
           "group": "1_datawrangler"
         }
       ]

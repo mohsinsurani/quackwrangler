@@ -8,7 +8,7 @@ import { Header } from './components/Header';
 import { OperationsPanel } from './components/OperationsPanel';
 import { QueryConsole } from './components/QueryConsole';
 import { useVSCodeAPI } from './hooks/useVSCodeAPI';
-import type { ColumnInfo, TransformStep } from './types';
+import type { ColumnInfo, DatabaseInfo, TransformStep } from './types';
 import './styles/theme.css';
 import '@vscode/codicons/dist/codicon.css';
 
@@ -35,6 +35,7 @@ interface SessionMessage {
   page: PageState;
   canUndo?: boolean;
   canRedo?: boolean;
+  database?: DatabaseInfo;
   requestId?: string;
   sessionId: string;
   revision: number;
@@ -99,6 +100,7 @@ function stepLabel(step: TransformStep): string {
 export const App: React.FC = () => {
   const { postMessage, onMessage } = useVSCodeAPI();
   const [filePath, setFilePath] = useState('');
+  const [database, setDatabase] = useState<DatabaseInfo | undefined>(undefined);
   const [columns, setColumns] = useState<ColumnInfo[]>([]);
   const [rows, setRows] = useState<unknown[][]>([]);
   const [steps, setSteps] = useState<TransformStep[]>([]);
@@ -227,6 +229,7 @@ export const App: React.FC = () => {
           return;
         }
         setFilePath(update.schema.filePath);
+        setDatabase(update.database);
         sessionContext.current = { sessionId: update.sessionId, revision: update.revision };
         setColumns(
           update.schema.columns.map((column) => ({
@@ -491,6 +494,11 @@ export const App: React.FC = () => {
     <div className="app">
       <Header
         fileName={fileName}
+        database={database}
+        onSelectTable={(table) => {
+          setLoading(true);
+          sendRequest('grid', { type: 'selectTable', schema: table.schema, name: table.name });
+        }}
         rowCount={page.totalRows}
         columnCount={columns.length}
         isLoading={loading}

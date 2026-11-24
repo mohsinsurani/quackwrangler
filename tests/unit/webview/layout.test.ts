@@ -303,6 +303,16 @@ describe('webview layout contracts', () => {
     expect(headerSource).not.toContain('engine-selector');
   });
 
+  it('offers a table switcher for database files that only appears when a database is open', () => {
+    expect(headerSource).toContain('table-select');
+    expect(headerSource).toContain('database && onSelectTable');
+    expect(headerSource).toContain('aria-label="Table"');
+    expect(headerSource).toContain('database.tables.length < 2');
+    expect(appSource).toContain('setDatabase(update.database)');
+    expect(appSource).toContain("type: 'selectTable'");
+    expect(rule('.table-select')).toContain('max-width: 220px');
+  });
+
   it('shows a transient success toast after a transform is applied', () => {
     expect(appSource).toContain('className="success-toast"');
     expect(appSource).toContain('role="status"');

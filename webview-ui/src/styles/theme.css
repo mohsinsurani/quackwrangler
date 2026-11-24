@@ -129,6 +129,40 @@ button {
   letter-spacing: -0.01em;
 }
 
+.table-switcher {
+  display: flex;
+  flex: 0 1 auto;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+}
+
+.table-select {
+  min-width: 0;
+  max-width: 220px;
+  height: 24px;
+  padding: 1px 6px;
+  border: 1px solid var(--vscode-dropdown-border, var(--border));
+  border-radius: 3px;
+  background: var(--vscode-dropdown-background, var(--surface-raised));
+  color: var(--vscode-dropdown-foreground, var(--text));
+  font-size: 12px;
+}
+
+.table-select:disabled {
+  opacity: 0.7;
+}
+
+.table-notice {
+  flex: none;
+  padding: 1px 6px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 10px;
+  white-space: nowrap;
+}
+
 .data-info {
   flex: none;
   gap: 7px;

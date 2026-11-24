@@ -21,6 +21,12 @@ describe('data editor routing', () => {
     expect(shouldOpenWithDataEditor('/data/orders.arrows')).toBe(true);
     expect(shouldOpenWithDataEditor('/data/orders.ipc')).toBe(true);
     expect(shouldOpenWithDataEditor('/data/orders.orc')).toBe(true);
+    expect(shouldOpenWithDataEditor('/data/shop.duckdb')).toBe(true);
+    expect(shouldOpenWithDataEditor('/data/shop.ddb')).toBe(true);
+    expect(shouldOpenWithDataEditor('/data/app.sqlite')).toBe(true);
+    expect(shouldOpenWithDataEditor('/data/app.sqlite3')).toBe(true);
+    expect(shouldOpenWithDataEditor('/data/app.db')).toBe(true);
+    expect(shouldOpenWithDataEditor('/data/app.db3')).toBe(true);
     expect(shouldOpenWithDataEditor('/data/parquet-notes.txt')).toBe(false);
   });
 });
