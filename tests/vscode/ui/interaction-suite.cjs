@@ -125,6 +125,47 @@ const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
   }
 }
 
+// Database fixtures: a DuckDB file with two tables and a view, and a SQLite file. Both are built
+// before VS Code starts, so opening them needs no setup by hand.
+const databaseFixtures = { duckdb: false, sqlite: false };
+const databaseReady = (async () => {
+  const ws = path.join(OUT, 'ws');
+  try {
+    const { DuckDBInstance } = require(path.join(ROOT, 'node_modules/@duckdb/node-api'));
+    const file = path.join(ws, 'shop.duckdb');
+    const database = await DuckDBInstance.create(file);
+    const connection = await database.connect();
+    for (const sql of [
+      'CREATE TABLE orders(id INTEGER, region VARCHAR, total DOUBLE)',
+      "INSERT INTO orders VALUES (1,'east',10.5),(2,'west',20),(3,'east',30)",
+      'CREATE TABLE customers(id INTEGER, name VARCHAR)',
+      "INSERT INTO customers VALUES (1,'Ada'),(2,'Bob')",
+      "CREATE VIEW east_orders AS SELECT * FROM orders WHERE region = 'east'",
+      'CHECKPOINT',
+    ])
+      await connection.run(sql);
+    connection.closeSync();
+    databaseFixtures.duckdb = true;
+  } catch {
+    /* DuckDB unavailable: the database checks are skipped */
+  }
+  try {
+    const { DatabaseSync } = require('node:sqlite');
+    const raw = new DatabaseSync(path.join(ws, 'app.sqlite'));
+    raw.exec('CREATE TABLE items(id INTEGER, label TEXT, price REAL)');
+    raw.exec("INSERT INTO items VALUES (1,'pen',1.5),(2,'ink',4.25),(3,'cap',2)");
+    raw.exec('CREATE TABLE notes(id INTEGER, body TEXT)');
+    raw.exec("INSERT INTO notes VALUES (1,'first')");
+    raw.close();
+    // The same SQLite data under the ambiguous .db extension, plus an unrelated .db file.
+    fs.copyFileSync(path.join(ws, 'app.sqlite'), path.join(ws, 'legacy.db'));
+    fs.writeFileSync(path.join(ws, 'Thumbs.db'), 'not a database');
+    databaseFixtures.sqlite = true;
+  } catch {
+    /* node:sqlite unavailable on this Node: the SQLite check is skipped */
+  }
+})();
+
 const results = [];
 const errors = [];
 async function step(name, fn) {
@@ -213,13 +254,14 @@ async function step(name, fn) {
       return null;
     };
     // Each extra file gets its own fresh VS Code window: nothing is ever picked by hand.
-    const openFile = async (file) => {
+    const openFile = async (file, { expectGrid = true } = {}) => {
       await app.close().catch(() => {});
       app = await launch(file);
       win = await app.firstWindow();
       win.setDefaultTimeout(8000);
       await win.waitForTimeout(5000);
-      return waitForWebview();
+      // A file that cannot open never renders a grid, so wait for the error instead.
+      return waitForWebview(expectGrid ? 40 : 8);
     };
     const frame = await waitForWebview();
     if (!frame) throw new Error('QuackWrangler webview did not render');
@@ -631,6 +673,87 @@ async function step(name, fn) {
         return [...new Set(actions.map((a) => a.trim()))].join(', ');
       },
     );
+
+    await databaseReady;
+    if (databaseFixtures.duckdb) {
+      await step(
+        'DuckDB file opens with a table switcher listing its tables and views',
+        async () => {
+          const fr = await openFile('shop.duckdb');
+          if (!fr) throw new Error('editor did not open shop.duckdb');
+          await fr.locator('.table-select').waitFor({ timeout: 20000 });
+          await fr.locator('.profile-card').first().waitFor({ timeout: 20000 });
+          const options = (await fr.locator('.table-select option').allInnerTexts()).map((o) =>
+            o.trim(),
+          );
+          for (const expected of ['customers', 'orders', 'east_orders (view)'])
+            if (!options.includes(expected))
+              throw new Error(`missing ${expected}: ${options.join('|')}`);
+          return options.join(', ');
+        },
+      );
+
+      await step('switching table in the header loads that table', async () => {
+        const fr = await openFile('shop.duckdb');
+        await fr.locator('.table-select').waitFor({ timeout: 20000 });
+        await fr.locator('.profile-card').first().waitFor({ timeout: 20000 });
+        const first = (await fr.locator('.data-info').first().innerText()).replace(/\s+/g, ' ');
+        await fr.locator('.table-select').selectOption({ label: 'orders' });
+        await fr.waitForFunction(
+          () => /3\s*rows/.test(document.querySelector('.data-info')?.textContent || ''),
+          null,
+          { timeout: 15000 },
+        );
+        const columns = await fr.locator('.header-cell').allInnerTexts();
+        if (!columns.some((c) => /region/.test(c)))
+          throw new Error('columns: ' + columns.join('|'));
+        return `${first} -> orders`;
+      });
+    }
+    if (databaseFixtures.sqlite)
+      await step('SQLite file opens and lists its tables', async () => {
+        const fr = await openFile('app.sqlite');
+        if (!fr) throw new Error('editor did not open app.sqlite');
+        await fr.locator('.table-select').waitFor({ timeout: 20000 });
+        await fr.locator('.profile-card').first().waitFor({ timeout: 20000 });
+        const options = (await fr.locator('.table-select option').allInnerTexts()).map((o) =>
+          o.trim(),
+        );
+        if (!options.includes('items') || !options.includes('notes'))
+          throw new Error('tables: ' + options.join('|'));
+        const info = await fr.locator('.data-info').first().innerText();
+        if (!/3\s*rows/.test(info)) throw new Error('rows: ' + info);
+        return options.join(', ');
+      });
+
+    if (databaseFixtures.sqlite) {
+      await step('a .db file is detected as SQLite from its header', async () => {
+        const fr = await openFile('legacy.db');
+        if (!fr) throw new Error('editor did not open legacy.db');
+        await fr.locator('.table-select').waitFor({ timeout: 20000 });
+        const options = (await fr.locator('.table-select option').allInnerTexts()).map((o) =>
+          o.trim(),
+        );
+        if (!options.includes('items')) throw new Error('tables: ' + options.join('|'));
+      });
+
+      await step('a .db file that is not a database shows a clear error', async () => {
+        const fr = await openFile('Thumbs.db', { expectGrid: false });
+        // Bad files raise a VS Code error dialog and an in-editor message; either proves it.
+        const text = await win
+          .locator('.notifications-toasts, .notification-toast')
+          .allInnerTexts();
+        const inEditor = fr
+          ? await fr
+              .locator('.error-banner')
+              .allInnerTexts()
+              .catch(() => [])
+          : [];
+        const all = [...text, ...inEditor].join(' ');
+        if (!/not a DuckDB or SQLite database/.test(all))
+          throw new Error('message: ' + all.slice(0, 200));
+      });
+    }
 
     await step(
       'Join another file: pick a join type and columns, then see the joined columns',
