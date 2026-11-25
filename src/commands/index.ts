@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { basename, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 
 import * as vscode from 'vscode';
 
@@ -9,18 +9,30 @@ import { suggestTransforms, validateAISettings } from '../ai/assistant.js';
 import { findDbtProject } from '../dbt/context.js';
 import { buildDbtSql, DbtExportStyle } from '../dbt/export.js';
 import { DuckDBConnection } from '../duckdb/connection.js';
+import { describeTable, loadDatabaseTable, releaseDatabase } from '../duckdb/database-source.js';
 import { getFileMetadata, loadFile, prepareDataFileReader } from '../duckdb/parquet-loader.js';
 import { exportResults, normalizeReadOnlyQuery } from '../duckdb/query-engine.js';
 import { buildPolarsRecipe } from '../polars/recipe.js';
 import { schemaComparisonMarkdown } from '../schema/compare.js';
 import { WranglingSession } from '../transforms/pipeline.js';
-import { DataWranglerConfig, PageInfo, QueryResult, TableSchema } from '../types/index.js';
+import {
+  DatabaseInfo,
+  DatabaseTable,
+  DataWranglerConfig,
+  PageInfo,
+  QueryResult,
+  TableSchema,
+} from '../types/index.js';
 import { WebviewMessage } from '../types/index.js';
 import { redactedDiagnostic } from '../utils/diagnostics.js';
 import { isDuckDBMemoryError } from '../utils/duckdbErrors.js';
 import { DATA_EDITOR_VIEW_TYPE, shouldOpenWithDataEditor } from '../utils/editorRouting.js';
-import { DATA_FILE_EXTENSIONS } from '../utils/fileDetector.js';
-import { isDataFile } from '../utils/fileDetector.js';
+import {
+  DATA_FILE_EXTENSIONS,
+  DATABASE_FILE_EXTENSIONS,
+  isDataFile,
+  isDatabaseFile,
+} from '../utils/fileDetector.js';
 import {
   createRemoteProgressReporter,
   isRemoteDataSource,
@@ -30,6 +42,12 @@ import { createManagedTempDirectory, ManagedTempDirectory } from '../utils/tempS
 import { DataWranglerPanel } from '../webview/provider.js';
 
 const DATA_FILE_FILTER = { 'Data Files': [...DATA_FILE_EXTENSIONS] };
+// Join, union, and schema comparison read one file as one table, which databases are not.
+const TABULAR_FILE_FILTER = {
+  'Data Files': DATA_FILE_EXTENSIONS.filter(
+    (extension) => !(DATABASE_FILE_EXTENSIONS as readonly string[]).includes(extension),
+  ),
+};
 
 function getConfig(): DataWranglerConfig {
   const config = vscode.workspace.getConfiguration('quackwrangler');
@@ -69,6 +87,8 @@ interface PanelState {
   searchQuery: string;
   inspectionFilter: { column: string; operator: 'is_null' | 'is_not_null' } | null;
   relationName: string;
+  // Set while the panel shows a table from a DuckDB or SQLite file.
+  database: DatabaseInfo | null;
   // Each panel owns its DuckDBConnection so preserve_insertion_order and other
   // instance-global settings cannot bleed between panels.
   connection: DuckDBConnection | null;
@@ -87,6 +107,7 @@ function getPanelState(panel: DataWranglerPanel): PanelState {
       searchQuery: '',
       inspectionFilter: null,
       relationName: newRelationName(),
+      database: null,
       connection: null,
       managedTempDir: undefined,
     };
@@ -208,10 +229,17 @@ async function postSession(
     page: state.page,
     canUndo: session.canUndo(),
     canRedo: session.canRedo(),
+    database: getPanelState(panel).database ?? undefined,
     requestId,
     sessionId,
     revision,
   });
+}
+
+/** Path next to the source file for derived files, named after the table for databases. */
+function derivedOutputPath(state: PanelState, source: string, suffix: string): string {
+  const table = state.database?.selected;
+  return `${table ? join(dirname(source), table.name) : source.replace(/\.[^.]+$/, '')}${suffix}`;
 }
 
 function getCustomQuerySource(session: WranglingSession, customQuerySql: string): string {
@@ -338,7 +366,7 @@ async function handleWebviewMessage(
         const selected = await vscode.window.showOpenDialog({
           canSelectFiles: true,
           canSelectMany: false,
-          filters: DATA_FILE_FILTER,
+          filters: TABULAR_FILE_FILTER,
           openLabel: 'Select file to join or union',
         });
         if (!selected?.[0]) return;
@@ -476,8 +504,42 @@ async function handleWebviewMessage(
         if (!session?.getFilePath()) return;
         state.customQuerySql = null;
         state.inspectionFilter = null;
-        await loadDataIntoPanel(panel, session.getFilePath(), message.requestId);
+        await loadDataIntoPanel(
+          panel,
+          session.getFilePath(),
+          message.requestId,
+          undefined,
+          state.database?.selected,
+        );
         return;
+      case 'selectTable': {
+        if (!session || !state.database) throw new Error('Open a database file first');
+        const table = state.database.tables.find(
+          (candidate) => candidate.schema === message.schema && candidate.name === message.name,
+        );
+        if (!table) throw new Error(`"${message.name}" is not in this database`);
+        if (table === state.database.selected) {
+          await postSession(panel, 0, getConfig().pageSize, message.requestId);
+          return;
+        }
+        const steps = session.getHistory().length;
+        if (steps > 0) {
+          const choice = await vscode.window.showWarningMessage(
+            `Switching to ${describeTable(table)} clears ${steps} applied ${steps === 1 ? 'step' : 'steps'}. Save a recipe first to keep them.`,
+            { modal: true },
+            'Switch table',
+          );
+          if (choice !== 'Switch table') {
+            // Re-send the current session so the webview stops waiting and keeps its selection.
+            await postSession(panel, 0, getConfig().pageSize, message.requestId);
+            return;
+          }
+        }
+        state.customQuerySql = null;
+        state.inspectionFilter = null;
+        await loadDataIntoPanel(panel, session.getFilePath(), message.requestId, undefined, table);
+        return;
+      }
       case 'getStats':
         if (!session) throw new Error('No active wrangling session');
         {
@@ -531,7 +593,7 @@ async function handleWebviewMessage(
         const remoteSource = /^(https?|s3):\/\//i.test(sourcePath);
         const defaultPath = remoteSource
           ? undefined
-          : sourcePath.replace(/\.[^.]+$/, `_transformed.${message.format}`);
+          : derivedOutputPath(state, sourcePath, `_transformed.${message.format}`);
         const exportSql = message.customQuerySql
           ? getCustomQuerySource(exportSession, normalizeReadOnlyQuery(message.customQuerySql))
           : exportSession.getSql();
@@ -814,13 +876,13 @@ export async function compareSchemasCommand(folderMode = false): Promise<void> {
       })
     )?.[0];
     if (!folder) return;
-    files = await collectDataFiles(folder);
+    files = (await collectDataFiles(folder)).filter((file) => !isDatabaseFile(file.fsPath));
   } else {
     files =
       (await vscode.window.showOpenDialog({
         canSelectFiles: true,
         canSelectMany: true,
-        filters: DATA_FILE_FILTER,
+        filters: TABULAR_FILE_FILTER,
         openLabel: 'Compare schemas',
       })) ?? [];
   }
@@ -840,6 +902,7 @@ async function loadDataIntoPanel(
   filePath: string,
   requestId?: string,
   loadingModeOverride?: 'auto' | 'eager' | 'lazy',
+  table?: Pick<DatabaseTable, 'schema' | 'name'>,
 ): Promise<void> {
   panel.setMessageHandler((message) => handleWebviewMessage(panel, message));
   // Register cleanup exactly once per panel. Registering after setMessageHandler
@@ -852,6 +915,7 @@ async function loadDataIntoPanel(
   // Preserve the existing session so a failed reload doesn't break the current view.
   const previousSession = state.session;
   const previousSessionId = state.sessionId;
+  const previousDatabase = state.database;
   state.customQuerySql = null;
   state.searchQuery = '';
   await vscode.commands.executeCommand('setContext', 'quackwrangler.dbtDetected', false);
@@ -874,13 +938,28 @@ async function loadDataIntoPanel(
     const config = getConfig();
     // Each panel loads into its own uniquely named DuckDB relation so multiple
     // open editors never cross-contaminate each other's data.
-    await loadFile(
-      conn,
-      filePath,
-      loadingModeOverride ?? config.loadingMode,
-      config.eagerFileSizeLimitMb,
-      state.relationName,
-    );
+    let database: DatabaseInfo | null = null;
+    if (isDatabaseFile(filePath)) {
+      database = await loadDatabaseTable(
+        conn,
+        filePath,
+        table,
+        loadingModeOverride ?? config.loadingMode,
+        config.eagerFileSizeLimitMb,
+        state.relationName,
+      );
+    } else {
+      await loadFile(
+        conn,
+        filePath,
+        loadingModeOverride ?? config.loadingMode,
+        config.eagerFileSizeLimitMb,
+        state.relationName,
+      );
+      // Opening a regular file in a panel that showed a database releases that database.
+      await releaseDatabase(conn);
+    }
+    state.database = database;
     progress(REMOTE_LOAD_STAGES.previewing);
     stage = 'building the initial preview';
     state.session = new WranglingSession(conn, state.relationName);
@@ -909,6 +988,7 @@ async function loadDataIntoPanel(
     // Restore the previous session so an already-loaded panel remains usable.
     state.session = previousSession;
     state.sessionId = previousSessionId;
+    state.database = previousDatabase;
     if (previousSession) {
       await postSession(panel, 0, getConfig().pageSize, requestId).catch(() => undefined);
     }
@@ -927,7 +1007,7 @@ async function loadDataIntoPanel(
         )
       : undefined;
     if (recovery === 'Retry with Lazy Loading') {
-      await loadDataIntoPanel(panel, filePath, requestId, 'lazy');
+      await loadDataIntoPanel(panel, filePath, requestId, 'lazy', table);
       return;
     }
     if (recovery === 'Choose Spill Folder') {
@@ -942,7 +1022,7 @@ async function loadDataIntoPanel(
           .getConfiguration('quackwrangler')
           .update('duckdb.tempDirectory', selected[0].fsPath, vscode.ConfigurationTarget.Workspace);
         await closePanelConnection(panel);
-        await loadDataIntoPanel(panel, filePath, requestId);
+        await loadDataIntoPanel(panel, filePath, requestId, undefined, table);
         return;
       }
     }
@@ -1006,25 +1086,30 @@ async function selectFolderFileIntoPanel(
 interface SavedWorkspace {
   version: 1;
   sourceFile: string;
+  // Present when the source is a database file, so the same table reopens.
+  sourceTable?: { schema: string; name: string };
   transforms: Array<{ type: string; params: Record<string, unknown> }>;
 }
 
 export async function saveWorkspaceCommand(targetPanel?: DataWranglerPanel): Promise<void> {
   const panel = targetPanel ?? DataWranglerPanel.currentPanel;
-  const session = panel ? getPanelState(panel).session : null;
-  if (!session) {
+  const state = panel ? getPanelState(panel) : null;
+  const session = state?.session;
+  if (!state || !session) {
     vscode.window.showWarningMessage('Open a data file before saving a workspace.');
     return;
   }
   const target = await vscode.window.showSaveDialog({
-    defaultUri: vscode.Uri.file(session.getFilePath().replace(/\.[^.]+$/, '.qw')),
+    defaultUri: vscode.Uri.file(derivedOutputPath(state, session.getFilePath(), '.qw')),
     filters: { 'QuackWrangler Workspace': ['qw'] },
     saveLabel: 'Save QuackWrangler Workspace',
   });
   if (!target) return;
+  const selected = state.database?.selected;
   const workspace: SavedWorkspace = {
     version: 1,
     sourceFile: session.getFilePath(),
+    ...(selected ? { sourceTable: { schema: selected.schema, name: selected.name } } : {}),
     transforms: session.getHistory().map(({ type, params }) => ({ type, params })),
   };
   await writeFile(target.fsPath, `${JSON.stringify(workspace, null, 2)}\n`, 'utf8');
@@ -1161,7 +1246,7 @@ async function exportPolarsHandoff(
     return;
   }
   const target = await vscode.window.showSaveDialog({
-    defaultUri: vscode.Uri.file(sourcePath.replace(/\.[^.]+$/, '_result.parquet')),
+    defaultUri: vscode.Uri.file(derivedOutputPath(state, sourcePath, '_result.parquet')),
     filters: { Parquet: ['parquet'] },
     saveLabel: 'Export result for Polars',
   });
@@ -1206,8 +1291,14 @@ export async function openWorkspaceCommand(uri?: vscode.Uri): Promise<void> {
     configuredExtensionUri ??
     vscode.extensions.getExtension('quackwrangler.quackwrangler')?.extensionUri;
   if (!extensionUri) throw new Error('Extension URI not found');
+  const table =
+    parsed.sourceTable &&
+    typeof parsed.sourceTable.schema === 'string' &&
+    typeof parsed.sourceTable.name === 'string'
+      ? { schema: parsed.sourceTable.schema, name: parsed.sourceTable.name }
+      : undefined;
   const panel = DataWranglerPanel.createOrShow(extensionUri, parsed.sourceFile);
-  await loadDataIntoPanel(panel, parsed.sourceFile);
+  await loadDataIntoPanel(panel, parsed.sourceFile, undefined, undefined, table);
   const session = getPanelState(panel).session;
   await session?.restoreValidated(
     parsed.transforms.map((step) => ({ type: String(step.type), params: step.params ?? {} })),
@@ -1276,9 +1367,10 @@ export async function copyDbtSqlCommand(): Promise<void> {
   );
   if (!choice) return;
 
-  const defaultModel = basename(session.getFilePath())
-    .replace(/\.[^.]+$/, '')
-    .replace(/\W/g, '_');
+  const defaultModel = (
+    getPanelState(panel).database?.selected.name ??
+    basename(session.getFilePath()).replace(/\.[^.]+$/, '')
+  ).replace(/\W/g, '_');
   const upstreamModel = await vscode.window.showInputBox({
     title: 'Upstream dbt model',
     prompt: "Used in {{ ref('model_name') }}. Row data is not read or sent anywhere.",

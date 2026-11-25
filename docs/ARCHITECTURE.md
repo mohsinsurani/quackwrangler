@@ -50,7 +50,7 @@ The webview never reads the file system. The extension host owns file dialogs, p
 ## File opening
 
 1. A custom editor, command, recent-file item, or folder-tree item supplies a path.
-2. `parquet-loader.ts` maps its extension to one DuckDB reader.
+2. `parquet-loader.ts` maps its extension to one DuckDB reader. Database files (`.duckdb`, `.ddb`, `.sqlite`, `.sqlite3`, `.db`, `.db3`) take the table path in `database-source.ts` instead.
 3. Automatic loading materializes small local sources behind a panel-unique view; large and remote sources use a lazy panel-unique view over the reader. Users can force either mode. Reloads build a unique staging relation and promote it in one DuckDB transaction so failure preserves the previous relation.
 4. `WranglingSession` starts with empty transform history.
 5. The extension sends schema, one bounded result page, page metadata, and history.
@@ -63,6 +63,20 @@ Every caught extension-host failure also emits a local redacted diagnostic summa
 Every supported local extension is registered with default custom-editor priority and routes through the same `vscode.openWith` flow. Legacy `.xls` files are converted in-process to a per-connection temporary `.xlsx` before the normal spreadsheet path runs. XLSX is read with DuckDB's `excel` extension using `all_varchar=true`, then a full-column validation pass restores safe numeric types. A schema-only native read also identifies Excel-formatted dates, timestamps, times, and booleans; their serial values are converted explicitly from Excel's epoch without exposing the native reader's first-row inference failure. Mixed or ambiguous columns remain `VARCHAR`. ODS excludes GDAL's synthetic `OGC_FID` field so only spreadsheet columns reach the pipeline. Explicit user editor associations can still override these defaults.
 
 Supported extensions have one TypeScript source of truth in `DATA_FILE_EXTENSIONS`. The VS Code manifest must also be updated when a format is added because contribution points are declarative JSON.
+
+## Database files
+
+A database holds several tables, so it does not fit the one-reader-per-file mapping. `database-source.ts` handles it:
+
+1. `detectDatabaseKind` reads the first bytes: `SQLite format 3` for SQLite, `DUCK` at offset 8 for DuckDB. The extension is only a hint because `.db` is ambiguous; any other file fails with a clear message.
+2. The file is attached read-only under a per-connection alias. SQLite first loads DuckDB's signed `sqlite` extension through the same `ensureDuckDBExtension` LOAD-then-INSTALL path as other formats.
+3. `information_schema.tables` lists tables, views, and non-default schemas. `sqlite_*` internal tables are hidden.
+4. The chosen table (the first by default) is promoted to the panel relation with `promoteRelation`, the same staging-and-transaction step `loadFile` uses, so a failed load or switch keeps the previous relation. The rest of the pipeline never knows the source was a database.
+5. Eager loads copy the table and detach the file immediately, which releases DuckDB's lock so other programs can write. Lazy loads keep the attachment for the life of the connection. A new alias is attached before the old one is detached, so a failed switch keeps working.
+
+SQLite lets one column hold text and numbers, which DuckDB cannot type. The extension reports this as an error mentioning `sqlite_all_varchar`; the loader then retries with every column as text and sets `textColumns` so the header can say so. Lazy SQLite loads scan once up front because lazy views would otherwise fail only when a later page reads the bad row. The setting is reset before each load so the next table is typed again.
+
+The extension host remembers `PanelState.database` (tables and selection). `sessionUpdated` carries it as `database`, the webview's `selectTable` message switches tables, refresh reloads the selected table, and `.qw` recipes store `sourceTable` beside `sourceFile`. Exports, recipes, and dbt model names use the table name instead of the database file name. Join, union, and schema comparison reject database files because they address one file as one table.
 
 ## Transform pipeline
 

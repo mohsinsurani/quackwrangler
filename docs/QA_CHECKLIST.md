@@ -20,6 +20,8 @@ Confirm that `package.json` and `package-lock.json` remain on the currently publ
 Run **Run QuackWrangler Extension** from the repository's Run and Debug view, then check:
 
 - Open CSV, TSV, Parquet, JSON, JSONL/NDJSON, XLSX, legacy XLS, ODS, all Arrow IPC suffixes (`.arrow`, `.arrows`, `.ipc`), and ORC files.
+- Open a DuckDB file and a SQLite file. Confirm the header lists their tables, views, and extra schemas, and that switching tables loads each one. Apply a step, switch tables, and confirm the warning names the number of steps and cancelling keeps the current table. Save a `.qw` recipe, reopen it, and confirm the same table loads. Confirm Refresh keeps the chosen table, exports and the recipe file are named after the table, and a `.db` file that is neither format shows a clear error.
+- Open a large database table lazily, then confirm another program can read the file but a DuckDB file cannot be written until the tab closes; open a small table and confirm the file is writable by another program. In SQLite, put text into a numeric column and confirm the table opens with every column as text and an "all text" badge.
 - Click each supported file extension and confirm it opens directly in the QuackWrangler custom editor; confirm explicit user editor associations can still override the default.
 - From a **No data loaded** editor, confirm the orientation text mentions visual transforms, profiles/charts, and AI planning. Use **Open File** and confirm the selected file replaces the empty state in the same tab. Use **Open Folder**, select a nested supported file, and confirm it loads in that same tab; verify cancellation and empty folders leave a clear, usable state.
 - Open data from a read-only workspace and confirm DuckDB spill storage is created under VS Code extension storage rather than a relative `.tmp` directory.
@@ -56,7 +58,7 @@ Record any manual failure before release. A passing unit suite does not replace 
 
 ## Automated UI check in real VS Code
 
-Run `npm run test:ui` before a release. It launches VS Code unattended (no file pickers or prompts), opens each fixture itself, and exercises the editor in the Dark, Light, High Contrast and High Contrast Light themes plus a 700 px and a 700×560 window. It covers paging, sorting, the Export and Recipe menus, search, the Tools drawer (apply, undo, redo, remove), Quality, Charts, SQL (including a rejected write), selection and copy, TSV/JSON/XLSX loading, the nested-value tree, the join form, dbt command visibility, overflow, and text contrast.
+Run `npm run test:ui` before a release. It launches VS Code unattended (no file pickers or prompts), opens each fixture itself, and exercises the editor in the Dark, Light, High Contrast and High Contrast Light themes plus a 700 px and a 700×560 window. It covers paging, sorting, opening DuckDB and SQLite files (including a `.db` detected from its header and a `.db` that is not a database), switching tables from the header, the Export and Recipe menus, search, the Tools drawer (apply, undo, redo, remove), Quality, Charts, SQL (including a rejected write), selection and copy, TSV/JSON/XLSX loading, the nested-value tree, the join form, dbt command visibility, overflow, and text contrast.
 
 It needs a built extension and a local VS Code (`QW_VSCODE_PATH` overrides the location).
 

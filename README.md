@@ -221,19 +221,30 @@ QuackWrangler only offers numeric aggregations such as average for compatible sc
 
 ## Supported file formats
 
-| Format         | Extensions                   | Notes                                                |
-| -------------- | ---------------------------- | ---------------------------------------------------- |
-| Parquet        | `.parquet`                   | Native DuckDB reader                                 |
-| Delimited text | `.csv`, `.tsv`               | Automatic schema and delimiter detection             |
-| JSON           | `.json`, `.jsonl`, `.ndjson` | Arrays, records, and nested values supported         |
-| Excel          | `.xlsx`, `.xls`              | Legacy `.xls` is converted to temporary `.xlsx`      |
-| OpenDocument   | `.ods`                       | Uses DuckDB's spreadsheet support                    |
-| Arrow IPC      | `.arrow`, `.arrows`, `.ipc`  | Uses DuckDB's signed `nanoarrow` community extension |
-| ORC            | `.orc`                       | Uses DuckDB's signed `orc` community extension       |
+| Format         | Extensions                                              | Notes                                                |
+| -------------- | ------------------------------------------------------- | ---------------------------------------------------- |
+| Parquet        | `.parquet`                                              | Native DuckDB reader                                 |
+| Delimited text | `.csv`, `.tsv`                                          | Automatic schema and delimiter detection             |
+| JSON           | `.json`, `.jsonl`, `.ndjson`                            | Arrays, records, and nested values supported         |
+| Excel          | `.xlsx`, `.xls`                                         | Legacy `.xls` is converted to temporary `.xlsx`      |
+| OpenDocument   | `.ods`                                                  | Uses DuckDB's spreadsheet support                    |
+| Arrow IPC      | `.arrow`, `.arrows`, `.ipc`                             | Uses DuckDB's signed `nanoarrow` community extension |
+| ORC            | `.orc`                                                  | Uses DuckDB's signed `orc` community extension       |
+| Databases      | `.duckdb`, `.ddb`, `.sqlite`, `.sqlite3`, `.db`, `.db3` | DuckDB and SQLite files; pick a table in the header  |
+
+### Database files
+
+DuckDB and SQLite files open like any other file. Their tables and views appear in a **table switcher** in the header, and each table behaves like a normal dataset: profiles, quality checks, transforms, SQL, charts, and exports all work. QuackWrangler opens the file read-only and never writes to it.
+
+- **`.db` files** are shared by DuckDB, SQLite, and unrelated programs, so the format is detected from the file header, not the extension. A `.db` file that is neither shows a clear error.
+- **Switching tables** keeps the file open. Switching clears applied steps, and QuackWrangler asks first if there are any; save a recipe to keep them. `.qw` recipes remember the table.
+- **Small tables are copied into memory** and the file is released, so another program can write to it while you work; use Refresh to reload. Large tables stay in the file and keep it open read-only. Another program can still read a file open in QuackWrangler, but cannot write to a DuckDB file until you close the tab.
+- **SQLite types are flexible.** If a column mixes numbers and text, DuckDB cannot give it one type, so the table opens with every column as text and the header shows an "all text" badge. Use a cast transform to convert columns.
+- **SQLite needs DuckDB's signed `sqlite` extension**, downloaded on first use like the Excel one. Local files only; database files cannot be joined, unioned, or schema-compared yet.
 
 HTTPS and S3 URLs are supported for formats handled by the corresponding DuckDB reader. Remote access uses DuckDB `httpfs`; private S3 authentication follows DuckDB/AWS credential-chain configuration, so QuackWrangler does not place cloud credentials in workspace files.
 
-XLSX, ODS, Arrow IPC, and ORC use signed DuckDB extensions. QuackWrangler loads cached copies first, so only the first use of a missing extension requires network access. Legacy `.xls` files are converted in-process to a temporary `.xlsx` file, then use the same XLSX reader and type handling. Password-protected or malformed legacy workbooks may still fail conversion.
+XLSX, ODS, Arrow IPC, ORC, and SQLite use signed DuckDB extensions. QuackWrangler loads cached copies first, so only the first use of a missing extension requires network access. Legacy `.xls` files are converted in-process to a temporary `.xlsx` file, then use the same XLSX reader and type handling. Password-protected or malformed legacy workbooks may still fail conversion.
 
 XLSX files are first read as text, then QuackWrangler selectively restores types only when every non-empty cell converts safely. Native Excel formatting is used to recover `DATE`, `TIMESTAMP`, `TIME`, and `BOOLEAN` values regardless of how Excel displays them; clean numeric columns become `BIGINT` or `DOUBLE`. Columns with mixed values such as `42` and `tablet`, leading-zero identifiers, or ambiguous text dates remain `VARCHAR`. Use a cast transform or custom SQL when plain text dates need a locale-specific interpretation.
 

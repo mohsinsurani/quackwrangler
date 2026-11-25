@@ -4,6 +4,14 @@ All notable changes to QuackWrangler are documented here using [Keep a Changelog
 
 ## [Unreleased]
 
+### Added
+
+- Open DuckDB and SQLite database files (`.duckdb`, `.ddb`, `.sqlite`, `.sqlite3`, `.db`, `.db3`) like any other file. A table switcher in the header lists tables, views, and extra schemas; each opens as a normal dataset with profiles, quality, transforms, SQL, charts, and exports.
+- `.db` files are detected as DuckDB or SQLite from the file header, since the extension is shared. Files that are neither show a clear error.
+- Databases open read-only. Small tables are copied into memory and the file is released so other programs can keep writing to it; large tables stay in the file.
+- SQLite columns that mix numbers and text open as text, with an "all text" badge, instead of failing.
+- `.qw` recipes remember the source table, and exports and dbt models are named after it.
+
 ### Changed
 
 - Refreshed the data editor with a compact toolbar, tabbed analysis, searchable operations drawer, compact profiles, calmer grid styling, and consolidated view controls.

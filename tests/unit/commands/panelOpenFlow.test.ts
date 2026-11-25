@@ -25,6 +25,7 @@ const mocks = vi.hoisted(() => {
     get revision() {
       return revision;
     },
+    history: [] as unknown[],
     panel,
     executeCommand: vi.fn().mockResolvedValue(undefined),
     showOpenDialog: vi.fn(),
@@ -33,9 +34,13 @@ const mocks = vi.hoisted(() => {
     restoreValidated: vi.fn<WranglingSession['restoreValidated']>().mockResolvedValue(false),
     showWarningMessage: vi.fn(),
     showErrorMessage: vi.fn(),
+    showSaveDialog: vi.fn(),
+    writeFile: vi.fn().mockResolvedValue(undefined),
     readDirectory: vi.fn(),
     loadFile: vi.fn().mockResolvedValue(undefined),
     prepareDataFileReader: vi.fn().mockResolvedValue(undefined),
+    loadDatabaseTable: vi.fn(),
+    releaseDatabase: vi.fn().mockResolvedValue(undefined),
     exportResults: vi.fn().mockResolvedValue(undefined),
     attach: vi.fn(() => panel),
     appendLine: vi.fn(),
@@ -56,6 +61,8 @@ vi.mock('vscode', () => ({
     showQuickPick: mocks.showQuickPick,
     showWarningMessage: mocks.showWarningMessage,
     showErrorMessage: mocks.showErrorMessage,
+    showSaveDialog: mocks.showSaveDialog,
+    showInformationMessage: vi.fn(),
   },
   workspace: {
     fs: { readDirectory: mocks.readDirectory },
@@ -75,7 +82,7 @@ vi.mock('vscode', () => ({
 
 vi.mock('node:fs/promises', async () => {
   const actual = await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises');
-  return { ...actual, readFile: mocks.readFile };
+  return { ...actual, readFile: mocks.readFile, writeFile: mocks.writeFile };
 });
 
 vi.mock('../../../src/duckdb/connection.js', () => ({
@@ -116,6 +123,13 @@ vi.mock('../../../src/duckdb/parquet-loader.js', () => ({
   getFileMetadata: vi.fn(),
 }));
 
+vi.mock('../../../src/duckdb/database-source.js', () => ({
+  loadDatabaseTable: mocks.loadDatabaseTable,
+  releaseDatabase: mocks.releaseDatabase,
+  describeTable: (table: { schema: string; name: string; view: boolean }) =>
+    `${table.schema === 'main' ? '' : `${table.schema}.`}${table.name}${table.view ? ' (view)' : ''}`,
+}));
+
 vi.mock('../../../src/dbt/context.js', () => ({ findDbtProject: vi.fn() }));
 
 vi.mock('../../../src/transforms/pipeline.js', () => ({
@@ -125,7 +139,7 @@ vi.mock('../../../src/transforms/pipeline.js', () => ({
       this.filePath = filePath;
     }
     getHistory(): unknown[] {
-      return [];
+      return mocks.history;
     }
     canUndo(): boolean {
       return false;
@@ -195,6 +209,7 @@ describe('custom-editor file opening flow', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.posted.length = 0;
+    mocks.history.length = 0;
     mocks.setRevision(1);
     mocks.setFailCustomQuery(false);
     configureCommands(
@@ -615,5 +630,201 @@ describe('per-panel DuckDB connection isolation', () => {
     // connection is closed by observing the connection mock.
     const disposeCallback = panel.onDispose.mock.calls[0][0] as () => void;
     expect(() => disposeCallback()).not.toThrow();
+  });
+});
+
+describe('database files', () => {
+  const orders = { schema: 'main', name: 'orders', view: false };
+  const customers = { schema: 'main', name: 'customers', view: false };
+  const info = (selected = orders): unknown => ({
+    kind: 'duckdb',
+    tables: [orders, customers],
+    selected,
+    textColumns: false,
+  });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.posted.length = 0;
+    mocks.history.length = 0;
+    mocks.setRevision(1);
+    // An earlier suite points attach() at its own panel; use the shared one here.
+    mocks.attach.mockReturnValue(mocks.panel);
+    mocks.loadDatabaseTable.mockImplementation(async (_c, _f, table) =>
+      info(table ? { ...table, view: false } : orders),
+    );
+    configureCommands(
+      { fsPath: '/extension' } as never,
+      { appendLine: mocks.appendLine } as never,
+      {
+        globalStorageUri: { fsPath: '/writable/global-storage' },
+        globalState: { get: vi.fn(() => []), update: vi.fn() },
+      } as never,
+    );
+  });
+
+  it('opens a database through the table loader and reports its tables to the webview', async () => {
+    await openDataWranglerCustomEditor({ fsPath: '/data/shop.duckdb' } as never, {} as never);
+
+    expect(mocks.loadDatabaseTable).toHaveBeenCalledWith(
+      expect.anything(),
+      '/data/shop.duckdb',
+      undefined,
+      'auto',
+      64,
+      expect.stringMatching(/^qw_[0-9a-f]{16}$/),
+    );
+    expect(mocks.loadFile).not.toHaveBeenCalled();
+    expect(mocks.posted).toContainEqual(
+      expect.objectContaining({
+        type: 'sessionUpdated',
+        database: expect.objectContaining({ selected: orders }),
+      }),
+    );
+  });
+
+  it('does not attach database info to ordinary files', async () => {
+    await openDataWranglerCustomEditor({ fsPath: '/data/plain.csv' } as never, {} as never);
+    const update = mocks.posted.find(
+      (message) => (message as { type: string }).type === 'sessionUpdated',
+    ) as { database?: unknown };
+    expect(update.database).toBeUndefined();
+    expect(mocks.loadDatabaseTable).not.toHaveBeenCalled();
+    expect(mocks.releaseDatabase).toHaveBeenCalled();
+  });
+
+  it('switches table on request and reloads that table', async () => {
+    await openDataWranglerCustomEditor({ fsPath: '/data/shop.duckdb' } as never, {} as never);
+    mocks.posted.length = 0;
+    await latestMessageHandler()({
+      type: 'selectTable',
+      schema: 'main',
+      name: 'customers',
+      requestId: 'grid-9',
+    });
+
+    expect(mocks.loadDatabaseTable).toHaveBeenLastCalledWith(
+      expect.anything(),
+      '/data/shop.duckdb',
+      expect.objectContaining({ schema: 'main', name: 'customers' }),
+      'auto',
+      64,
+      expect.any(String),
+    );
+    expect(mocks.posted).toContainEqual(
+      expect.objectContaining({
+        type: 'sessionUpdated',
+        requestId: 'grid-9',
+        database: expect.objectContaining({
+          selected: expect.objectContaining({ name: 'customers' }),
+        }),
+      }),
+    );
+  });
+
+  it('keeps the chosen table when the data is refreshed', async () => {
+    await openDataWranglerCustomEditor({ fsPath: '/data/shop.duckdb' } as never, {} as never);
+    await latestMessageHandler()({ type: 'selectTable', schema: 'main', name: 'customers' });
+    await latestMessageHandler()({ type: 'refresh' });
+
+    expect(mocks.loadDatabaseTable).toHaveBeenLastCalledWith(
+      expect.anything(),
+      '/data/shop.duckdb',
+      expect.objectContaining({ name: 'customers' }),
+      'auto',
+      64,
+      expect.any(String),
+    );
+  });
+
+  it('asks before a table switch clears applied steps and cancels cleanly', async () => {
+    await openDataWranglerCustomEditor({ fsPath: '/data/shop.duckdb' } as never, {} as never);
+    mocks.history.push({ id: 's1' }, { id: 's2' });
+    mocks.loadDatabaseTable.mockClear();
+    mocks.posted.length = 0;
+    const warning = vi.fn().mockResolvedValue(undefined);
+    const { window } = await import('vscode');
+    (window as unknown as { showWarningMessage: unknown }).showWarningMessage = warning;
+
+    await latestMessageHandler()({
+      type: 'selectTable',
+      schema: 'main',
+      name: 'customers',
+      requestId: 'grid-3',
+    });
+
+    expect(warning).toHaveBeenCalledWith(
+      expect.stringContaining('clears 2 applied steps'),
+      { modal: true },
+      'Switch table',
+    );
+    expect(mocks.loadDatabaseTable).not.toHaveBeenCalled();
+    // The webview must still get a response so it stops showing a loading state.
+    expect(mocks.posted).toContainEqual(
+      expect.objectContaining({ type: 'sessionUpdated', requestId: 'grid-3' }),
+    );
+  });
+
+  it('rejects a table that is not in the database', async () => {
+    await openDataWranglerCustomEditor({ fsPath: '/data/shop.duckdb' } as never, {} as never);
+    mocks.posted.length = 0;
+    await latestMessageHandler()({ type: 'selectTable', schema: 'main', name: 'nope' });
+    expect(mocks.posted).toContainEqual(
+      expect.objectContaining({ type: 'error', message: '"nope" is not in this database' }),
+    );
+  });
+
+  it('rejects a table switch when no database is open', async () => {
+    await openDataWranglerCustomEditor({ fsPath: '/data/plain.csv' } as never, {} as never);
+    mocks.posted.length = 0;
+    await latestMessageHandler()({ type: 'selectTable', schema: 'main', name: 'x' });
+    expect(mocks.posted).toContainEqual(
+      expect.objectContaining({ type: 'error', message: 'Open a database file first' }),
+    );
+  });
+
+  it('restores the previous table when a switch fails', async () => {
+    await openDataWranglerCustomEditor({ fsPath: '/data/shop.duckdb' } as never, {} as never);
+    mocks.loadDatabaseTable.mockRejectedValueOnce(new Error('locked by another program'));
+    mocks.posted.length = 0;
+    await latestMessageHandler()({ type: 'selectTable', schema: 'main', name: 'customers' });
+
+    expect(mocks.posted).toContainEqual(
+      expect.objectContaining({ type: 'error', message: 'locked by another program' }),
+    );
+    // The panel still shows the original table, so a later refresh reloads it.
+    mocks.loadDatabaseTable.mockClear();
+    await latestMessageHandler()({ type: 'refresh' });
+    expect(mocks.loadDatabaseTable).toHaveBeenLastCalledWith(
+      expect.anything(),
+      '/data/shop.duckdb',
+      expect.objectContaining({ name: 'orders' }),
+      'auto',
+      64,
+      expect.any(String),
+    );
+  });
+
+  it('saves the open table in the recipe and names the file after it', async () => {
+    await openDataWranglerCustomEditor({ fsPath: '/data/shop.duckdb' } as never, {} as never);
+    await latestMessageHandler()({ type: 'selectTable', schema: 'main', name: 'customers' });
+    mocks.showSaveDialog.mockResolvedValue({ fsPath: '/data/out.qw' });
+    const { DataWranglerPanel } = await import('../../../src/webview/provider.js');
+    (DataWranglerPanel as unknown as { currentPanel: unknown }).currentPanel = mocks.panel;
+    const { saveWorkspaceCommand } = await import('../../../src/commands');
+
+    await saveWorkspaceCommand();
+
+    expect(mocks.showSaveDialog).toHaveBeenCalledWith(
+      expect.objectContaining({
+        defaultUri: expect.objectContaining({ fsPath: '/data/customers.qw' }),
+      }),
+    );
+    const written = JSON.parse(String(mocks.writeFile.mock.calls.at(-1)?.[1]));
+    expect(written).toMatchObject({
+      sourceFile: '/data/shop.duckdb',
+      sourceTable: { schema: 'main', name: 'customers' },
+    });
+    (DataWranglerPanel as unknown as { currentPanel: unknown }).currentPanel = undefined;
   });
 });

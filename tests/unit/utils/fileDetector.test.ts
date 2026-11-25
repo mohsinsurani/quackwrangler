@@ -1,7 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import {
   DATA_FILE_EXTENSIONS,
+  DATABASE_FILE_EXTENSIONS,
   isDataFile,
+  isDatabaseFile,
   getDataFilePatterns,
 } from '../../../src/utils/fileDetector';
 
@@ -34,6 +36,28 @@ describe('fileDetector utils', () => {
       expect(isDataFile('stream.arrows')).toBe(true);
       expect(isDataFile('batch.ipc')).toBe(true);
       expect(isDataFile('warehouse.orc')).toBe(true);
+    });
+
+    it('recognizes DuckDB and SQLite database files', () => {
+      for (const name of [
+        'shop.duckdb',
+        'shop.ddb',
+        'app.sqlite',
+        'app.sqlite3',
+        'app.db',
+        'app.db3',
+        'APP.SQLITE',
+      ]) {
+        expect(isDataFile(name)).toBe(true);
+        expect(isDatabaseFile(name)).toBe(true);
+      }
+      expect(DATABASE_FILE_EXTENSIONS.every((e) => DATA_FILE_EXTENSIONS.includes(e))).toBe(true);
+    });
+
+    it('does not treat ordinary data files as databases', () => {
+      expect(isDatabaseFile('data.csv')).toBe(false);
+      expect(isDatabaseFile('notes.db.txt')).toBe(false);
+      expect(isDatabaseFile('db')).toBe(false);
     });
 
     it('should reject non-data files', () => {

@@ -1,7 +1,11 @@
 import React from 'react';
 
+import type { DatabaseInfo, DatabaseTable } from '../types';
+
 interface HeaderProps {
   fileName: string;
+  database?: DatabaseInfo;
+  onSelectTable?: (table: DatabaseTable) => void;
   rowCount: number;
   columnCount: number;
   isLoading: boolean;
@@ -11,13 +15,64 @@ interface HeaderProps {
 }
 
 export const Header: React.FC<HeaderProps> = React.memo(
-  ({ fileName, rowCount, columnCount, isLoading, aiLoading = false, onRefresh, onGenerateAI }) => {
+  ({
+    fileName,
+    database,
+    onSelectTable,
+    rowCount,
+    columnCount,
+    isLoading,
+    aiLoading = false,
+    onRefresh,
+    onGenerateAI,
+  }) => {
+    const tableKey = (table: DatabaseTable): string => `${table.schema}\u0000${table.name}`;
+    const tableLabel = (table: DatabaseTable): string => {
+      const name = table.schema === 'main' ? table.name : `${table.schema}.${table.name}`;
+      return table.view ? `${name} (view)` : name;
+    };
     return (
       <header className="header">
         <div className="header-top">
           <div className="header-title">
             <span className="quack-icon codicon codicon-table" aria-hidden="true" />
             <h1 className="file-name">{fileName || 'QuackWrangler'}</h1>
+            {database && onSelectTable && (
+              <div className="table-switcher">
+                <span className="codicon codicon-database" aria-hidden="true" />
+                <select
+                  className="table-select"
+                  aria-label="Table"
+                  title={
+                    database.textColumns
+                      ? 'This table mixes text and numbers in some columns, so every column is read as text.'
+                      : `Choose a table from this ${database.kind === 'sqlite' ? 'SQLite' : 'DuckDB'} database`
+                  }
+                  value={tableKey(database.selected)}
+                  disabled={isLoading || database.tables.length < 2}
+                  onChange={(event) => {
+                    const next = database.tables.find(
+                      (table) => tableKey(table) === event.target.value,
+                    );
+                    if (next) onSelectTable(next);
+                  }}
+                >
+                  {database.tables.map((table) => (
+                    <option key={tableKey(table)} value={tableKey(table)}>
+                      {tableLabel(table)}
+                    </option>
+                  ))}
+                </select>
+                {database.textColumns && (
+                  <span
+                    className="table-notice"
+                    title="This table mixes text and numbers in some columns, so every column is read as text."
+                  >
+                    all text
+                  </span>
+                )}
+              </div>
+            )}
             {fileName && (
               <div className="data-info">
                 <span className="info-badge">{rowCount.toLocaleString()} rows</span>
