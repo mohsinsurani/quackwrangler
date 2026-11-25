@@ -138,6 +138,7 @@ const databaseReady = (async () => {
     const file = path.join(ws, 'shop.duckdb');
     const database = await DuckDBInstance.create(file);
     const connection = await database.connect();
+    // The instance keeps the file locked until it is closed, and VS Code must be able to open it.
     for (const sql of [
       'CREATE TABLE orders(id INTEGER, region VARCHAR, total DOUBLE)',
       "INSERT INTO orders VALUES (1,'east',10.5),(2,'west',20),(3,'east',30)",
@@ -148,6 +149,7 @@ const databaseReady = (async () => {
     ])
       await connection.run(sql);
     connection.closeSync();
+    database.closeSync();
     databaseFixtures.duckdb = true;
   } catch (error) {
     console.log(

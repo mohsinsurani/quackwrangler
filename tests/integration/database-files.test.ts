@@ -1,4 +1,5 @@
 import { DuckDBInstance } from '@duckdb/node-api';
+import { spawnSync } from 'node:child_process';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -67,6 +68,7 @@ async function createDuckDbFile(file: string): Promise<void> {
   await exec(connection, "CREATE VIEW east_orders AS SELECT * FROM orders WHERE region = 'east'");
   await exec(connection, 'CHECKPOINT');
   connection.closeSync();
+  database.closeSync();
 }
 
 async function createSqliteFile(file: string): Promise<void> {
@@ -209,20 +211,43 @@ describe('opening a DuckDB file', () => {
     await releaseDatabase(connection as never);
   });
 
+  // A different process, like another program, is the only fair test of DuckDB's file lock:
+  // inside one process DuckDB shares open files, so a same-process write always succeeds.
+  function writeFromAnotherProcess(file: string, sql: string): { ok: boolean; error: string } {
+    const script = `const {DuckDBInstance}=require('@duckdb/node-api');(async()=>{const i=await DuckDBInstance.create(process.argv[1]);const c=await i.connect();await c.run(process.argv[2]);c.closeSync();i.closeSync();})().catch(e=>{console.error(String(e.message));process.exit(1)})`;
+    const run = spawnSync(process.execPath, ['-e', script, file, sql], { encoding: 'utf8' });
+    return { ok: run.status === 0, error: run.stderr };
+  }
+
   it('releases the file after an eager load so another program can write to it', async () => {
     const file = join(directory, 'release.duckdb');
     await createDuckDbFile(file);
     const connection = adapter();
     await loadDatabaseTable(connection as never, file, undefined, 'eager', 64, 'qw_release');
 
-    const writer = await DuckDBInstance.create(file);
-    const writerConnection = await writer.connect();
-    await exec(writerConnection, "INSERT INTO customers VALUES (3, 'Cy')");
-    writerConnection.closeSync();
+    const write = writeFromAnotherProcess(file, "INSERT INTO customers VALUES (3, 'Cy')");
+    expect(write.error).toBe('');
+    expect(write.ok).toBe(true);
     // The eager copy is unchanged; refreshing reloads the new row.
     expect((await connection.query('SELECT COUNT(*) FROM qw_release')).rows[0][0]).toBe('2');
     await loadDatabaseTable(connection as never, file, undefined, 'eager', 64, 'qw_release');
     expect((await connection.query('SELECT COUNT(*) FROM qw_release')).rows[0][0]).toBe('3');
+  });
+
+  it('keeps a lazily loaded DuckDB file locked until it is released', async () => {
+    const file = join(directory, 'held.duckdb');
+    await createDuckDbFile(file);
+    const connection = adapter();
+    await loadDatabaseTable(connection as never, file, undefined, 'lazy', 64, 'qw_held');
+
+    const blocked = writeFromAnotherProcess(file, "INSERT INTO customers VALUES (3, 'Cy')");
+    expect(blocked.ok).toBe(false);
+    expect(blocked.error).toMatch(/lock/i);
+
+    await releaseDatabase(connection as never);
+    const allowed = writeFromAnotherProcess(file, "INSERT INTO customers VALUES (3, 'Cy')");
+    expect(allowed.error).toBe('');
+    expect(allowed.ok).toBe(true);
   });
 
   it('reports an empty database', async () => {
@@ -231,6 +256,7 @@ describe('opening a DuckDB file', () => {
     const connection = await empty.connect();
     await exec(connection, 'CHECKPOINT');
     connection.closeSync();
+    empty.closeSync();
     await expect(
       loadDatabaseTable(adapter() as never, file, undefined, 'eager', 64, 'qw_empty'),
     ).rejects.toThrow(/contains no tables or views/);
