@@ -418,7 +418,7 @@
     "eslint-plugin-import": "^2.31.0",
     "eslint-plugin-react-hooks": "^7.1.1",
     "husky": "^9.1.7",
-    "lint-staged": "^17.6.1",
+    "lint-staged": "^17.6.2",
     "playwright-core": "^1.65.1",
     "prettier": "^3.10.1",
     "typescript": "^6.0.3",
