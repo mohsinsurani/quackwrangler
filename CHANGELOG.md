@@ -24,6 +24,7 @@ All notable changes to QuackWrangler are documented here using [Keep a Changelog
 
 ### Fixed
 
+- Private S3 buckets now open. Only `AWS_*` environment variables were picked up before; named profiles, the default profile in `~/.aws`, single sign-on, and instance roles were ignored, and the error told users to use them. Public buckets are still read first without credentials, so they keep working when a stored key is invalid.
 - Signed remote links (such as pre-signed S3 or Azure SAS URLs) are no longer saved in the recent files list, written to the output log, or sent to the editor, and credentials are removed from the source address in saved `.qw` recipes.
 - The editor-title **Open Data Wrangler** button now opens the file you are viewing instead of asking for a file.
 - Clicking a column header repeatedly no longer adds a new step each time; a sort that directly follows another sort replaces it.
