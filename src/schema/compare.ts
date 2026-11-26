@@ -26,7 +26,17 @@ export function compareSchemas(baseline: TableSchema, candidate: TableSchema): S
   return differences;
 }
 
-export function schemaComparisonMarkdown(schemas: TableSchema[]): string {
+export interface ComparisonNotes {
+  /** Files that were found but not compared because of the limit. */
+  skipped?: number;
+  /** Files that could not be read, with the reason. */
+  failed?: Array<{ filePath: string; reason: string }>;
+}
+
+export function schemaComparisonMarkdown(
+  schemas: TableSchema[],
+  notes: ComparisonNotes = {},
+): string {
   if (schemas.length < 2) throw new Error('Select at least two files');
   const baseline = schemas[0];
   const sections = schemas.slice(1).map((candidate) => {
@@ -41,5 +51,13 @@ export function schemaComparisonMarkdown(schemas: TableSchema[]): string {
       : '| — | compatible | — | — |';
     return `## ${candidate.filePath}\n\n| Column | Status | Baseline | Candidate |\n| --- | --- | --- | --- |\n${rows}`;
   });
-  return `# QuackWrangler schema comparison\n\nBaseline: \`${baseline.filePath}\`\n\n${sections.join('\n\n')}`;
+  const warnings: string[] = [];
+  if (notes.skipped)
+    warnings.push(
+      `> Only the first ${schemas.length} files were compared. ${notes.skipped} more ${notes.skipped === 1 ? 'file was' : 'files were'} not checked.`,
+    );
+  for (const failure of notes.failed ?? [])
+    warnings.push(`> Could not read \`${failure.filePath}\`: ${failure.reason}`);
+  const header = warnings.length ? `${warnings.join('\n')}\n\n` : '';
+  return `# QuackWrangler schema comparison\n\n${header}Baseline: \`${baseline.filePath}\`\n\n${sections.join('\n\n')}`;
 }
