@@ -37,7 +37,10 @@ beforeAll(async () => {
   configFiles = { credentials, config, missing: join(directory, 'does-not-exist') };
 
   server = createServer((req, res) => {
-    const signer = /Credential=([^/]+)\//.exec(req.headers.authorization ?? '')?.[1] ?? 'anonymous';
+    // An AWS Signature V4 header looks like `... Credential=<key>/<date>/<region>/s3/aws4_request, ...`.
+    const authorization = req.headers.authorization ?? '';
+    const start = authorization.indexOf('Credential=');
+    const signer = start < 0 ? 'anonymous' : authorization.slice(start + 11).split('/', 1)[0];
     const bucket = (req.url ?? '').split('/')[1];
     const allowed =
       (bucket === 'open' && (signer === 'anonymous' || signer === GOOD_KEY)) ||
