@@ -80,7 +80,7 @@ if (isDevelopment) {
         ],
         page: { offset: 0, limit: 100, totalRows: 12_450 },
       },
-      '*',
+      window.location.origin,
     );
   }, 50);
 
@@ -106,7 +106,7 @@ if (isDevelopment) {
           canUndo: false,
           canRedo: false,
         },
-        '*',
+        window.location.origin,
       );
     if (
       [
@@ -134,7 +134,7 @@ if (isDevelopment) {
               sessionId,
               revision,
             },
-            '*',
+            window.location.origin,
           ),
         80,
       );
@@ -151,7 +151,7 @@ if (isDevelopment) {
               sessionId,
               revision,
             },
-            '*',
+            window.location.origin,
           ),
         80,
       );
@@ -160,7 +160,7 @@ if (isDevelopment) {
         () =>
           window.postMessage(
             { type: 'exportComplete', outputPath: '', status: 'cancelled', requestId },
-            '*',
+            window.location.origin,
           ),
         80,
       );
@@ -207,7 +207,7 @@ if (isDevelopment) {
               sessionId,
               revision,
             },
-            '*',
+            window.location.origin,
           ),
         80,
       );
@@ -239,13 +239,17 @@ if (isDevelopment) {
               sessionId,
               revision,
             },
-            '*',
+            window.location.origin,
           ),
         80,
       );
     } else if (type === 'generateAITransforms') {
       setTimeout(
-        () => window.postMessage({ type: 'aiComplete', status: 'cancelled', requestId }, '*'),
+        () =>
+          window.postMessage(
+            { type: 'aiComplete', status: 'cancelled', requestId },
+            window.location.origin,
+          ),
         80,
       );
     }

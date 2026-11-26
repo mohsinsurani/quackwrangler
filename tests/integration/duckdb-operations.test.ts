@@ -14,6 +14,9 @@ import {
 import * as XLSX from '@e965/xlsx';
 
 let database: DuckDBInstance;
+// Every fixture file lives in one private folder created for this run and removed afterwards, so
+// nothing is written to a predictable path in the shared temp directory.
+let privateDirectory: string;
 
 function createAdapter() {
   return {
@@ -76,6 +79,7 @@ async function runPipeline(type: string, params: Record<string, unknown>): Promi
 }
 
 beforeAll(async () => {
+  privateDirectory = await mkdtemp(join(tmpdir(), 'quackwrangler-ops-'));
   database = await DuckDBInstance.create(':memory:');
   const connection = await database.connect();
   await connection.run(`
@@ -92,6 +96,27 @@ beforeAll(async () => {
       (2, 'alphabet', 30, 'east', NULL)
   `);
   connection.closeSync();
+});
+
+afterAll(async () => {
+  await rm(privateDirectory, { recursive: true, force: true });
+});
+
+describe('signed source links', () => {
+  it('are redacted in what the session sends to the editor but kept for the session itself', async () => {
+    const signed = 'https://b.s3.amazonaws.com/data.parquet?X-Amz-Signature=topsecret&download=1';
+    // A local table stands in for the remote file so the page can be built without a network.
+    const connection = await database.connect();
+    await connection.run('CREATE OR REPLACE TABLE signed_source AS SELECT 1 AS id');
+    connection.closeSync();
+    const session = new WranglingSession(createAdapter() as never, 'signed_source');
+    session.load(signed);
+
+    const page = await session.getPage(0, 5);
+    expect(session.getFilePath()).toBe(signed);
+    expect(JSON.stringify(page.schema)).not.toContain('topsecret');
+    expect(page.schema.filePath).toContain('download=1');
+  });
 });
 
 describe('repeated sorting', () => {
@@ -245,7 +270,7 @@ describe('recipe replay with column remapping', () => {
 
 describe('transactional file promotion', () => {
   it('keeps the previous relation when promotion fails after dropping it', async () => {
-    const source = join(tmpdir(), `quackwrangler-loader-${randomUUID()}.parquet`);
+    const source = join(privateDirectory, `quackwrangler-loader-${randomUUID()}.parquet`);
     const writer = await database.connect();
     await writer.run(`COPY (SELECT 42 AS value) TO '${source}' (FORMAT PARQUET)`);
     writer.closeSync();
@@ -282,7 +307,7 @@ describe('supported file formats', () => {
   const skipOptionalExtensionTests = process.env.QW_SKIP_OPTIONAL_EXTENSION_TESTS === 'true';
 
   it('converts legacy XLS files to a temporary XLSX before loading', async () => {
-    const source = join(tmpdir(), `quackwrangler-legacy-${randomUUID()}.xls`);
+    const source = join(privateDirectory, `quackwrangler-legacy-${randomUUID()}.xls`);
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(
       workbook,
@@ -295,7 +320,7 @@ describe('supported file formats', () => {
     await writeFile(source, XLSX.write(workbook, { bookType: 'xls', type: 'buffer' }));
 
     const adapter = createAdapter();
-    const tempDirectory = join(tmpdir(), `quackwrangler-xls-${randomUUID()}`);
+    const tempDirectory = join(privateDirectory, `quackwrangler-xls-${randomUUID()}`);
     const connection = { ...adapter, getTempDirectory: () => tempDirectory };
     await prepareDataFileReader(connection as never, source);
     await loadFile(connection as never, source, 'eager', 64, 'format_xls_data');
@@ -309,7 +334,7 @@ describe('supported file formats', () => {
     ['jsonl', 'FORMAT JSON, ARRAY false'],
     ['ndjson', 'FORMAT JSON, ARRAY false'],
   ])('loads %s files through the shared loader', async (extension, copyOptions) => {
-    const source = join(tmpdir(), `quackwrangler-format-${randomUUID()}.${extension}`);
+    const source = join(privateDirectory, `quackwrangler-format-${randomUUID()}.${extension}`);
     const writer = await database.connect();
     await writer.run(`COPY (SELECT 1 AS id, 'duck' AS name) TO '${source}' (${copyOptions})`);
     writer.closeSync();
@@ -322,7 +347,7 @@ describe('supported file formats', () => {
   });
 
   it.skipIf(skipOptionalExtensionTests)('loads ODS through the spatial reader', async () => {
-    const source = join(tmpdir(), `quackwrangler-format-${randomUUID()}.ods`);
+    const source = join(privateDirectory, `quackwrangler-format-${randomUUID()}.ods`);
     const workbook =
       'UEsDBBQAAAAAADyCbF2FbDmKLgAAAC4AAAAIAAAAbWltZXR5cGVhcHBsaWNhdGlvbi92bmQub2FzaXMub3BlbmRvY3VtZW50LnNwcmVhZHNoZWV0UEsDBBQAAAAIADyCbF0h0v8CKgEAAMkDAAALAAAAY29udGVudC54bWytU9tSgzAQ/RUm7zTQJ80AffMH1A9Ik4UyplkmCUr/3oRQCo520PEF9nZ2z56F4jCcVfIOxraoS5LvMpKAFihb3ZTk9eUpfSCHqsC6bgUwiaI/g3apQO38O/FgbVnMlqQ3miG3rWWan8EyJxh2oK8otqxm46gYcfyoNsPH4hUaBrcZ7GuX2MgFEUtycq5jlAZQjO7QNHSfZY80+leM4ErcRppmVqXGXkvuvJATBxg6MG1IcTXC2KpDJDLJsTjBnsyCH1FeZsd2Bri0JwBXFVGG8ZlEO8wsyXNI52RVkBr8WAcEKDVP5qqH1F06j7bO+MMHdODXVa0s6GR640uDv7UMNO82pXeZb16lVsgdWWW8uDce+b9vJnvx9svNlhHvfXdouvoU6A9/YvUJUEsDBBQAAAAIADyCbF21rYD5tgAAAHABAAAVAAAATUVUQS1JTkYvbWFuaWZlc3QueG1sjZDRCsIwDEV/ZeR9q/okZdU3v0A/oLSZFtq0rNnY/t4qOCci+JaQ3Htu0h6n4KsR++wiKdg2G6iQTLSOrgou51O9h+OhDZpch5nlq6iKjPLSKhh6klFnlyXpgFmykTEh2WiGgMTyc18+QUu34u9gReucx7qo+/m92w3e10nzTYFYWQS0Ttc8J1SgU/LOaC6WYiTbPHM16zhNTj1qm2+IDOJ/oonED3m55gebcWLxGBdX8fW2wx1QSwECFAMUAAAAAAA8gmxdhWw5ii4AAAAuAAAACAAAAAAAAAAAAAAAgAEAAAAAbWltZXR5cGVQSwECFAMUAAAACAA8gmxdIdL/AioBAADJAwAACwAAAAAAAAAAAAAAgAFUAAAAY29udGVudC54bWxQSwECFAMUAAAACAA8gmxdta2A+bYAAABwAQAAFQAAAAAAAAAAAAAAgAGnAQAATUVUQS1JTkYvbWFuaWZlc3QueG1sUEsFBgAAAAADAAMAsgAAAJACAAAAAA==';
     await writeFile(source, Buffer.from(workbook, 'base64'));
@@ -337,7 +362,7 @@ describe('supported file formats', () => {
   it.skipIf(skipOptionalExtensionTests).each(['arrow', 'arrows', 'ipc'])(
     'loads .%s Arrow IPC files',
     async (extension) => {
-      const source = join(tmpdir(), `quackwrangler-format-${randomUUID()}.${extension}`);
+      const source = join(privateDirectory, `quackwrangler-format-${randomUUID()}.${extension}`);
       const writer = await database.connect();
       try {
         await writer.run('LOAD nanoarrow');
@@ -361,7 +386,7 @@ describe('supported file formats', () => {
   it.skipIf(skipOptionalExtensionTests)(
     'loads ORC through the signed community extension',
     async () => {
-      const source = join(tmpdir(), `quackwrangler-format-${randomUUID()}.orc`);
+      const source = join(privateDirectory, `quackwrangler-format-${randomUUID()}.orc`);
       const writer = await database.connect();
       try {
         await writer.run('LOAD orc');
@@ -385,7 +410,7 @@ describe('CSV type resolution', () => {
   it('loads a numeric column that contains a late textual value', async () => {
     // Reproduces the reported failure: a column that looks like BIGINT in the
     // sampled rows but contains "ALL" far beyond the sample window.
-    const source = join(tmpdir(), `quackwrangler-late-text-${randomUUID()}.csv`);
+    const source = join(privateDirectory, `quackwrangler-late-text-${randomUUID()}.csv`);
     let body = 'GP_PRAC,NUMBER_OF_PATIENTS\n';
     for (let index = 0; index < 50_000; index += 1) body += `A${index},${index}\n`;
     body += 'A99999,ALL\n';
@@ -405,7 +430,7 @@ describe('CSV type resolution', () => {
   });
 
   it('keeps precise types for clean columns instead of widening everything', async () => {
-    const source = join(tmpdir(), `quackwrangler-clean-${randomUUID()}.csv`);
+    const source = join(privateDirectory, `quackwrangler-clean-${randomUUID()}.csv`);
     await writeFile(source, 'id,amount\n1,10.5\n2,20.5\n');
 
     const adapter = createAdapter();
@@ -420,7 +445,7 @@ describe('CSV type resolution', () => {
   });
 
   it('resolves types once and reuses them for later queries', async () => {
-    const source = join(tmpdir(), `quackwrangler-cached-${randomUUID()}.csv`);
+    const source = join(privateDirectory, `quackwrangler-cached-${randomUUID()}.csv`);
     await writeFile(source, 'id,label\n1,a\n2,b\n');
 
     const adapter = createAdapter();
@@ -446,7 +471,7 @@ describe('CSV type resolution', () => {
 
 describe('XLSX type resolution', () => {
   it('restores native Excel dates, timestamps, times, and booleans', async () => {
-    const source = join(tmpdir(), `quackwrangler-temporal-${randomUUID()}.xlsx`);
+    const source = join(privateDirectory, `quackwrangler-temporal-${randomUUID()}.xlsx`);
     const writer = await database.connect();
     await writer.run('LOAD excel');
     await writer.run(
@@ -508,7 +533,7 @@ describe('XLSX type resolution', () => {
   });
 
   it('loads a column containing numeric and textual cells', async () => {
-    const source = join(tmpdir(), `quackwrangler-mixed-${randomUUID()}.xlsx`);
+    const source = join(privateDirectory, `quackwrangler-mixed-${randomUUID()}.xlsx`);
     // Minimal XLSX workbook with a numeric H2 and the text "tablet" in H3.
     const workbook =
       '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';
