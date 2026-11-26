@@ -1,7 +1,7 @@
 {
-  "generated_at": "2026-10-22T10:57:49.279Z",
+  "generated_at": "2026-11-26T18:13:56.425Z",
   "machine": {
-    "os": "Darwin 25.5.0",
+    "os": "Darwin 27.2.0",
     "architecture": "arm64",
     "cpu": "Apple M3 Pro",
     "logical_cores": 11,
@@ -21,24 +21,24 @@
   "results": [
     {
       "engine": "QuackWrangler (DuckDB)",
-      "version": "2.0.0-r.1",
-      "load_ms": 14.67,
-      "transform_ms": 6.98,
-      "total_ms": 21.62
+      "version": "2.0.1-r.1",
+      "load_ms": 13.04,
+      "transform_ms": 6.76,
+      "total_ms": 18.97
     },
     {
       "engine": "Polars",
       "version": "1.43.1",
-      "load_ms": 2.76,
-      "transform_ms": 8.49,
-      "total_ms": 11.25
+      "load_ms": 2.75,
+      "transform_ms": 8.97,
+      "total_ms": 11.64
     },
     {
       "engine": "Pandas",
       "version": "3.0.5",
-      "load_ms": 9.34,
-      "transform_ms": 42.45,
-      "total_ms": 51.49
+      "load_ms": 9.33,
+      "transform_ms": 35.69,
+      "total_ms": 45.21
     }
   ]
 }

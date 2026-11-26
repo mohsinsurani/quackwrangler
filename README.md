@@ -1,23 +1,33 @@
-# QuackWrangler
-
 <p align="center">
   <img src="logo.png" alt="QuackWrangler logo" width="128" height="128">
 </p>
 
-[![CI](https://github.com/mohsinsurani/quackwrangler/actions/workflows/ci.yml/badge.svg)](https://github.com/mohsinsurani/quackwrangler/actions/workflows/ci.yml)
-[![VS Code Marketplace](https://img.shields.io/badge/VS_Code_Marketplace-0.5.0-007ACC?logo=visualstudiocode)](https://marketplace.visualstudio.com/items?itemName=quackwrangler.quackwrangler)
-[![MIT License](https://img.shields.io/badge/license-MIT-yellow.svg)](LICENSE)
-[![VS Code 1.85+](https://img.shields.io/badge/VS%20Code-1.85%2B-blue.svg)](https://code.visualstudio.com/)
+<h1 align="center">QuackWrangler</h1>
 
-**Open, clean, explore, and export data without leaving VS Code. Your files stay on your machine.**
+<p align="center"><strong>Open, clean, explore, and export data without leaving VS Code.</strong><br>
+Built-in DuckDB. No Python. No Jupyter. No database to set up. <strong>Your data never leaves your machine.</strong></p>
 
-QuackWrangler does not upload rows or cell values. If you choose to use the optional AI transform planner, it sends only your instruction, table schema, and a redacted visual-transform history. Values, expressions, file paths, and literals are removed before the request. It shows the proposed steps before changing anything.
+<p align="center">
+  <a href="https://marketplace.visualstudio.com/items?itemName=quackwrangler.quackwrangler"><img alt="VS Code Marketplace" src="https://img.shields.io/badge/VS_Code_Marketplace-0.5.0-007ACC?logo=visualstudiocode"></a>
+  <a href="https://github.com/mohsinsurani/quackwrangler/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/mohsinsurani/quackwrangler/actions/workflows/ci.yml/badge.svg"></a>
+  <img alt="Runs locally" src="https://img.shields.io/badge/runs-100%25_locally-2ea44f">
+  <img alt="No telemetry" src="https://img.shields.io/badge/telemetry-none-2ea44f">
+  <img alt="Windows, macOS, Linux" src="https://img.shields.io/badge/Windows%20%C2%B7%20macOS%20%C2%B7%20Linux-supported-555">
+  <a href="LICENSE"><img alt="MIT License" src="https://img.shields.io/badge/license-MIT-yellow.svg"></a>
+  <img alt="VS Code 1.85+" src="https://img.shields.io/badge/VS%20Code-1.85%2B-blue.svg">
+</p>
 
-QuackWrangler ships with DuckDB built in. Open CSV, Parquet, JSON, Excel, and ODS files directly—no Python environment, Jupyter kernel, or database setup required.
-
-> QuackWrangler is an independent open-source project inspired by the visual workflow of data-wrangling tools.
+<p align="center">
+  <a href="#privacy">Privacy</a> ·
+  <a href="#performance">Performance</a> ·
+  <a href="#features">Features</a> ·
+  <a href="#install">Install</a> ·
+  <a href="CHANGELOG.md">Changelog</a>
+</p>
 
 **Install:** `code --install-extension quackwrangler.quackwrangler`
+
+> QuackWrangler is an independent open-source project inspired by the visual workflow of data-wrangling tools.
 
 <figure>
 
@@ -29,7 +39,132 @@ QuackWrangler ships with DuckDB built in. Open CSV, Parquet, JSON, Excel, and OD
 
 ![QuackWrangler overview showing the nested STRUCT value inspector beside the synchronized data grid](docs/assets/quackwrangler-overview.jpg)
 
-## Fast workflows
+<a id="privacy"></a>
+
+## 🔒 Your data stays on your machine
+
+**QuackWrangler runs entirely on your computer.** Opening a file, profiling it, filtering, joining, querying, charting, and exporting all happen inside VS Code with the DuckDB engine built into the extension. **No rows, cell values, file names, or file contents are ever uploaded to a QuackWrangler server — there isn't one.**
+
+| Promise                    | What it means                                                                                                                                                                                                                                                                                         |
+| -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **No account, no sign-in** | Install it and open a file. Nothing to register, nothing to connect.                                                                                                                                                                                                                                  |
+| **No telemetry**           | The extension has no analytics, usage tracking, or crash-reporting code, and no dependency that could add it. Diagnostics are written only to your local **Output** panel, with file paths and URLs removed. VS Code's own telemetry setting is separate and is not something QuackWrangler controls. |
+| **No server component**    | There is no QuackWrangler cloud service, API, or background process that data could be sent to.                                                                                                                                                                                                       |
+| **Locked-down interface**  | The editor's interface runs in a VS Code webview with a Content Security Policy of `default-src 'none'`, so it cannot load or contact anything outside the extension. Data work happens in the extension host, not in the page.                                                                       |
+| **Safe by default**        | Opening, filtering, and transforming never modify your source file: edits happen on an in-memory copy of the data, and database files are attached read-only. Your original changes only if you pick it as an export destination.                                                                     |
+| **Open source**            | Every claim here can be checked: [read the code](https://github.com/mohsinsurani/quackwrangler), and see the [security policy](SECURITY.md).                                                                                                                                                          |
+
+**Works with the network off.** Parquet, CSV, TSV, JSON, and NDJSON open, profile, sort, and query with no connection at all: their readers are compiled into DuckDB. This is checked by an automated test that blocks extension downloads and by watching for outgoing requests during ordinary local work, which made none.
+
+### What does use the network (and only when you ask)
+
+Being honest about this is part of being trustworthy:
+
+- **Excel, ODS, SQLite, Arrow, and ORC files** need a small signed DuckDB extension, downloaded **once** from DuckDB's own extension repository and cached. After that they work offline. The request is a plain download of a public file named after the extension for your platform; no file name, path, or data is part of it.
+- **Remote HTTPS and S3 files** are read from the address you type. Signed links and passwords are kept out of recent files, logs, and saved recipes.
+- **AI plan** is **off until you store your own API key**. When used, it sends only your instruction, column names and types, and a redacted list of the steps you applied — **never rows, values, samples, file paths, expressions, or literals** — and shows the plan for your approval before anything changes. You can point it at your own OpenAI-compatible endpoint.
+
+If you never use these, QuackWrangler makes no network connections. Your own VS Code installation, other extensions, and update checks are outside QuackWrangler's control.
+
+<a id="performance"></a>
+
+## ⚡ Fast
+
+QuackWrangler runs on [DuckDB](https://duckdb.org), a columnar analytical engine built into the extension. It reads Parquet directly, runs on every CPU core, and spills to disk instead of running out of memory, so a laptop handles files that make most tools crawl.
+
+**At 10 million rows, QuackWrangler finished the same workflow 4× faster than Pandas and about 1.2× faster than Polars, using 60% less memory than either.**
+
+```text
+10M rows: filter + aggregate + sort, total time (lower is better)
+
+QuackWrangler  142 ms  ██████
+Polars         168 ms  ███████
+Pandas         591 ms  ████████████████████████
+
+10M rows: peak memory (lower is better)
+
+QuackWrangler   681 MB  ██████████
+Polars        1,698 MB  ████████████████████████
+Pandas        1,876 MB  ███████████████████████████
+```
+
+| Rows | QuackWrangler time / memory | Polars time / memory | Pandas time / memory |
+| ---: | --------------------------: | -------------------: | -------------------: |
+|  10K |              6.0 ms / 98 MB |  **3.7 ms** / 132 MB |     36.3 ms / 124 MB |
+| 100K |        17.9 ms / **104 MB** |  **5.6 ms** / 145 MB |     42.2 ms / 142 MB |
+|   1M |        22.6 ms / **166 MB** | **16.6 ms** / 314 MB |     92.8 ms / 325 MB |
+|  10M |         **142 ms / 681 MB** |    168 ms / 1,698 MB |    591 ms / 1,876 MB |
+
+**Honest reading:** on small files Polars is faster, which is expected, and nobody notices a few milliseconds. DuckDB pulls ahead as data grows, and its memory use stays far lower. Every engine completed every run, and all returned the same validated result. This is one reproducible workload, not a universal ranking.
+
+| Also measured                    | Result                                                                                                                             |
+| -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| **50 million rows** (single run) | QuackWrangler **1.21 s** and **2.03 GB**, Polars 2.24 s and 3.45 GB, Pandas 4.22 s and 5.20 GB                                     |
+| **Loading 100K rows**            | Parquet **11 ms**, CSV 44 ms, NDJSON 48 ms. Parquet loads about 4× faster than CSV, and the file is about 20× smaller than the CSV |
+| **Remote Parquet over HTTPS/S3** | Reads only the parts it needs with range requests. A 7-million-row public file loaded in about 1.5 seconds                         |
+| **A slow job**                   | Press **Cancel** and it stops, with no error and your data untouched                                                               |
+
+<details>
+<summary><strong>Methodology and raw results</strong></summary>
+
+Medians from fresh processes on an Apple M3 Pro with 18 GB RAM (DuckDB 2.0.1, Polars 1.43.1, Pandas 3.0.5), run on 26 November 2026. The primary comparison is the median of seven runs after two warmups on a deterministic one-million-row Parquet file, where every engine performed equivalent eager operations. Peak memory is process RSS, which includes each language runtime and its libraries. The 50 million row figure is a single sample, published as exploratory evidence rather than a claim about out-of-memory behaviour. Results vary with hardware, versions, data shape, cache state, and query.
+
+| Primary workload (1M rows)   | Load Parquet | Filter + aggregate + sort |        Total |
+| ---------------------------- | -----------: | ------------------------: | -----------: |
+| QuackWrangler (DuckDB 2.0.1) |     13.04 ms |               **6.76 ms** |     18.97 ms |
+| Polars 1.43.1                |  **2.75 ms** |                   8.97 ms | **11.64 ms** |
+| Pandas 3.0.5                 |      9.33 ms |                  35.69 ms |     45.21 ms |
+
+See the [benchmark methodology](benchmarks/README.md), the [raw results](benchmarks/results/latest.json), the [scaling results](benchmarks/results/scalability.json), the [50M run](benchmarks/results/scalability-50m.json), and the [format results](benchmarks/results/formats.json). Re-run it yourself:
+
+```bash
+npm run benchmark
+npm run benchmark:all # primary, scalability, and format suites
+```
+
+</details>
+
+<a id="features"></a>
+
+## ✨ What you can do
+
+<table>
+<tr>
+<td width="50%" valign="top">
+
+### 📂 Open almost anything
+
+Parquet, CSV, TSV, JSON, JSONL, Excel, ODS, Arrow, ORC, and **DuckDB or SQLite databases** with a table switcher. Point it at an HTTPS or S3 address and read it in place.
+
+### 🔍 See your data at a glance
+
+Column profiles with completeness, distinct counts, percentiles, and histograms, plus a data-quality summary for nulls, duplicates, and outliers.
+
+### 🛠️ Clean it visually
+
+Filter, sort by several columns, deduplicate, rename, drop, cast, fill, group, pivot, join, and append. Every change is a step you can reorder, undo, redo, or remove.
+
+</td>
+<td width="50%" valign="top">
+
+### 📊 Chart and query
+
+Histogram, bar, scatter, line, box plot, and correlation heatmap. Or write read-only DuckDB SQL against your current result.
+
+### 🧩 Handle nested data
+
+Click a struct, list, map, or JSON cell to browse it as a tree, then extract a field, flatten an object, or explode an array into rows.
+
+### 🔁 Reuse your work
+
+Save any sequence of steps as a `.qw` recipe and replay it on another file, even when column names changed. Export Parquet, CSV, or JSON, copy as dbt SQL, or hand off to Polars.
+
+</td>
+</tr>
+</table>
+
+<details>
+<summary><strong>Quick filter, Formula Builder, Cancel, recent files, schema comparison, and more</strong></summary>
 
 - **Quick filter:** right-click a table cell to keep its value, exclude it, or find matching text. Right-click a null cell to keep or exclude nulls. The result is a normal undoable transform.
 - **Act on quality findings:** inspect null rows without changing the transform history, fill missing values with a clear impact statement, or exclude null rows as an undoable transform.
@@ -46,14 +181,7 @@ QuackWrangler ships with DuckDB built in. Open CSV, Parquet, JSON, Excel, and OD
 - **Generate a cleaning plan:** store an AI provider key in VS Code SecretStorage, then use **AI plan**. Only your instruction, schema metadata, and redacted visual-transform history are sent; generated steps require approval and pass the normal transform validator.
 - **Compare schemas:** select multiple files with **Compare File Schemas**, or recursively inspect up to 100 files with **Detect Folder Schema Drift**.
 
-## What's new in 0.5.0
-
-- **Replay recipes on files with different column names.** Choose replacements when a `.qw` recipe references a missing column. Cancelling or failing validation leaves the current result and history intact.
-- **Act on missing values from Data Quality.** Inspect matching rows without changing the pipeline, or apply an undoable fill or exclusion.
-- **Continue in Polars.** Export the active result to Parquet and open a Python handoff, or generate an editable Polars recipe for supported transforms on local Parquet files.
-- **Keep the grid in view.** The compact toolbar puts transforms, steps, recipes, and export within reach. The searchable Operations panel opens beside the grid on wide editors and as a slide-over drawer in narrow splits. Quality, Charts, and SQL share one analysis tab strip.
-
-See the [changelog](CHANGELOG.md#050---2026-11-20) for full release notes and earlier versions.
+</details>
 
 ## Why QuackWrangler?
 
@@ -68,63 +196,7 @@ See the [changelog](CHANGELOG.md#050---2026-11-20) for full release notes and ea
 
 QuackWrangler sits between a basic file preview and a full notebook. It gives you a quick visual workflow for everyday data work, while keeping each change reproducible.
 
-## Performance benchmark
-
-On a deterministic one-million-row Parquet workload, Polars had the lowest end-to-end time, while QuackWrangler's production DuckDB 2.0 engine completed the workflow faster than Pandas. QuackWrangler's transform phase was faster than both comparison engines.
-
-| Engine                           | Load Parquet | Filter + aggregate + sort |        Total |
-| -------------------------------- | -----------: | ------------------------: | -----------: |
-| QuackWrangler (DuckDB 2.0.0-r.1) |     14.67 ms |               **6.98 ms** |     21.62 ms |
-| Polars 1.43.1                    |  **2.76 ms** |                   8.49 ms | **11.25 ms** |
-| Pandas 3.0.5                     |      9.34 ms |                  42.45 ms |     51.49 ms |
-
-These are medians of seven measured runs after two warmups on an Apple M3 Pro with 18 GB RAM, recorded October 22, 2026. Every engine ran equivalent eager operations and returned the same validated 20-row result. Lower is better.
-
-### Scaling and peak memory
-
-Fresh-process measurements include each language runtime and its loaded libraries:
-
-| Rows | QuackWrangler time / RSS |     Polars time / RSS |    Pandas time / RSS |
-| ---: | -----------------------: | --------------------: | -------------------: |
-|  10K |          6.09 ms / 99 MB |  **3.45 ms** / 134 MB |    34.66 ms / 125 MB |
-| 100K |    17.68 ms / **105 MB** |  **5.43 ms** / 147 MB |    37.51 ms / 143 MB |
-|   1M |    22.72 ms / **166 MB** | **15.81 ms** / 314 MB |    87.64 ms / 326 MB |
-|  10M |   **137.37 ms / 672 MB** |  151.54 ms / 1,694 MB | 593.59 ms / 1,813 MB |
-
-At 10 million rows, QuackWrangler was 1.1× faster than Polars and 4.3× faster than Pandas in this workload, while its measured peak process RSS was 60% lower than Polars and 63% lower than Pandas. All engines completed successfully; no unmeasured OOM claim is made. See the [raw scalability results](benchmarks/results/scalability.json).
-
-```text
-10M rows — total workflow time (lower is better)
-
-QuackWrangler  137 ms  █████
-Polars         152 ms  ██████
-Pandas         594 ms  ████████████████████████
-```
-
-An exploratory single 50M-row run also completed for every engine:
-
-| Engine        |      Total | Peak process RSS |
-| ------------- | ---------: | ---------------: |
-| QuackWrangler | **1.21 s** |      **2.03 GB** |
-| Polars        |     2.24 s |          3.45 GB |
-| Pandas        |     4.22 s |          5.20 GB |
-
-This 50M result is one fresh-process sample rather than a multi-run median. It is published as exploratory evidence and not used for an OOM or “under 1 GB” claim. See the [raw 50M result](benchmarks/results/scalability-50m.json).
-
-### File-format loading
-
-For the same generated 100K-row dataset, DuckDB 2.0 materialized Parquet in 11.30 ms, NDJSON in 48.83 ms, and CSV in 44.34 ms. Parquet was 3.9× faster to load than CSV and produced a much smaller file. See the [raw format results](benchmarks/results/formats.json).
-
-This is a reproducible workload, not a universal engine ranking; results depend on hardware, versions, data shape, cache state, swap pressure, and query. Peak RSS is more defensible than an allocator delta but still includes different runtime overheads. Large runs remain opt-in because they can materially affect workstation responsiveness.
-
-See the [benchmark methodology and run instructions](benchmarks/README.md) and [raw machine-readable result](benchmarks/results/latest.json). Re-run it locally with:
-
-```bash
-npm run benchmark
-npm run benchmark:all # primary, scalability, and format suites
-```
-
-## Highlights
+## Everything it includes
 
 - DuckDB-native execution with automatic disk spilling
 - **No Python, Jupyter, or database setup required** — works immediately
@@ -152,6 +224,15 @@ npm run benchmark:all # primary, scalability, and format suites
 ### Why DuckDB is the default engine
 
 The extension currently uses DuckDB because it can run analytical queries larger than the configured memory limit by spilling intermediate data to disk. An eager Polars DataFrame normally materializes its working data in RAM, which can use more memory on large files. Polars also has a streaming engine and can be very efficient, so this is not a claim that DuckDB always uses less memory; it describes QuackWrangler's current workload and the measured results above.
+
+## What's new in 0.5.0
+
+- **Replay recipes on files with different column names.** Choose replacements when a `.qw` recipe references a missing column. Cancelling or failing validation leaves the current result and history intact.
+- **Act on missing values from Data Quality.** Inspect matching rows without changing the pipeline, or apply an undoable fill or exclusion.
+- **Continue in Polars.** Export the active result to Parquet and open a Python handoff, or generate an editable Polars recipe for supported transforms on local Parquet files.
+- **Keep the grid in view.** The compact toolbar puts transforms, steps, recipes, and export within reach. The searchable Operations panel opens beside the grid on wide editors and as a slide-over drawer in narrow splits. Quality, Charts, and SQL share one analysis tab strip.
+
+See the [changelog](CHANGELOG.md#050---2026-11-20) for full release notes and earlier versions.
 
 ## Install
 
@@ -295,7 +376,7 @@ CSV and TSV column types are resolved once when a source is opened. QuackWrangle
 
 ## Develop locally
 
-Requirements: Node.js 20 or newer, npm 10 or newer, and VS Code 1.85 or newer. Python is not required. Install `uv` only when running the optional Polars/Pandas benchmarks.
+Requirements: Node.js 22 or newer, npm 10 or newer, and VS Code 1.85 or newer. Python is not required. Install `uv` only when running the optional Polars/Pandas benchmarks.
 
 ```bash
 git clone https://github.com/mohsinsurani/quackwrangler.git
