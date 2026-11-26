@@ -416,7 +416,70 @@ export async function prepareDataFileReader(
     return;
   }
   await prepareFileReader(connection, fileType);
-  await prepareSourceSchema(connection, filePath, fileType);
+  await withRemoteAccess(connection, filePath, () =>
+    prepareSourceSchema(connection, filePath, fileType),
+  );
+}
+
+/**
+ * How each S3 bucket was last reached on a connection. Public buckets read anonymously; private ones
+ * need DuckDB's credential chain. The value is a hint, so a denial on an anonymous bucket still
+ * escalates once.
+ */
+const s3Access = new WeakMap<DuckDBConnection, Map<string, 'anonymous' | 'credentials'>>();
+
+export function s3Bucket(source: string): string | undefined {
+  return /^s3:\/\/([^/]+)/i.exec(source)?.[1];
+}
+
+export function isAccessDenied(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /\(HTTP (401|403)\b|AccessDenied/i.test(message);
+}
+
+const anonymousSecretName = (bucket: string): string =>
+  `qw_anon_${bucket.replace(/[^A-Za-z0-9_]/g, '_')}`;
+
+/**
+ * Runs a remote read so public and private S3 data both work without configuration.
+ *
+ * Reading starts anonymously for the bucket. Loading the credential chain first would sign every
+ * request, and AWS rejects a public bucket read signed with an invalid or expired key. When the
+ * bucket answers 401 or 403, the anonymous override is removed, DuckDB's `aws` extension supplies
+ * credentials from the environment, shared config and profiles, or SSO, and the read is tried once
+ * more. Whichever setup worked stays in place so later pages of a lazy view read the same way.
+ * Other protocols and local files run unchanged.
+ */
+export async function withRemoteAccess<T>(
+  connection: DuckDBConnection,
+  source: string,
+  operation: () => Promise<T>,
+): Promise<T> {
+  const bucket = s3Bucket(source);
+  if (!bucket) return operation();
+  const known = s3Access.get(connection) ?? new Map<string, 'anonymous' | 'credentials'>();
+  s3Access.set(connection, known);
+
+  if (known.get(bucket) !== 'credentials') {
+    await connection.query(
+      `CREATE OR REPLACE SECRET ${anonymousSecretName(bucket)} (TYPE s3, KEY_ID '', SECRET '', SCOPE ${quoteLiteral(`s3://${bucket}`)})`,
+    );
+    try {
+      const result = await operation();
+      known.set(bucket, 'anonymous');
+      return result;
+    } catch (error) {
+      if (!isAccessDenied(error)) throw error;
+    }
+    await connection.query(`DROP SECRET IF EXISTS ${anonymousSecretName(bucket)}`);
+    known.set(bucket, 'credentials');
+    try {
+      await ensureDuckDBExtension(connection, 'aws', 'private S3 data');
+    } catch {
+      // Without the extension DuckDB still signs with AWS_* environment variables.
+    }
+  }
+  return operation();
 }
 
 export async function prepareRemoteReader(connection: DuckDBConnection): Promise<void> {
@@ -447,26 +510,28 @@ export async function getFileMetadata(
   if (fileType === 'unknown') throw new Error('Unsupported or missing remote file extension');
   if (/^(https?|s3):\/\//i.test(filePath)) await prepareRemoteReader(connection);
   await prepareFileReader(connection, fileType);
-  await prepareSourceSchema(connection, filePath, fileType);
-  const tableRef = getConnectionTableRef(connection, filePath, fileType);
+  return withRemoteAccess(connection, filePath, async () => {
+    await prepareSourceSchema(connection, filePath, fileType);
+    const tableRef = getConnectionTableRef(connection, filePath, fileType);
 
-  const countResult = await connection.query(`SELECT COUNT(*) as cnt FROM ${tableRef}`);
-  const rowCount = (countResult.rows[0]?.[0] as number) ?? 0;
+    const countResult = await connection.query(`SELECT COUNT(*) as cnt FROM ${tableRef}`);
+    const rowCount = (countResult.rows[0]?.[0] as number) ?? 0;
 
-  const schemaResult = await connection.query(`DESCRIBE SELECT * FROM ${tableRef}`);
+    const schemaResult = await connection.query(`DESCRIBE SELECT * FROM ${tableRef}`);
 
-  const columns: ColumnInfo[] = schemaResult.rows.map((row: unknown[]) => ({
-    name: row[0] as string,
-    type: row[1] as string,
-    nullable: (row[2] as string)?.toUpperCase() === 'YES',
-    description: undefined,
-  }));
+    const columns: ColumnInfo[] = schemaResult.rows.map((row: unknown[]) => ({
+      name: row[0] as string,
+      type: row[1] as string,
+      nullable: (row[2] as string)?.toUpperCase() === 'YES',
+      description: undefined,
+    }));
 
-  return {
-    columns,
-    rowCount: Number(rowCount),
-    filePath,
-  };
+    return {
+      columns,
+      rowCount: Number(rowCount),
+      filePath,
+    };
+  });
 }
 
 export async function loadFile(
@@ -480,12 +545,15 @@ export async function loadFile(
   if (fileType === 'unknown') throw new Error(`Unsupported file type: ${filePath}`);
   if (/^(https?|s3):\/\//i.test(filePath)) await prepareRemoteReader(connection);
   await prepareFileReader(connection, fileType);
-  await prepareSourceSchema(connection, filePath, fileType);
-  const tableRef = getConnectionTableRef(connection, filePath, fileType);
-  const resolvedMode = await resolveLoadingMode(filePath, mode, eagerFileSizeLimitMb);
-
-  await promoteRelation(connection, tableRef, resolvedMode, relationName, `file ${filePath}`);
-  return resolvedMode;
+  let loadedMode: 'eager' | 'lazy' = 'lazy';
+  await withRemoteAccess(connection, filePath, async () => {
+    await prepareSourceSchema(connection, filePath, fileType);
+    const tableRef = getConnectionTableRef(connection, filePath, fileType);
+    const resolvedMode = await resolveLoadingMode(filePath, mode, eagerFileSizeLimitMb);
+    await promoteRelation(connection, tableRef, resolvedMode, relationName, `file ${filePath}`);
+    loadedMode = resolvedMode;
+  });
+  return loadedMode;
 }
 
 /**

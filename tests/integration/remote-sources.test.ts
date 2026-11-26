@@ -312,14 +312,16 @@ describe('remote failure wording', () => {
     expect(message).not.toContain('hidden');
   });
 
-  it('suggests credentials for a private S3 object', () => {
+  it('explains which AWS credentials a private S3 object uses', () => {
     const message = describeRemoteError(
       new Error(
         "HTTP Error: HTTP GET error reading 's3://bucket/key.parquet' (HTTP 403 Forbidden)",
       ),
       's3://bucket/key.parquet',
     );
-    expect(message).toMatch(/aws credentials|credential/i);
+    expect(message).toMatch(/AWS_ACCESS_KEY_ID/);
+    expect(message).toMatch(/AWS_PROFILE/);
+    expect(message).toMatch(/missing or are not allowed/i);
   });
 
   it('passes unrelated errors through unchanged', () => {
