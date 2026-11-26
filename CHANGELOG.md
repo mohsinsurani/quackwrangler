@@ -6,6 +6,9 @@ All notable changes to QuackWrangler are documented here using [Keep a Changelog
 
 ### Added
 
+- **Sort** now takes several columns, each with its own direction. **Drop Column** became **Drop Columns** and removes several at once, and **Remove Duplicates** compares any set of columns, or whole rows when none are chosen. Saved recipes with the earlier single-column form still load, and renamed columns in a multi-column sort are remapped when a recipe is replayed.
+- A table from a DuckDB or SQLite file can be the second source of a **Join** or **Append**: pick the database file, then the table.
+- Schema comparison states when files were left out because of its 100-file limit and lists files it could not read instead of stopping, and no longer counts the rows of every file.
 - A **Cancel** button next to the spinner stops a slow load, query, transform, or remote read without an error and leaves the data and steps as they were. A cancelled load keeps the file that was already open.
 - Clear one-line explanations for remote loading failures (not found, access denied, sign-in required, server error, timeout, unreachable host, certificate problem, or a link that returns a web page), with signed query strings left out. A private S3 object that is denied now points to AWS credentials.
 - While a remote file is slow to start, the progress message repeats with a reminder that loading is still in progress.
