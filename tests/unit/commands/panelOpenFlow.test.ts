@@ -907,11 +907,12 @@ describe('database files', () => {
 
     await saveWorkspaceCommand();
 
-    expect(mocks.showSaveDialog).toHaveBeenCalledWith(
-      expect.objectContaining({
-        defaultUri: expect.objectContaining({ fsPath: '/data/customers.qw' }),
-      }),
-    );
+    // The folder separator depends on the operating system, so check the folder and file name.
+    const suggested = String(
+      (mocks.showSaveDialog.mock.calls.at(-1)?.[0] as { defaultUri: { fsPath: string } }).defaultUri
+        .fsPath,
+    ).replace(/\\/g, '/');
+    expect(suggested).toBe('/data/customers.qw');
     const written = JSON.parse(String(mocks.writeFile.mock.calls.at(-1)?.[1]));
     expect(written).toMatchObject({
       sourceFile: '/data/shop.duckdb',

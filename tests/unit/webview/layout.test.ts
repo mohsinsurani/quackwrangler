@@ -3,36 +3,24 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 const projectRoot = path.resolve(import.meta.dirname, '../../..');
-const appSource = fs.readFileSync(path.join(projectRoot, 'webview-ui/src/App.tsx'), 'utf8');
-const themeSource = fs.readFileSync(
-  path.join(projectRoot, 'webview-ui/src/styles/theme.css'),
-  'utf8',
-);
-const profilesSource = fs.readFileSync(
+// Windows checkouts use CRLF line endings; normalise so the patterns below match on every OS.
+const readSource = (file: string): string => fs.readFileSync(file, 'utf8').replace(/\r\n/g, '\n');
+
+const appSource = readSource(path.join(projectRoot, 'webview-ui/src/App.tsx'));
+const themeSource = readSource(path.join(projectRoot, 'webview-ui/src/styles/theme.css'));
+const profilesSource = readSource(
   path.join(projectRoot, 'webview-ui/src/components/ColumnProfiles.tsx'),
-  'utf8',
 );
-const operationsSource = fs.readFileSync(
+const operationsSource = readSource(
   path.join(projectRoot, 'webview-ui/src/components/OperationsPanel.tsx'),
-  'utf8',
 );
-const gridSource = fs.readFileSync(
-  path.join(projectRoot, 'webview-ui/src/components/DataGrid.tsx'),
-  'utf8',
-);
-const qualitySource = fs.readFileSync(
+const gridSource = readSource(path.join(projectRoot, 'webview-ui/src/components/DataGrid.tsx'));
+const qualitySource = readSource(
   path.join(projectRoot, 'webview-ui/src/components/DataQualitySummary.tsx'),
-  'utf8',
 );
-const chartSource = fs.readFileSync(
-  path.join(projectRoot, 'webview-ui/src/components/ChartPanel.tsx'),
-  'utf8',
-);
-const previewSource = fs.readFileSync(path.join(projectRoot, 'webview-ui/src/main.tsx'), 'utf8');
-const headerSource = fs.readFileSync(
-  path.join(projectRoot, 'webview-ui/src/components/Header.tsx'),
-  'utf8',
-);
+const chartSource = readSource(path.join(projectRoot, 'webview-ui/src/components/ChartPanel.tsx'));
+const previewSource = readSource(path.join(projectRoot, 'webview-ui/src/main.tsx'));
+const headerSource = readSource(path.join(projectRoot, 'webview-ui/src/components/Header.tsx'));
 
 function rule(selector: string, source = themeSource): string {
   const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -144,10 +132,7 @@ describe('webview layout contracts', () => {
 
   it('lets the VS Code webview load the bundled codicon font', () => {
     const viteConfig = fs.readFileSync(path.join(projectRoot, 'webview-ui/vite.config.ts'), 'utf8');
-    const providerSource = fs.readFileSync(
-      path.join(projectRoot, 'src/webview/provider.ts'),
-      'utf8',
-    );
+    const providerSource = readSource(path.join(projectRoot, 'src/webview/provider.ts'));
     // Root-absolute asset URLs do not resolve inside a webview, so CSS fonts must be relative.
     expect(viteConfig).toContain("base: './'");
     expect(providerSource).toContain('font-src ${webview.cspSource}');
