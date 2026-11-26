@@ -6,6 +6,7 @@ All notable changes to QuackWrangler are documented here using [Keep a Changelog
 
 ### Added
 
+- README: a "Take your work to Polars" section explaining the built-in **Continue in Polars** and **Open Polars recipe** options, when to use each, how to use them, a real generated recipe, and the recipe's current limits.
 - README: a quick start, everyday use cases, and a "QuackWrangler and Polars: when to use which" guide. It now separates what is on the Marketplace from what is coming in the next release, corrects which files open in QuackWrangler by default (all supported formats, not only Parquet, CSV, and XLSX), and splits the remote-files notes into a readable list.
 - A redesigned README that leads with privacy and performance. Its claims are backed by an automated test (`tests/integration/offline-privacy.test.ts`) showing that opening, profiling, transforming, querying, and exporting Parquet, CSV, TSV, JSON, and NDJSON files makes no network request and never changes the source file.
 - Benchmarks were re-run on DuckDB 2.0.1 and the results refreshed.
