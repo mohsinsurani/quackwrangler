@@ -527,6 +527,42 @@ async function step(name, fn) {
       return msg;
     });
 
+    await step('Cancel stops a long-running query and the editor stays usable', async () => {
+      // The SQL console is already open from the steps above.
+      await f.locator('.query-console textarea').waitFor({ timeout: 6000 });
+      const box = f.locator('.query-console textarea');
+      const banner = async () =>
+        (await f.locator('.error-banner').count())
+          ? (await f.locator('.error-banner').first().innerText()).replace(/\s+/g, ' ')
+          : '';
+      // A banner from the earlier rejected-write step may still be showing. Cancelling must not
+      // replace it with a new error, so remember what it says now.
+      const bannerBefore = await banner();
+      // Far more work than could finish in the time this check allows.
+      await box.fill('SELECT COUNT(*) FROM range(9000000000) a, range(3) b WHERE a.range % 7 = 0');
+      await click('.query-console-actions .primary-button');
+      await f.locator('.loading-spinner').waitFor({ timeout: 8000 });
+      const started = Date.now();
+      await click('.cancel-btn');
+      await f.waitForFunction(() => !document.querySelector('.loading-spinner'), null, {
+        timeout: 15000,
+      });
+      const seconds = (Date.now() - started) / 1000;
+      if (seconds > 12) throw new Error(`cancel took ${seconds.toFixed(1)}s`);
+      const bannerAfter = await banner();
+      if (/interrupt|cancel/i.test(bannerAfter) || bannerAfter !== bannerBefore)
+        throw new Error(`cancel changed the error banner: "${bannerAfter.slice(0, 120)}"`);
+      // The editor still answers a normal query afterwards.
+      await box.fill('SELECT COUNT(*) AS n FROM current_data');
+      await click('.query-console-actions .primary-button');
+      await f.waitForFunction(
+        () => /Query result/.test(document.querySelector('.footer-scope')?.textContent || ''),
+        null,
+        { timeout: 10000 },
+      );
+      return `stopped in ${seconds.toFixed(1)}s`;
+    });
+
     await step('clearing the query restores the pipeline result', async () => {
       await click('.query-console-actions button:has-text("Return to pipeline")');
       await f.waitForFunction(
