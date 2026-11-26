@@ -4,6 +4,17 @@ All notable changes to QuackWrangler are documented here using [Keep a Changelog
 
 ## [Unreleased]
 
+### Added
+
+- Clear one-line explanations for remote loading failures (not found, access denied, sign-in required, server error, timeout, unreachable host, certificate problem, or a link that returns a web page), with signed query strings left out. A private S3 object that is denied now points to AWS credentials.
+- While a remote file is slow to start, the progress message repeats with a reminder that loading is still in progress.
+- Remote loading tests: a real local HTTP server test on every CI run, `npm run test:remote` for public HTTPS and anonymous S3 files, and a weekly `Remote sources` workflow for it on Linux, Windows, and macOS.
+- Open DuckDB and SQLite database files (`.duckdb`, `.ddb`, `.sqlite`, `.sqlite3`, `.db`, `.db3`) like any other file. A table switcher in the header lists tables, views, and extra schemas; each opens as a normal dataset with profiles, quality, transforms, SQL, charts, and exports.
+- `.db` files are detected as DuckDB or SQLite from the file header, since the extension is shared. Files that are neither show a clear error.
+- Databases open read-only. Small tables are copied into memory and the file is released so other programs can keep writing to it; large tables stay in the file.
+- SQLite columns that mix numbers and text open as text, with an "all text" badge, instead of failing.
+- `.qw` recipes remember the source table, and exports and dbt models are named after it.
+
 ### Removed
 
 - **QuackWrangler: Export Data** and **QuackWrangler: Summarize File** commands. Export is in the editor's Export menu, which checks the result has not changed and confirms the row count; the command's fallback query no longer matched the editor's tables and it could propose overwriting the source file. Column profiles already load automatically.
@@ -21,17 +32,6 @@ All notable changes to QuackWrangler are documented here using [Keep a Changelog
 
 - Updated DuckDB to 2.0.1, a bug-fix release. DuckDB extensions (Excel, spatial, SQLite, Arrow, ORC, httpfs) are cached per DuckDB version, so each one downloads once more on first use.
 - Node.js 22 is now the minimum for development and CI; Node.js 20 reached end of life. CI tests Node.js 22 and 24.
-
-### Added
-
-- Open DuckDB and SQLite database files (`.duckdb`, `.ddb`, `.sqlite`, `.sqlite3`, `.db`, `.db3`) like any other file. A table switcher in the header lists tables, views, and extra schemas; each opens as a normal dataset with profiles, quality, transforms, SQL, charts, and exports.
-- `.db` files are detected as DuckDB or SQLite from the file header, since the extension is shared. Files that are neither show a clear error.
-- Databases open read-only. Small tables are copied into memory and the file is released so other programs can keep writing to it; large tables stay in the file.
-- SQLite columns that mix numbers and text open as text, with an "all text" badge, instead of failing.
-- `.qw` recipes remember the source table, and exports and dbt models are named after it.
-
-### Changed
-
 - Refreshed the data editor with a compact toolbar, tabbed analysis, searchable operations drawer, compact profiles, calmer grid styling, and consolidated view controls.
 - Numeric column profiles now show a ten-bin value histogram computed by DuckDB.
 - The grid footer combines result scope, page range, selection, View options, and pagination in a single row, including in very narrow split editors.
