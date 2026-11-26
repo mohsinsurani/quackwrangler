@@ -352,13 +352,22 @@ async function step(name, fn) {
       return `${first.trim()} -> ${second.trim()} -> back`;
     });
 
-    await step('column sort adds a Sort step and arrow icon', async () => {
+    await step('column sort adds one Sort step, and sorting again replaces it', async () => {
+      const stepsLabel = () => text('.workspace-actions button:has-text("Steps")');
+      const stepCount = async () => Number(/·\s*(\d+)/.exec(await stepsLabel())?.[1] ?? NaN);
       await click('.header-cell:has-text("price")');
       await f.waitForFunction(() => document.querySelector('.sort-indicator'), null, {
         timeout: 8000,
       });
-      const steps = await text('.workspace-actions button:has-text("Steps")');
-      return steps.trim();
+      // The toolbar label updates when the host answers; poll it rather than assume a delay.
+      for (let i = 0; i < 20 && (await stepCount()) !== 1; i++) await f.waitForTimeout(250);
+      if ((await stepCount()) !== 1) throw new Error('first sort: ' + (await stepsLabel()));
+      // A second click flips the direction. It must replace the sort, not add another step.
+      await click('.header-cell:has-text("price")');
+      await f.waitForTimeout(2000);
+      const count = await stepCount();
+      if (count !== 1) throw new Error(`expected 1 step after two header clicks, found ${count}`);
+      return `Steps · ${count} after two clicks`;
     });
 
     await step('Export menu opens, lists formats, closes on Escape', async () => {

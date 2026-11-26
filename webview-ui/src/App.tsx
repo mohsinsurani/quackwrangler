@@ -235,13 +235,8 @@ export const App: React.FC = () => {
           update.schema.columns.map((column) => ({
             name: column.name,
             displayName: column.name,
-            dataType: 'string',
             type: column.type,
-            nullable: column.nullable,
-            nullCount: 0,
-            uniqueCount: 0,
-            totalRows: update.schema.rowCount,
-          })) as ColumnInfo[],
+          })),
         );
         setRows(update.result.rows);
         const history = update.history.map((item) => ({
@@ -292,18 +287,11 @@ export const App: React.FC = () => {
         )
           return;
         setColumns(
-          queryResult.schema.columns.map(
-            (column: { name: string; type: string; nullable: boolean }) => ({
-              name: column.name,
-              displayName: column.name,
-              dataType: 'string',
-              type: column.type,
-              nullable: column.nullable,
-              nullCount: 0,
-              uniqueCount: 0,
-              totalRows: queryResult.page.totalRows,
-            }),
-          ) as ColumnInfo[],
+          queryResult.schema.columns.map((column: { name: string; type: string }) => ({
+            name: column.name,
+            displayName: column.name,
+            type: column.type,
+          })),
         );
         setRows(queryResult.result.rows);
         setPage({ ...queryResult.page, scope: 'query' });
@@ -324,18 +312,11 @@ export const App: React.FC = () => {
         )
           return;
         setColumns(
-          searchResult.schema.columns.map(
-            (column: { name: string; type: string; nullable: boolean }) => ({
-              name: column.name,
-              displayName: column.name,
-              dataType: 'string',
-              type: column.type,
-              nullable: column.nullable,
-              nullCount: 0,
-              uniqueCount: 0,
-              totalRows: searchResult.page.totalRows,
-            }),
-          ) as ColumnInfo[],
+          searchResult.schema.columns.map((column: { name: string; type: string }) => ({
+            name: column.name,
+            displayName: column.name,
+            type: column.type,
+          })),
         );
         setRows(searchResult.result.rows);
         setPage({ ...searchResult.page, scope: searchResult.scope });
@@ -346,9 +327,7 @@ export const App: React.FC = () => {
         setLoading(false);
         setError(null);
       } else if (message.type === 'stats') {
-        // An absent requestId marks an unsolicited host push (Summarize File),
-        // which is still validated against the visible session below.
-        if (message.requestId && message.requestId !== latestRequests.current.stats) return;
+        if (message.requestId !== latestRequests.current.stats) return;
         if (
           !sessionContext.current ||
           message.sessionId !== sessionContext.current.sessionId ||
@@ -845,7 +824,6 @@ export const App: React.FC = () => {
                     setSearchQuery(event.target.value);
                     setInspection(null);
                     inspectionActive.current = false;
-                    sendRequest('grid', { type: 'searchChange', query: event.target.value });
                   }}
                   placeholder="Search all columns"
                   aria-label="Search all columns"

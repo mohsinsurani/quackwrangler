@@ -61,7 +61,6 @@ async function run() {
   for (const command of [
     'quackwrangler.openFile',
     'quackwrangler.openfile',
-    'quackwrangler.summarizeFile',
     'quackwrangler.copyDbtSql',
   ]) {
     assert.ok(commands.includes(command), `${command} should be registered`);
@@ -105,16 +104,10 @@ async function run() {
     'the default custom-editor tabs must retain their source filenames',
   );
 
-  await vscode.commands.executeCommand('quackwrangler.summarizeFile');
-  assert.equal(dataEditorTabs().length, 2, 'summarizing must not replace or close either panel');
-
   const active = vscode.window.tabGroups.activeTabGroup.activeTab;
   assert.ok(active, 'one QuackWrangler panel should be active');
   await vscode.window.tabGroups.close(active);
   await waitFor('one panel to remain after disposal', () => dataEditorTabs().length === 1);
-
-  await vscode.commands.executeCommand('quackwrangler.summarizeFile');
-  assert.equal(dataEditorTabs().length, 1, 'the remaining panel must still accept commands');
 
   await closeAllEditors();
   await openFixture('first.csv');

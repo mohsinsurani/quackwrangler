@@ -31,11 +31,11 @@ QuackWrangler ships with DuckDB built in. Open CSV, Parquet, JSON, Excel, and OD
 
 ## Fast workflows
 
-- **Quick filter:** right-click a table cell to keep its value, exclude it, find matching text, or show nulls. The result is a normal undoable transform.
+- **Quick filter:** right-click a table cell to keep its value, exclude it, or find matching text. Right-click a null cell to keep or exclude nulls. The result is a normal undoable transform.
 - **Act on quality findings:** inspect null rows without changing the transform history, fill missing values with a clear impact statement, or exclude null rows as an undoable transform.
 - **Formula Builder:** open **Transform → Formula Builder** to create conditional columns, date differences, regex extractions, or combined text without SQL.
 - **Join or append files:** open **Combine Files**, choose another supported file, then configure a join or append rows by matching column names.
-- **Save an analysis:** run **QuackWrangler: Save Workspace** from the Command Palette to create a portable `.qw` file. Use **QuackWrangler: Open Workspace** to restore its source and transform history.
+- **Save an analysis:** run **QuackWrangler: Save Workspace** from the Command Palette to create a portable `.qw` file. Use **QuackWrangler: Open Workspace** to reopen its source file (and database table) and replay its steps; if a referenced column was renamed, you pick a replacement, and if the source cannot be opened no steps are applied.
 - **Reuse work:** save the current transform history as a `.qw` recipe, then use **Run recipe…** on the file you want to transform. If a referenced column is missing, pick a replacement from the columns and types available at that step. Cancelling leaves the current result and history intact. Use **Export → Continue in Polars** to export the exact result to Parquet and open a small Python handoff. Running that code requires Polars in your Python environment; QuackWrangler itself does not require Python. **Open Polars recipe** currently supports local Parquet sources and verified null filters, renames, drops, and sorts; other sources, operations, and selector-like column names are refused rather than silently changing their meaning.
 - **Recent files:** the QuackWrangler activity-bar view keeps the ten most recently opened data files.
 - **Work with nested data:** select a struct, list, map, or JSON cell to browse it as a tree, copy a JSON Pointer, extract a field, flatten an object, or explode an array into rows.
@@ -276,7 +276,6 @@ Open VS Code Settings and search for `QuackWrangler`, or configure values direct
   "quackwrangler.duckdb.threads": 0,
   "quackwrangler.duckdb.preserveInsertionOrder": true,
   "quackwrangler.display.pageSize": 100,
-  "quackwrangler.display.maxRows": 10000,
   "quackwrangler.ai.provider": "openai",
   "quackwrangler.ai.model": "gpt-4o-mini",
   "quackwrangler.ai.baseUrl": "",

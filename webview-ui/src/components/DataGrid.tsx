@@ -14,9 +14,6 @@ interface DataGridProps {
   sortBy?: string;
   sortDirection?: 'asc' | 'desc';
   onSort?: (column: string) => void;
-  onCellClick?: (row: number, col: number, value: unknown) => void;
-  selectedRows?: Set<number>;
-  onRowSelect?: (row: number) => void;
   profiles?: ColumnProfile[];
   profileTotalRows?: number;
   pageOffset: number;
@@ -156,9 +153,6 @@ export const DataGrid: React.FC<DataGridProps> = ({
   sortBy,
   sortDirection = 'asc',
   onSort,
-  onCellClick,
-  selectedRows = new Set(),
-  onRowSelect,
   profiles = [],
   profileTotalRows = 0,
   pageOffset,
@@ -194,7 +188,6 @@ export const DataGrid: React.FC<DataGridProps> = ({
     column: string;
     value: unknown;
   } | null>(null);
-  const effectiveSelectedRows = onRowSelect ? selectedRows : localSelectedRows;
   const rowHeight = cellDisplayMode === 'wrap' ? 54 : ROW_HEIGHT;
 
   useEffect(() => {
@@ -211,8 +204,8 @@ export const DataGrid: React.FC<DataGridProps> = ({
   }, []);
 
   useEffect(() => {
-    if (!onRowSelect) setLocalSelectedRows(new Set());
-  }, [rows, onRowSelect]);
+    setLocalSelectedRows(new Set());
+  }, [rows]);
 
   useEffect(() => {
     if (!quickFilterMenu) return;
@@ -308,23 +301,16 @@ export const DataGrid: React.FC<DataGridProps> = ({
     window.setTimeout(() => setCopyStatus(''), 1800);
   }, []);
 
-  const toggleRowSelection = useCallback(
-    (rowIndex: number) => {
-      if (onRowSelect) {
-        onRowSelect(rowIndex);
-        return;
-      }
-      setLocalSelectedRows((current) => {
-        const next = new Set(current);
-        if (next.has(rowIndex)) next.delete(rowIndex);
-        else next.add(rowIndex);
-        return next;
-      });
-    },
-    [onRowSelect],
-  );
+  const toggleRowSelection = useCallback((rowIndex: number) => {
+    setLocalSelectedRows((current) => {
+      const next = new Set(current);
+      if (next.has(rowIndex)) next.delete(rowIndex);
+      else next.add(rowIndex);
+      return next;
+    });
+  }, []);
 
-  const selectedRowIndexes = [...effectiveSelectedRows]
+  const selectedRowIndexes = [...localSelectedRows]
     .filter((index) => index >= 0 && index < rows.length)
     .sort((left, right) => left - right);
   const allRowsSelected = rows.length > 0 && selectedRowIndexes.length === rows.length;
@@ -423,17 +409,9 @@ export const DataGrid: React.FC<DataGridProps> = ({
                 type="checkbox"
                 checked={allRowsSelected}
                 onChange={() => {
-                  if (onRowSelect) {
-                    rows.forEach((_, index) => {
-                      if (allRowsSelected ? selectedRows.has(index) : !selectedRows.has(index)) {
-                        onRowSelect(index);
-                      }
-                    });
-                  } else {
-                    setLocalSelectedRows(
-                      allRowsSelected ? new Set() : new Set(rows.map((_, index) => index)),
-                    );
-                  }
+                  setLocalSelectedRows(
+                    allRowsSelected ? new Set() : new Set(rows.map((_, index) => index)),
+                  );
                 }}
                 aria-label={allRowsSelected ? 'Clear row selection' : 'Select all rows'}
                 title={allRowsSelected ? 'Clear row selection' : 'Select all loaded rows'}
@@ -520,7 +498,7 @@ export const DataGrid: React.FC<DataGridProps> = ({
             >
               {visibleRows.map((row, localIndex) => {
                 const rowIndex = visibleRange.startIndex + localIndex;
-                const isSelected = effectiveSelectedRows.has(rowIndex);
+                const isSelected = localSelectedRows.has(rowIndex);
                 return (
                   <div
                     key={rowIndex}
@@ -559,7 +537,6 @@ export const DataGrid: React.FC<DataGridProps> = ({
                                 value: cell,
                               });
                             }
-                            onCellClick?.(rowIndex, colIndex, cell);
                           }}
                           title={cellText}
                           onContextMenu={(event) => {
@@ -708,16 +685,6 @@ export const DataGrid: React.FC<DataGridProps> = ({
                   }}
                 >
                   Contains this value
-                </button>
-                <button
-                  type="button"
-                  role="menuitem"
-                  onClick={() => {
-                    onQuickFilter?.(quickFilterMenu.column, 'is_null');
-                    setQuickFilterMenu(null);
-                  }}
-                >
-                  Show null values
                 </button>
               </>
             )}

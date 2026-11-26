@@ -53,8 +53,6 @@
     "onCommand:quackwrangler.openFile",
     "onCommand:quackwrangler.openfile",
     "onCommand:quackwrangler.openFolder",
-    "onCommand:quackwrangler.exportData",
-    "onCommand:quackwrangler.summarizeFile",
     "onCommand:quackwrangler.saveWorkspace",
     "onCommand:quackwrangler.openWorkspace",
     "onCommand:quackwrangler.openRemoteData",
@@ -174,16 +172,6 @@
         "icon": "$(refresh)"
       },
       {
-        "command": "quackwrangler.exportData",
-        "title": "QuackWrangler: Export Data",
-        "icon": "$(export)"
-      },
-      {
-        "command": "quackwrangler.summarizeFile",
-        "title": "QuackWrangler: Summarize File",
-        "icon": "$(graph)"
-      },
-      {
         "command": "quackwrangler.saveWorkspace",
         "title": "QuackWrangler: Save Workspace",
         "icon": "$(save)"
@@ -293,17 +281,6 @@
           "default": "15GB",
           "description": "Maximum disk space for DuckDB temp files; increase this when large files exceed the spill budget"
         },
-        "quackwrangler.duckdb.autoLoadExtensions": {
-          "type": "array",
-          "default": [
-            "parquet",
-            "json"
-          ],
-          "items": {
-            "type": "string"
-          },
-          "description": "DuckDB extensions to auto-install and load"
-        },
         "quackwrangler.duckdb.loadingMode": {
           "type": "string",
           "enum": [
@@ -338,13 +315,6 @@
           "minimum": 10,
           "maximum": 10000,
           "description": "Number of rows to fetch per page"
-        },
-        "quackwrangler.display.maxRows": {
-          "type": "number",
-          "default": 10000,
-          "minimum": 100,
-          "maximum": 1000000,
-          "description": "Maximum rows to display in the data grid"
         },
         "quackwrangler.ai.model": {
           "type": "string",

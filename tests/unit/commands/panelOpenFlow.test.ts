@@ -43,6 +43,7 @@ const mocks = vi.hoisted(() => {
     releaseDatabase: vi.fn().mockResolvedValue(undefined),
     exportResults: vi.fn().mockResolvedValue(undefined),
     attach: vi.fn(() => panel),
+    createOrShow: vi.fn(() => panel),
     appendLine: vi.fn(),
   };
 });
@@ -190,12 +191,17 @@ vi.mock('../../../src/transforms/pipeline.js', () => ({
 vi.mock('../../../src/webview/provider.js', () => ({
   DataWranglerPanel: {
     attach: mocks.attach,
+    createOrShow: mocks.createOrShow,
     currentPanel: undefined,
   },
 }));
 
 import { DuckDBConnection } from '../../../src/duckdb/connection.js';
-import { configureCommands, openDataWranglerCustomEditor } from '../../../src/commands';
+import {
+  configureCommands,
+  openDataWranglerCustomEditor,
+  openWorkspaceCommand,
+} from '../../../src/commands';
 
 function latestMessageHandler(): (
   message: Record<string, unknown> & { type: string },
@@ -543,18 +549,16 @@ describe('custom-editor file opening flow', () => {
     );
   });
 
-  it('rejects stale search results without replacing the accepted filter scope', async () => {
+  it('keeps the accepted search scope when paging', async () => {
     await openDataWranglerCustomEditor({ fsPath: '/data/initial.parquet' } as never, {} as never);
     const handler = latestMessageHandler();
     mocks.posted.length = 0;
     mocks.setFailCustomQuery(false);
-    await handler({ type: 'searchChange', query: 'draft only' });
     await handler({ type: 'searchRows', query: 'accepted search' });
     const search = mocks.posted.find(
       (message) => (message as { type?: string }).type === 'searchResult',
     ) as { scope: string; query: string };
     expect(search).toMatchObject({ scope: 'search', query: 'accepted search' });
-    await handler({ type: 'searchChange', query: 'new draft' });
     await handler({ type: 'pageChange', offset: 0, limit: 100 });
     const latestSearch = mocks.posted
       .filter((message) => (message as { type?: string }).type === 'searchResult')
@@ -826,5 +830,146 @@ describe('database files', () => {
       sourceTable: { schema: 'main', name: 'customers' },
     });
     (DataWranglerPanel as unknown as { currentPanel: unknown }).currentPanel = undefined;
+  });
+});
+
+describe('opening a saved workspace', () => {
+  let freshPanel: typeof mocks.panel;
+  const step = { type: 'sort_rows', params: { column: 'value', direction: 'ASC' } };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.posted.length = 0;
+    mocks.history.length = 0;
+    // A fresh panel per test: panel state is remembered per panel object.
+    freshPanel = {
+      filePath: undefined as string | undefined,
+      postMessage: vi.fn((message: unknown) => mocks.posted.push(message)),
+      setMessageHandler: vi.fn(),
+      onDispose: vi.fn(),
+    };
+    mocks.attach.mockReturnValue(freshPanel);
+    mocks.createOrShow.mockReturnValue(freshPanel);
+    mocks.restoreValidated.mockResolvedValue(true);
+    configureCommands(
+      { fsPath: '/extension' } as never,
+      { appendLine: mocks.appendLine } as never,
+      {
+        globalStorageUri: { fsPath: '/writable/global-storage' },
+        globalState: { get: vi.fn(() => []), update: vi.fn() },
+      } as never,
+    );
+  });
+
+  it('loads the source and replays the steps with the column remapping picker', async () => {
+    mocks.readFile.mockResolvedValue(
+      JSON.stringify({ version: 1, sourceFile: '/data/orders.parquet', transforms: [step] }),
+    );
+    await openWorkspaceCommand({ fsPath: '/data/orders.qw' } as never);
+
+    expect(mocks.createOrShow).toHaveBeenCalledWith(
+      { fsPath: '/extension' },
+      '/data/orders.parquet',
+    );
+    expect(mocks.loadFile).toHaveBeenCalledWith(
+      expect.anything(),
+      '/data/orders.parquet',
+      'auto',
+      64,
+      expect.any(String),
+    );
+    expect(mocks.restoreValidated).toHaveBeenCalledWith(
+      [step],
+      expect.objectContaining({
+        chooseColumn: expect.any(Function),
+        assertCurrent: expect.any(Function),
+      }),
+    );
+    expect(mocks.posted).toContainEqual(expect.objectContaining({ type: 'sessionUpdated' }));
+  });
+
+  it('reopens the saved database table', async () => {
+    mocks.loadDatabaseTable.mockImplementation(async (_c, _f, table) => ({
+      kind: 'duckdb',
+      tables: [{ schema: 'main', name: 'orders', view: false }],
+      selected: { ...table, view: false },
+      textColumns: false,
+    }));
+    mocks.readFile.mockResolvedValue(
+      JSON.stringify({
+        version: 1,
+        sourceFile: '/data/shop.duckdb',
+        sourceTable: { schema: 'main', name: 'orders' },
+        transforms: [step],
+      }),
+    );
+    await openWorkspaceCommand({ fsPath: '/data/shop.qw' } as never);
+
+    expect(mocks.loadDatabaseTable).toHaveBeenCalledWith(
+      expect.anything(),
+      '/data/shop.duckdb',
+      { schema: 'main', name: 'orders' },
+      'auto',
+      64,
+      expect.any(String),
+    );
+    expect(mocks.restoreValidated).toHaveBeenCalled();
+  });
+
+  it('does not replay the steps when the source file cannot be loaded', async () => {
+    mocks.loadFile.mockRejectedValueOnce(new Error('file not found'));
+    mocks.readFile.mockResolvedValue(
+      JSON.stringify({ version: 1, sourceFile: '/data/missing.parquet', transforms: [step] }),
+    );
+    await openWorkspaceCommand({ fsPath: '/data/missing.qw' } as never);
+
+    expect(mocks.restoreValidated).not.toHaveBeenCalled();
+    expect(mocks.posted).toContainEqual(
+      expect.objectContaining({
+        type: 'error',
+        message: expect.stringContaining('file not found'),
+      }),
+    );
+    expect(mocks.posted).not.toContainEqual(expect.objectContaining({ type: 'sessionUpdated' }));
+  });
+
+  it('keeps showing the existing data and skips the steps when the source cannot be loaded into a used panel', async () => {
+    // The panel already shows a file, as when the command reuses an open editor.
+    await openDataWranglerCustomEditor({ fsPath: '/data/current.parquet' } as never, {} as never);
+    mocks.posted.length = 0;
+    mocks.loadFile.mockRejectedValueOnce(new Error('file not found'));
+    mocks.readFile.mockResolvedValue(
+      JSON.stringify({ version: 1, sourceFile: '/data/missing.parquet', transforms: [step] }),
+    );
+    await openWorkspaceCommand({ fsPath: '/data/missing.qw' } as never);
+
+    expect(mocks.restoreValidated).not.toHaveBeenCalled();
+    expect(mocks.posted).toContainEqual(expect.objectContaining({ type: 'error' }));
+    // The earlier data is re-sent so the editor is still usable.
+    expect(mocks.posted).toContainEqual(
+      expect.objectContaining({
+        type: 'sessionUpdated',
+        schema: expect.objectContaining({ filePath: '/data/current.parquet' }),
+      }),
+    );
+  });
+
+  it('rejects a file that is not a workspace before opening anything', async () => {
+    mocks.readFile.mockResolvedValue(JSON.stringify({ version: 2, transforms: [] }));
+    await expect(openWorkspaceCommand({ fsPath: '/data/bad.qw' } as never)).rejects.toThrow(
+      'not a valid QuackWrangler workspace file',
+    );
+    mocks.readFile.mockResolvedValue('null');
+    await expect(openWorkspaceCommand({ fsPath: '/data/null.qw' } as never)).rejects.toThrow(
+      'not a valid QuackWrangler workspace file',
+    );
+    expect(mocks.createOrShow).not.toHaveBeenCalled();
+  });
+
+  it('does nothing when the file picker is cancelled', async () => {
+    mocks.showOpenDialog.mockResolvedValueOnce(undefined);
+    await openWorkspaceCommand();
+    expect(mocks.createOrShow).not.toHaveBeenCalled();
+    expect(mocks.restoreValidated).not.toHaveBeenCalled();
   });
 });

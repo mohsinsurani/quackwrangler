@@ -94,6 +94,49 @@ beforeAll(async () => {
   connection.closeSync();
 });
 
+describe('repeated sorting', () => {
+  async function sortedSession(): Promise<WranglingSession> {
+    const session = new WranglingSession(createAdapter() as never);
+    session.load('/tmp/data.csv');
+    return session;
+  }
+
+  it('replaces a sort that directly follows another sort', async () => {
+    const session = await sortedSession();
+    await session.applyValidated('sort_rows', { column: 'amount', direction: 'ASC' });
+    await session.applyValidated('sort_rows', { column: 'amount', direction: 'DESC' });
+    await session.applyValidated('sort_rows', { column: 'name', direction: 'ASC' });
+
+    expect(session.getHistory()).toHaveLength(1);
+    expect(session.getHistory()[0].params).toMatchObject({ column: 'name', direction: 'ASC' });
+  });
+
+  it('keeps a sort that follows a different step', async () => {
+    const session = await sortedSession();
+    await session.applyValidated('sort_rows', { column: 'amount', direction: 'ASC' });
+    await session.applyValidated('filter_rows', {
+      column: 'region',
+      operator: 'equals',
+      value: 'east',
+    });
+    await session.applyValidated('sort_rows', { column: 'amount', direction: 'DESC' });
+
+    expect(session.getHistory().map((step) => step.type)).toEqual([
+      'sort_rows',
+      'filter_rows',
+      'sort_rows',
+    ]);
+  });
+
+  it('undoes a replaced sort back to the state before it', async () => {
+    const session = await sortedSession();
+    await session.applyValidated('sort_rows', { column: 'amount', direction: 'ASC' });
+    await session.applyValidated('sort_rows', { column: 'amount', direction: 'DESC' });
+    await session.undoValidated();
+    expect(session.getHistory()).toHaveLength(0);
+  });
+});
+
 describe('recipe replay with column remapping', () => {
   const recipe = [
     { type: 'filter_rows', params: { column: 'old_region', operator: 'equals', value: 'east' } },

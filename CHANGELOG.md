@@ -4,6 +4,19 @@ All notable changes to QuackWrangler are documented here using [Keep a Changelog
 
 ## [Unreleased]
 
+### Removed
+
+- **QuackWrangler: Export Data** and **QuackWrangler: Summarize File** commands. Export is in the editor's Export menu, which checks the result has not changed and confirms the row count; the command's fallback query no longer matched the editor's tables and it could propose overwriting the source file. Column profiles already load automatically.
+- The `duckdb.autoLoadExtensions` setting (it only ever acted on `httpfs`, which remote files load on demand) and the `display.maxRows` setting (it did not limit the rows shown).
+- The cell menu's "Show null values" entry, which repeated "Is null".
+- Unused code: an unreachable Polars handoff branch, two webview messages that nothing used, unused grid properties, placeholder column fields, and logging-only helpers.
+
+### Fixed
+
+- The editor-title **Open Data Wrangler** button now opens the file you are viewing instead of asking for a file.
+- Clicking a column header repeatedly no longer adds a new step each time; a sort that directly follows another sort replaces it.
+- **Open Workspace** now replays steps the same way as **Run recipe**, including choosing a replacement for renamed columns, and applies no steps if the source file cannot be opened.
+
 ### Changed
 
 - Updated DuckDB to 2.0.1, a bug-fix release. DuckDB extensions (Excel, spatial, SQLite, Arrow, ORC, httpfs) are cached per DuckDB version, so each one downloads once more on first use.

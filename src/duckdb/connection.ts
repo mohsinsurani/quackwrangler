@@ -74,22 +74,6 @@ export class DuckDBConnection {
         this.log(`Preserve insertion order set to ${this.config.preserveInsertionOrder}`);
       }
 
-      const configuredExtensions = Array.isArray(this.config.autoLoadExtensions)
-        ? this.config.autoLoadExtensions
-        : this.config.autoLoadExtensions
-          ? ['httpfs']
-          : [];
-      if (configuredExtensions.includes('httpfs')) {
-        const conn = await this.instance.connect();
-        try {
-          await conn.run('LOAD httpfs');
-          this.log('Loaded httpfs extension');
-        } catch {
-          this.log('httpfs extension is not installed; local files remain available');
-        }
-        conn.closeSync();
-      }
-
       await this.verifySpillConfiguration();
 
       this.log('DuckDB instance created successfully');

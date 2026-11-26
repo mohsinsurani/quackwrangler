@@ -3,8 +3,6 @@ import * as vscode from 'vscode';
 import {
   openDataWrangler,
   openFile,
-  exportDataCommand,
-  summarizeFileCommand,
   configureCommands,
   disposeCommands,
   openDataWranglerCustomEditor,
@@ -121,8 +119,9 @@ export function activate(context: vscode.ExtensionContext): void {
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('quackwrangler.openDataWrangler', () => {
-      return openDataWrangler();
+    // The editor-title button passes the file being viewed; the palette passes nothing.
+    vscode.commands.registerCommand('quackwrangler.openDataWrangler', (uri?: vscode.Uri) => {
+      return openDataWrangler(uri?.fsPath);
     }),
 
     vscode.commands.registerCommand('quackwrangler.openFile', (uri?: vscode.Uri | string) => {
@@ -140,14 +139,6 @@ export function activate(context: vscode.ExtensionContext): void {
 
     vscode.commands.registerCommand('quackwrangler.refreshFolder', async () => {
       await dataFilesProvider.refresh();
-    }),
-
-    vscode.commands.registerCommand('quackwrangler.exportData', () => {
-      return exportDataCommand();
-    }),
-
-    vscode.commands.registerCommand('quackwrangler.summarizeFile', () => {
-      return summarizeFileCommand();
     }),
 
     vscode.commands.registerCommand('quackwrangler.saveWorkspace', () => {

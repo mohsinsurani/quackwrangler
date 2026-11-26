@@ -85,9 +85,7 @@ export interface DataWranglerConfig {
   memoryLimit: string;
   tempDirectory: string;
   maxTempDirectorySize: string;
-  autoLoadExtensions: boolean | string[];
   pageSize: number;
-  maxRowsPreview: number;
   loadingMode: 'auto' | 'eager' | 'lazy';
   eagerFileSizeLimitMb: number;
   threads: number;
@@ -112,7 +110,6 @@ export type WebviewMessage =
     } & RequestMessage)
   | ({ type: 'saveRecipe' } & RequestMessage)
   | ({ type: 'openRecipePicker' } & RequestMessage)
-  | ({ type: 'replayRecipe'; filePath?: string } & RequestMessage)
   | ({
       type: 'polarsHandoff';
       mode: 'result' | 'recipe';
@@ -135,7 +132,6 @@ export type WebviewMessage =
       query: string;
       filter?: { column: string; operator: 'is_null' | 'is_not_null' };
     } & RequestMessage)
-  | ({ type: 'searchChange'; query: string } & RequestMessage)
   | ({ type: 'requestChart'; chart: ChartRequest } & RequestMessage)
   | ({ type: 'getStats' } & RequestMessage)
   | ({ type: 'generateAITransforms' } & RequestMessage)

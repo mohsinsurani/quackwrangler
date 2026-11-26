@@ -568,7 +568,12 @@ export class WranglingSession {
       description: descriptionFor(type, params),
     };
     const startingRevision = this.revision;
-    const candidateHistory = [...this.history, operation];
+    // A sort straight after another sort replaces it: the earlier ORDER BY cannot affect the
+    // result, so clicking a column header repeatedly must not grow the step list.
+    const last = this.history[this.history.length - 1];
+    const base =
+      type === 'sort_rows' && last?.type === 'sort_rows' ? this.history.slice(0, -1) : this.history;
+    const candidateHistory = [...base, operation];
     const validation = await this.validateHistory(candidateHistory);
     this.assertRevisionUnchanged(startingRevision);
     this.history = candidateHistory;
