@@ -34,7 +34,7 @@ export function describeRemoteError(error: unknown, source: string): string {
     return `The remote file was not found (404): ${address}. Check the address${isS3 ? ', bucket, and region' : ''} and that the file still exists.`;
   if (status === '403')
     return isS3
-      ? `Access was denied (403) to ${address}. This bucket is not public, so DuckDB needs AWS credentials (for example the AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY environment variables or an AWS profile) available to VS Code.`
+      ? `Access was denied (403) to ${address}. If this bucket is private, QuackWrangler uses the AWS credentials available to VS Code: the AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY environment variables, or the default profile in ~/.aws (set AWS_PROFILE before starting VS Code to use another). Those credentials were missing or are not allowed to read this object.`
       : `Access was denied (403) to ${address}. The server refuses this request; the link may have expired or may need permission.`;
   if (status === '401')
     return `The server asked for sign-in (401 Unauthorized) for ${address}. QuackWrangler cannot send a login; use a public or pre-signed link, or download the file first.`;
