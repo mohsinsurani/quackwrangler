@@ -9,7 +9,13 @@ import { suggestTransforms, validateAISettings } from '../ai/assistant.js';
 import { findDbtProject } from '../dbt/context.js';
 import { buildDbtSql, DbtExportStyle } from '../dbt/export.js';
 import { DuckDBConnection, isCancellation } from '../duckdb/connection.js';
-import { describeTable, loadDatabaseTable, releaseDatabase } from '../duckdb/database-source.js';
+import {
+  attachSecondaryDatabase,
+  describeSecondaryTable,
+  describeTable,
+  loadDatabaseTable,
+  releaseDatabase,
+} from '../duckdb/database-source.js';
 import { getFileMetadata, loadFile, prepareDataFileReader } from '../duckdb/parquet-loader.js';
 import { exportResults, normalizeReadOnlyQuery } from '../duckdb/query-engine.js';
 import { describeRemoteError } from '../duckdb/remote-errors.js';
@@ -44,6 +50,9 @@ import {
 } from '../utils/remoteProgress.js';
 import { createManagedTempDirectory, ManagedTempDirectory } from '../utils/tempStorage.js';
 import { DataWranglerPanel } from '../webview/provider.js';
+
+// Schema comparison reads each file's header, so it stops at a sensible number of files.
+const SCHEMA_COMPARISON_LIMIT = 100;
 
 const DATA_FILE_FILTER = { 'Data Files': [...DATA_FILE_EXTENSIONS] };
 // Join, union, and schema comparison read one file as one table, which databases are not.
@@ -343,6 +352,24 @@ function postCustomQueryResult(
   panel.postMessage({ type: 'customQueryResult', ...result, customQuerySql, requestId });
 }
 
+/**
+ * Opens the second files of any join or union steps so their SQL can be built: a database is
+ * attached under its alias, and other files get their reader and schema ready. Used before a step
+ * is applied and before a saved recipe is replayed.
+ */
+async function prepareSecondarySources(
+  conn: DuckDBConnection,
+  steps: Array<{ type: string; params: Record<string, unknown> }>,
+): Promise<void> {
+  for (const step of steps) {
+    if (step.type !== 'join_file' && step.type !== 'union_file') continue;
+    const secondaryPath = String(step.params.filePath ?? '');
+    if (!secondaryPath) continue;
+    if (isDatabaseFile(secondaryPath)) await attachSecondaryDatabase(conn, secondaryPath);
+    else await prepareDataFileReader(conn, secondaryPath);
+  }
+}
+
 async function handleWebviewMessage(
   panel: DataWranglerPanel,
   message: WebviewMessage,
@@ -364,15 +391,40 @@ async function handleWebviewMessage(
         const selected = await vscode.window.showOpenDialog({
           canSelectFiles: true,
           canSelectMany: false,
-          filters: TABULAR_FILE_FILTER,
+          filters: DATA_FILE_FILTER,
           openLabel: 'Select file to join or union',
         });
         if (!selected?.[0]) return;
         const conn = await getPanelConnection(panel);
-        const metadata = await getFileMetadata(conn, selected[0].fsPath);
+        const secondaryPath = selected[0].fsPath;
+        if (isDatabaseFile(secondaryPath)) {
+          // A database holds several tables: attach it, then ask which one to combine with.
+          const { tables } = await attachSecondaryDatabase(conn, secondaryPath);
+          const choice =
+            tables.length === 1
+              ? tables[0]
+              : (
+                  await vscode.window.showQuickPick(
+                    tables.map((table) => ({ label: describeTable(table), table })),
+                    { placeHolder: `Choose a table from ${basename(secondaryPath)}` },
+                  )
+                )?.table;
+          // Cancelling the table picker is not an error; the form simply stays as it was.
+          if (!choice) return;
+          const columns = await describeSecondaryTable(conn, secondaryPath, choice);
+          panel.postMessage({
+            type: 'secondaryFileSelected',
+            filePath: secondaryPath,
+            table: { schema: choice.schema, name: choice.name },
+            columns: columns.map((column) => ({ ...column, nullable: true })),
+            requestId: message.requestId,
+          });
+          return;
+        }
+        const metadata = await getFileMetadata(conn, secondaryPath);
         panel.postMessage({
           type: 'secondaryFileSelected',
-          filePath: selected[0].fsPath,
+          filePath: secondaryPath,
           columns: metadata.columns,
           requestId: message.requestId,
         });
@@ -380,12 +432,7 @@ async function handleWebviewMessage(
       }
       case 'applyTransform':
         if (!session) throw new Error('Open a data file before applying a transform');
-        if (['join_file', 'union_file'].includes(message.transform.type)) {
-          await prepareDataFileReader(
-            await getPanelConnection(panel),
-            String(message.transform.params.filePath ?? ''),
-          );
-        }
+        await prepareSecondarySources(await getPanelConnection(panel), [message.transform]);
         await session.applyValidated(message.transform.type, message.transform.params);
         state.customQuerySql = null;
         state.searchQuery = '';
@@ -893,10 +940,26 @@ export async function compareSchemasCommand(folderMode = false): Promise<void> {
   if (files.length < 2) throw new Error('Select a folder or at least two supported files');
   const conn = await getSharedConnection();
   const schemas = [];
-  for (const file of files.slice(0, 100)) schemas.push(await getFileMetadata(conn, file.fsPath));
+  const failed: Array<{ filePath: string; reason: string }> = [];
+  const compared = files.slice(0, SCHEMA_COMPARISON_LIMIT);
+  for (const file of compared) {
+    try {
+      // Only the columns are compared, so skip counting every row of every file.
+      schemas.push(await getFileMetadata(conn, file.fsPath, { rowCount: false }));
+    } catch (error) {
+      // One unreadable file must not hide the comparison of all the others.
+      failed.push({
+        filePath: redactRemoteSource(file.fsPath),
+        reason: describeRemoteError(error, file.fsPath).split('\n')[0].slice(0, 200),
+      });
+    }
+  }
   const document = await vscode.workspace.openTextDocument({
     language: 'markdown',
-    content: schemaComparisonMarkdown(schemas),
+    content: schemaComparisonMarkdown(schemas, {
+      skipped: files.length - compared.length,
+      failed,
+    }),
   });
   await vscode.window.showTextDocument(document, { preview: false });
 }
@@ -1188,6 +1251,8 @@ async function replayWorkspaceCommand(
     )
   )
     throw new Error('This is not a valid QuackWrangler recipe file');
+  assertCurrent();
+  await prepareSecondarySources(await getPanelConnection(panel), parsed.transforms);
   assertCurrent();
   const committed = await session.restoreValidated(parsed.transforms, {
     assertCurrent,
