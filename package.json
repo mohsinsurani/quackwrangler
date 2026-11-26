@@ -4,7 +4,7 @@
   "displayName": "QuackWrangler",
   "icon": "logo.png",
   "description": "Explore, transform, visualize, query, and export data with built-in DuckDB. No Python or Jupyter; file contents stay local.",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "publisher": "quackwrangler",
   "license": "MIT",
   "repository": {

@@ -10,7 +10,7 @@
 profiles, filters, joins, charts, and SQL. <strong>Built-in DuckDB. No Python. No Jupyter. No setup. Nothing leaves your machine.</strong></p>
 
 <p align="center">
-  <a href="https://marketplace.visualstudio.com/items?itemName=quackwrangler.quackwrangler"><img alt="VS Code Marketplace" src="https://img.shields.io/badge/VS_Code_Marketplace-0.5.0-007ACC?logo=visualstudiocode"></a>
+  <a href="https://marketplace.visualstudio.com/items?itemName=quackwrangler.quackwrangler"><img alt="VS Code Marketplace" src="https://img.shields.io/badge/VS_Code_Marketplace-0.6.0-007ACC?logo=visualstudiocode"></a>
   <a href="https://github.com/mohsinsurani/quackwrangler/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/mohsinsurani/quackwrangler/actions/workflows/ci.yml/badge.svg"></a>
   <img alt="Runs locally" src="https://img.shields.io/badge/runs-100%25_locally-2ea44f">
   <img alt="No telemetry" src="https://img.shields.io/badge/telemetry-none-2ea44f">
@@ -299,25 +299,25 @@ The extension currently uses DuckDB because it can run analytical queries larger
 
 ## What's new
 
-### Coming in the next release
-
-These are merged and tested on `main` but not yet published to the Marketplace:
+### In 0.6.0
 
 - **Open DuckDB and SQLite databases** with a table switcher, read-only, and use their tables in joins.
 - **Private S3 buckets** with your AWS profile, SSO, or instance role, plus clear one-line errors for remote files.
 - **Cancel** for slow loads, queries, and remote reads.
 - **Sort by several columns**, drop several columns at once, and remove duplicates by any columns or whole rows.
 - Signed links and passwords are kept out of recent files, logs, and saved recipes.
-- DuckDB 2.0.1.
+- A refreshed editor, a redesigned README, and DuckDB 2.0.1.
 
-### In 0.5.0 (on the Marketplace now)
+See the [full 0.6.0 notes](CHANGELOG.md#060---2026-11-26).
+
+### In 0.5.0
 
 - **Replay recipes on files with different column names.** Choose replacements when a `.qw` recipe references a missing column. Cancelling or failing validation leaves the current result and history intact.
 - **Act on missing values from Data Quality.** Inspect matching rows without changing the pipeline, or apply an undoable fill or exclusion.
 - **Continue in Polars.** Export the active result to Parquet and open a Python handoff, or generate an editable Polars recipe for supported transforms on local Parquet files.
 - **Keep the grid in view.** The compact toolbar puts transforms, steps, recipes, and export within reach. The searchable Operations panel opens beside the grid on wide editors and as a slide-over drawer in narrow splits. Quality, Charts, and SQL share one analysis tab strip.
 
-See the [changelog](CHANGELOG.md#050---2026-11-20) for full release notes and earlier versions.
+See the [changelog](CHANGELOG.md) for every release.
 
 <a id="install"></a>
 

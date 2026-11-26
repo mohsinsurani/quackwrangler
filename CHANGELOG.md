@@ -4,55 +4,65 @@ All notable changes to QuackWrangler are documented here using [Keep a Changelog
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-11-26
+
+### Highlights
+
+- **Open DuckDB and SQLite databases** with a table switcher, read-only, and use their tables in joins.
+- **Private S3 buckets now work** with your AWS profile, single sign-on, or instance role, with clear one-line errors for remote files.
+- **A Cancel button** stops slow loads, queries, and remote reads.
+- **Sort, drop, and deduplicate by several columns.**
+- **Signed links and passwords never reach recent files, logs, or saved recipes.**
+- A redesigned README, a refreshed data editor, and DuckDB 2.0.1.
+
 ### Added
 
-- README: a "Take your work to Polars" section explaining the built-in **Continue in Polars** and **Open Polars recipe** options, when to use each, how to use them, a real generated recipe, and the recipe's current limits.
-- README: a quick start, everyday use cases, and a "QuackWrangler and Polars: when to use which" guide. It now separates what is on the Marketplace from what is coming in the next release, corrects which files open in QuackWrangler by default (all supported formats, not only Parquet, CSV, and XLSX), and splits the remote-files notes into a readable list.
-- A redesigned README that leads with privacy and performance. Its claims are backed by an automated test (`tests/integration/offline-privacy.test.ts`) showing that opening, profiling, transforming, querying, and exporting Parquet, CSV, TSV, JSON, and NDJSON files makes no network request and never changes the source file.
-- Benchmarks were re-run on DuckDB 2.0.1 and the results refreshed.
-- `scripts/capture-readme-assets.cjs` regenerates the README image and GIF from the standalone preview, which now shows a database file so the table switcher appears. The assets were refreshed.
-- **Sort** now takes several columns, each with its own direction. **Drop Column** became **Drop Columns** and removes several at once, and **Remove Duplicates** compares any set of columns, or whole rows when none are chosen. Saved recipes with the earlier single-column form still load, and renamed columns in a multi-column sort are remapped when a recipe is replayed.
+- Open DuckDB and SQLite database files (`.duckdb`, `.ddb`, `.sqlite`, `.sqlite3`, `.db`, `.db3`) like any other file. A table switcher in the header lists tables, views, and extra schemas; each opens as a normal dataset with profiles, quality, transforms, SQL, charts, and exports.
+  - `.db` files are detected as DuckDB or SQLite from the file header, since the extension is shared. Files that are neither show a clear error.
+  - Databases open read-only. Small tables are copied into memory and the file is released so other programs can keep writing to it; large tables stay in the file.
+  - SQLite columns that mix numbers and text open as text, with an "all text" badge, instead of failing.
+  - `.qw` recipes remember the source table, and exports and dbt models are named after it.
 - A table from a DuckDB or SQLite file can be the second source of a **Join** or **Append**: pick the database file, then the table.
-- Schema comparison states when files were left out because of its 100-file limit and lists files it could not read instead of stopping, and no longer counts the rows of every file.
 - A **Cancel** button next to the spinner stops a slow load, query, transform, or remote read without an error and leaves the data and steps as they were. A cancelled load keeps the file that was already open.
+- **Sort** takes several columns, each with its own direction. **Drop Column** became **Drop Columns** and removes several at once, and **Remove Duplicates** compares any set of columns, or whole rows when none are chosen. Saved recipes with the earlier single-column form still load, and renamed columns in a multi-column sort are remapped when a recipe is replayed.
 - Clear one-line explanations for remote loading failures (not found, access denied, sign-in required, server error, timeout, unreachable host, certificate problem, or a link that returns a web page), with signed query strings left out. A private S3 object that is denied now points to AWS credentials.
 - While a remote file is slow to start, the progress message repeats with a reminder that loading is still in progress.
-- Remote loading tests: a real local HTTP server test on every CI run, `npm run test:remote` for public HTTPS and anonymous S3 files, and a weekly `Remote sources` workflow for it on Linux, Windows, and macOS.
-- Open DuckDB and SQLite database files (`.duckdb`, `.ddb`, `.sqlite`, `.sqlite3`, `.db`, `.db3`) like any other file. A table switcher in the header lists tables, views, and extra schemas; each opens as a normal dataset with profiles, quality, transforms, SQL, charts, and exports.
-- `.db` files are detected as DuckDB or SQLite from the file header, since the extension is shared. Files that are neither show a clear error.
-- Databases open read-only. Small tables are copied into memory and the file is released so other programs can keep writing to it; large tables stay in the file.
-- SQLite columns that mix numbers and text open as text, with an "all text" badge, instead of failing.
-- `.qw` recipes remember the source table, and exports and dbt models are named after it.
-
-### Removed
-
-- **QuackWrangler: Export Data** and **QuackWrangler: Summarize File** commands. Export is in the editor's Export menu, which checks the result has not changed and confirms the row count; the command's fallback query no longer matched the editor's tables and it could propose overwriting the source file. Column profiles already load automatically.
-- The `duckdb.autoLoadExtensions` setting (it only ever acted on `httpfs`, which remote files load on demand) and the `display.maxRows` setting (it did not limit the rows shown).
-- The cell menu's "Show null values" entry, which repeated "Is null".
-- Unused code: an unreachable Polars handoff branch, two webview messages that nothing used, unused grid properties, placeholder column fields, two background listeners that only wrote to the log, and `onCommand` activation entries that VS Code generates itself.
-
-### Fixed
-
-- Private S3 buckets now open. Only `AWS_*` environment variables were picked up before; named profiles, the default profile in `~/.aws`, single sign-on, and instance roles were ignored, and the error told users to use them. Public buckets are still read first without credentials, so they keep working when a stored key is invalid.
-- Signed remote links (such as pre-signed S3 or Azure SAS URLs) are no longer saved in the recent files list, written to the output log, or sent to the editor, and credentials are removed from the source address in saved `.qw` recipes.
-- The editor-title **Open Data Wrangler** button now opens the file you are viewing instead of asking for a file.
-- Clicking a column header repeatedly no longer adds a new step each time; a sort that directly follows another sort replaces it.
-- **Open Workspace** now replays steps the same way as **Run recipe**, including choosing a replacement for renamed columns, and applies no steps if the source file cannot be opened.
+- Schema comparison states when files were left out because of its 100-file limit and lists files it could not read instead of stopping.
+- Numeric column profiles show a ten-bin value histogram computed by DuckDB.
+- A redesigned README with privacy and performance sections, a quick start, and a guide to the built-in Polars handoff (**Continue in Polars** and **Open Polars recipe**).
 
 ### Changed
 
+- Refreshed the data editor with a compact toolbar, tabbed analysis (Quality, Charts, SQL), a searchable operations drawer, compact profiles, calmer grid styling, and consolidated view controls. The grid footer combines result scope, page range, selection, View options, and pagination in one row, including in very narrow split editors.
+- Operations and controls use VS Code Codicons instead of text symbols and emoji, bundled with the webview so they render offline and match light and dark themes.
 - Updated DuckDB to 2.0.1, a bug-fix release. DuckDB extensions (Excel, spatial, SQLite, Arrow, ORC, httpfs) are cached per DuckDB version, so each one downloads once more on first use.
-- Node.js 22 is now the minimum for development and CI; Node.js 20 reached end of life. CI tests Node.js 22 and 24.
-- Refreshed the data editor with a compact toolbar, tabbed analysis, searchable operations drawer, compact profiles, calmer grid styling, and consolidated view controls.
-- Numeric column profiles now show a ten-bin value histogram computed by DuckDB.
-- The grid footer combines result scope, page range, selection, View options, and pagination in a single row, including in very narrow split editors.
-- Operations and controls use VS Code Codicons instead of text symbols and emoji, bundled with the webview so they render offline and match light and dark themes. The webview now allows its own font source and loads assets by relative path.
-- Fixed applied-step chips being unreadable in light themes, the analysis tab strip being squeezed to one third of the width, and the toolbar overflowing in very narrow split editors.
-- Fixed short editors (about 560 px tall or less) where the pinned column profiles and header left no room for rows and the footer covered them; the profiles now scroll away and only the header stays pinned.
-- Fixed XLSX files showing spreadsheet coordinates (A1, B1) as column names instead of the header row.
-- Removed unused styles left over from the previous layout.
-- Pinned the Polars integration test to a release that is still installable; the previously pinned 1.43.0 was yanked from PyPI, which broke CI.
-- Added `npm run test:ui`, an unattended real-VS Code interaction suite, `npm run test:ui:linux` to run it on Linux in Docker, and integration tests for joins and unions.
+- Schema comparison no longer counts the rows of every file.
+- Node.js 22 is now the minimum for development and CI; Node.js 20 reached end of life.
+
+### Fixed
+
+- **Private S3 buckets now open.** Only `AWS_*` environment variables were picked up before; named profiles, the default profile in `~/.aws`, single sign-on, and instance roles were ignored, and the error told users to use them. Public buckets are still read first without credentials, so they keep working when a stored key is invalid.
+- Signed remote links (such as pre-signed S3 or Azure SAS URLs) are no longer saved in the recent files list, written to the output log, or sent to the editor, and credentials are removed from the source address in saved `.qw` recipes.
+- XLSX files showed spreadsheet coordinates (A1, B1) as column names instead of the header row.
+- The editor-title **Open Data Wrangler** button now opens the file you are viewing instead of asking for a file.
+- Clicking a column header repeatedly no longer adds a new step each time; a sort that directly follows another sort replaces it.
+- **Open Workspace** now replays steps the same way as **Run recipe**, including choosing a replacement for renamed columns, and applies no steps if the source file cannot be opened.
+- Applied-step chips were unreadable in light themes, the analysis tab strip was squeezed to one third of the width, and the toolbar overflowed in very narrow split editors.
+- In short editors (about 560 px tall or less) the pinned column profiles and header left no room for rows and the footer covered them; the profiles now scroll away and only the header stays pinned.
+
+### Removed
+
+- The **QuackWrangler: Export Data** and **QuackWrangler: Summarize File** commands. Export is in the editor's Export menu, which checks the result has not changed and confirms the row count; the command's fallback query no longer matched the editor's tables and it could propose overwriting the source file. Column profiles already load automatically.
+- The `duckdb.autoLoadExtensions` setting (it only ever acted on `httpfs`, which remote files load on demand) and the `display.maxRows` setting (it did not limit the rows shown). Remove them from your settings if you set them.
+- The cell menu's "Show null values" entry, which repeated "Is null".
+
+### Development
+
+- A real-VS Code UI test suite (`npm run test:ui`, and `npm run test:ui:linux` in Docker) that runs on Windows, Linux, and macOS in CI.
+- Remote loading tests: a real local HTTP server test on every CI run, `npm run test:remote` for public HTTPS and anonymous S3 files, and a weekly `Remote sources` workflow.
+- An automated test that local work makes no network request and never changes the source file.
+- Benchmarks re-run on DuckDB 2.0.1, and `scripts/capture-readme-assets.cjs` regenerates the README visuals.
+- Removed unused code and styles.
 
 ## [0.5.0] - 2026-11-20
 
@@ -264,7 +274,9 @@ All notable changes to QuackWrangler are documented here using [Keep a Changelog
 - Filtering, sorting, column transforms, deduplication, aggregation, paging, schema inspection, summaries, and Parquet/CSV/JSON export
 - Activity-bar file browser and custom data editor integration
 
-[Unreleased]: https://github.com/mohsinsurani/quackwrangler/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/mohsinsurani/quackwrangler/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/mohsinsurani/quackwrangler/compare/v0.5.0...v0.6.0
+[0.5.0]: https://github.com/mohsinsurani/quackwrangler/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/mohsinsurani/quackwrangler/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/mohsinsurani/quackwrangler/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/mohsinsurani/quackwrangler/compare/v0.2.0...v0.2.1
