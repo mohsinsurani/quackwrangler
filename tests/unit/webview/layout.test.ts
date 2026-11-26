@@ -365,14 +365,12 @@ describe('webview layout contracts', () => {
     expect(appSource).toContain("message.type === 'aiComplete'");
   });
 
-  it('accepts unsolicited host stats pushes that carry no request ID', () => {
-    expect(appSource).toContain(
-      'if (message.requestId && message.requestId !== latestRequests.current.stats) return',
-    );
+  it('ignores stats that answer a request other than the latest one', () => {
+    expect(appSource).toContain('if (message.requestId !== latestRequests.current.stats) return');
   });
 
   it('keeps row selection valid when loaded rows change', () => {
-    expect(gridSource).toContain('if (!onRowSelect) setLocalSelectedRows(new Set())');
+    expect(gridSource).toContain('setLocalSelectedRows(new Set())');
     expect(gridSource).toContain('selectedRowIndexes.length === rows.length');
     expect(gridSource).toContain('onClick={() => toggleRowSelection(rowIndex)}');
   });

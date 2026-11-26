@@ -50,10 +50,6 @@ export class DataFilesProvider implements vscode.TreeDataProvider<DataFileNode> 
 
   readonly onDidChangeTreeData = this.changeEmitter.event;
 
-  get folder(): vscode.Uri | undefined {
-    return this.selectedFolder;
-  }
-
   async selectFolder(): Promise<boolean> {
     const selected = await vscode.window.showOpenDialog({
       canSelectFiles: false,

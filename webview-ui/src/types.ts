@@ -1,12 +1,7 @@
 export interface ColumnInfo {
   name: string;
   displayName: string;
-  dataType: 'string' | 'number' | 'boolean' | 'date' | 'null' | 'array' | 'object';
   type: string;
-  nullable: boolean;
-  nullCount: number;
-  uniqueCount: number;
-  totalRows: number;
 }
 
 export interface TransformStep {
@@ -60,7 +55,6 @@ export type WebviewMessage = (
       query: string;
       filter?: { column: string; operator: 'is_null' | 'is_not_null' };
     }
-  | { type: 'searchChange'; query: string }
   | { type: 'executeCustomQuery'; sql: string }
   | {
       type: 'requestChart';
@@ -82,7 +76,6 @@ export type WebviewMessage = (
     }
   | { type: 'saveRecipe' }
   | { type: 'openRecipePicker' }
-  | { type: 'replayRecipe'; filePath?: string }
   | {
       type: 'polarsHandoff';
       mode: 'result' | 'recipe';
