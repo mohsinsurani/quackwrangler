@@ -4,7 +4,6 @@ import {
   DATABASE_FILE_EXTENSIONS,
   isDataFile,
   isDatabaseFile,
-  getDataFilePatterns,
 } from '../../../src/utils/fileDetector';
 
 describe('fileDetector utils', () => {
@@ -64,14 +63,6 @@ describe('fileDetector utils', () => {
       expect(isDataFile('readme.md')).toBe(false);
       expect(isDataFile('script.py')).toBe(false);
       expect(isDataFile('image.png')).toBe(false);
-    });
-  });
-
-  describe('getDataFilePatterns', () => {
-    it('derives watcher patterns from the supported extension source of truth', () => {
-      expect(getDataFilePatterns()).toEqual(
-        DATA_FILE_EXTENSIONS.map((extension) => `**/*.${extension}`),
-      );
     });
   });
 });

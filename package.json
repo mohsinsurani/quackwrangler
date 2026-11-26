@@ -49,18 +49,7 @@
     "workspace"
   ],
   "activationEvents": [
-    "onCommand:quackwrangler.openDataWrangler",
-    "onCommand:quackwrangler.openFile",
     "onCommand:quackwrangler.openfile",
-    "onCommand:quackwrangler.openFolder",
-    "onCommand:quackwrangler.saveWorkspace",
-    "onCommand:quackwrangler.openWorkspace",
-    "onCommand:quackwrangler.openRemoteData",
-    "onCommand:quackwrangler.configureAI",
-    "onCommand:quackwrangler.generateAITransforms",
-    "onCommand:quackwrangler.compareSchemas",
-    "onCommand:quackwrangler.detectSchemaDrift",
-    "onCommand:quackwrangler.copyDbtSql",
     "onCustomEditor:quackwrangler.dataEditor",
     "onView:quackwrangler.actions",
     "workspaceContains:**/*.parquet",

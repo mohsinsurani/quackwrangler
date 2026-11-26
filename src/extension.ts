@@ -16,7 +16,6 @@ import {
   copyDbtSqlCommand,
 } from './commands/index.js';
 import { DATA_EDITOR_VIEW_TYPE } from './utils/editorRouting.js';
-import { getDataFilePatterns } from './utils/fileDetector.js';
 import { DataFilesProvider } from './views/dataFilesProvider.js';
 
 type ActionNode = vscode.TreeItem | import('./views/dataFilesProvider.js').DataFileNode;
@@ -160,32 +159,6 @@ export function activate(context: vscode.ExtensionContext): void {
       compareSchemasCommand(true),
     ),
     vscode.commands.registerCommand('quackwrangler.copyDbtSql', () => copyDbtSqlCommand()),
-  );
-
-  const filePatterns = getDataFilePatterns();
-  const fileWatcher = vscode.workspace.createFileSystemWatcher(
-    new vscode.RelativePattern(
-      vscode.workspace.workspaceFolders?.[0] || '',
-      `{${filePatterns.join(',')}}`,
-    ),
-  );
-
-  fileWatcher.onDidCreate((uri) => {
-    outputChannel.appendLine(`Data file created: ${uri.fsPath}`);
-  });
-
-  fileWatcher.onDidDelete((uri) => {
-    outputChannel.appendLine(`Data file deleted: ${uri.fsPath}`);
-  });
-
-  context.subscriptions.push(fileWatcher);
-
-  context.subscriptions.push(
-    vscode.workspace.onDidChangeConfiguration((e) => {
-      if (e.affectsConfiguration('quackwrangler')) {
-        outputChannel.appendLine('QuackWrangler configuration changed');
-      }
-    }),
   );
 
   context.subscriptions.push(outputChannel);
