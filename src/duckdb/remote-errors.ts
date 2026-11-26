@@ -1,4 +1,4 @@
-import { isRemoteDataSource } from '../utils/remoteProgress.js';
+import { isRemoteDataSource, redactRemoteText } from '../utils/remoteProgress.js';
 
 /** The address without its query string or fragment, which can hold signed tokens. */
 function safeAddress(source: string): string {
@@ -25,7 +25,7 @@ function fileKind(source: string): string {
  */
 export function describeRemoteError(error: unknown, source: string): string {
   const raw = error instanceof Error ? error.message : String(error);
-  if (!isRemoteDataSource(source)) return raw;
+  if (!isRemoteDataSource(source)) return redactRemoteText(raw);
   const isS3 = /^s3:\/\//i.test(source);
   const address = safeAddress(source);
   const status = /\(HTTP (\d{3})\b/i.exec(raw)?.[1] ?? /returned HTTP (\d{3})\b/i.exec(raw)?.[1];
@@ -56,5 +56,6 @@ export function describeRemoteError(error: unknown, source: string): string {
       .replace(/https?:\/\/[^\s'"]+|s3:\/\/[^\s'"]+/gi, '<address>')
       .replace(/^Error:\s*/i, '')
       .slice(0, 160)}`;
-  return raw;
+  // Anything else is shown as DuckDB wrote it, minus credentials in any address it mentions.
+  return redactRemoteText(raw);
 }

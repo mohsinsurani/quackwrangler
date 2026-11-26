@@ -3,6 +3,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   createRemoteProgressReporter,
   isRemoteDataSource,
+  redactRemoteSource,
+  redactRemoteText,
+  remoteSourceHasSecrets,
   REMOTE_LOAD_STAGES,
   SLOW_LOAD_HINT,
 } from '../../../src/utils/remoteProgress.js';
@@ -98,6 +101,56 @@ describe('remote loading progress', () => {
       vi.advanceTimersByTime(60000);
       expect(emit).not.toHaveBeenCalled();
       expect(vi.getTimerCount()).toBe(0);
+    });
+  });
+
+  describe('credential redaction', () => {
+    it.each([
+      [
+        'https://b.s3.amazonaws.com/a.parquet?X-Amz-Signature=abc&X-Amz-Credential=AKIA%2Fx&X-Amz-Expires=300',
+        ['abc', 'AKIA'],
+      ],
+      ['https://acct.blob.core.windows.net/c/a.csv?sv=2023&sig=zzz&se=2030', ['zzz', '2023']],
+      ['https://user:hunter2@example.com/a.csv', ['hunter2', 'user@']],
+      ['https://example.com/a.csv?api_key=SECRET&id=7', ['SECRET']],
+      ['https://example.com/a.csv?access_token=tok-value&page=2', ['tok-value']],
+    ])('removes the secret parts of %s', (address, secrets) => {
+      expect(remoteSourceHasSecrets(address)).toBe(true);
+      const safe = redactRemoteSource(address);
+      for (const secret of secrets) expect(safe).not.toContain(secret);
+      expect(safe).toMatch(/^https:\/\/(?:b\.s3|acct\.blob|example)/);
+    });
+
+    it('leaves ordinary query parameters and local paths alone', () => {
+      for (const address of [
+        'https://example.com/a.csv?download=1&page=2',
+        'https://example.com/a.csv',
+        's3://bucket/key.parquet',
+        '/tmp/local.csv?token=x',
+        'C:\\data\\a.csv',
+      ]) {
+        expect(remoteSourceHasSecrets(address)).toBe(false);
+        expect(redactRemoteSource(address)).toBe(address);
+      }
+    });
+
+    it('redacts every address inside an error message', () => {
+      const text =
+        "HTTP GET error on 'https://x.com/a.csv?token=abc' (HTTP 403) and 'https://y.com/b.csv?sig=def'";
+      const safe = redactRemoteText(text);
+      expect(safe).not.toContain('abc');
+      expect(safe).not.toContain('def');
+      expect(safe).toContain('(HTTP 403)');
+    });
+
+    it('never puts a signed token in the progress shown to the user', () => {
+      const emit = vi.fn();
+      const report = createRemoteProgressReporter(
+        'https://b.s3.amazonaws.com/a.parquet?X-Amz-Signature=topsecret',
+        emit,
+      );
+      Object.values(REMOTE_LOAD_STAGES).forEach(report);
+      for (const [update] of emit.mock.calls) expect(update.source).not.toContain('topsecret');
     });
   });
 });
