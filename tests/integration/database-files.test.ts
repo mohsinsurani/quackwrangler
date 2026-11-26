@@ -244,7 +244,8 @@ describe('opening a DuckDB file', () => {
 
     const blocked = writeFromAnotherProcess(file, "INSERT INTO customers VALUES (3, 'Cy')");
     expect(blocked.ok).toBe(false);
-    expect(blocked.error).toMatch(/lock/i);
+    // Linux and macOS say "lock"; Windows says the file is "being used by another process".
+    expect(blocked.error).toMatch(/lock|being used by another process/i);
 
     await releaseDatabase(connection as never);
     const allowed = writeFromAnotherProcess(file, "INSERT INTO customers VALUES (3, 'Cy')");
