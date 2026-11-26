@@ -4,8 +4,10 @@
 
 <h1 align="center">QuackWrangler</h1>
 
-<p align="center"><strong>Open, clean, explore, and export data without leaving VS Code.</strong><br>
-Built-in DuckDB. No Python. No Jupyter. No database to set up. <strong>Your data never leaves your machine.</strong></p>
+<h3 align="center">Your data, explored in seconds. Right inside VS Code. Never uploaded.</h3>
+
+<p align="center">Double-click a CSV, Parquet, Excel, JSON, or database file and get a fast, visual data editor:<br>
+profiles, filters, joins, charts, and SQL. <strong>Built-in DuckDB. No Python. No Jupyter. No setup. Nothing leaves your machine.</strong></p>
 
 <p align="center">
   <a href="https://marketplace.visualstudio.com/items?itemName=quackwrangler.quackwrangler"><img alt="VS Code Marketplace" src="https://img.shields.io/badge/VS_Code_Marketplace-0.5.0-007ACC?logo=visualstudiocode"></a>
@@ -17,27 +19,50 @@ Built-in DuckDB. No Python. No Jupyter. No database to set up. <strong>Your data
   <img alt="VS Code 1.85+" src="https://img.shields.io/badge/VS%20Code-1.85%2B-blue.svg">
 </p>
 
+<table align="center">
+<tr>
+<td align="center"><strong>🔒 100% local</strong><br><sub>no account, no telemetry,<br>no server</sub></td>
+<td align="center"><strong>⚡ 10M rows in 142 ms</strong><br><sub>4× faster than Pandas,<br>60% less memory</sub></td>
+<td align="center"><strong>📂 19 file types</strong><br><sub>incl. DuckDB &amp; SQLite<br>databases</sub></td>
+<td align="center"><strong>🐍 Zero Python</strong><br><sub>nothing to install<br>beyond the extension</sub></td>
+</tr>
+</table>
+
 <p align="center">
+  <a href="#quick-start">Quick start</a> ·
   <a href="#privacy">Privacy</a> ·
   <a href="#performance">Performance</a> ·
   <a href="#features">Features</a> ·
+  <a href="#polars">Polars</a> ·
   <a href="#install">Install</a> ·
   <a href="CHANGELOG.md">Changelog</a>
 </p>
 
-**Install:** `code --install-extension quackwrangler.quackwrangler`
-
 > QuackWrangler is an independent open-source project inspired by the visual workflow of data-wrangling tools.
-
-<figure>
 
 ![QuackWrangler demo: switch tables in a database file, inspect nested values, sort by several columns, and visualize correlations](docs/assets/quackwrangler-demo.gif)
 
-<figcaption>Open world_cup.csv → inspect column profiles → browse nested structs → visualize correlations — all without leaving VS Code.</figcaption>
-
-</figure>
+<p align="center"><sub>Open a DuckDB file → switch tables → browse a nested value → sort by two columns → chart a correlation heatmap. No code.</sub></p>
 
 ![QuackWrangler overview showing the nested STRUCT value inspector beside the synchronized data grid](docs/assets/quackwrangler-overview.jpg)
+
+<a id="quick-start"></a>
+
+## 🚀 Quick start
+
+1. **Install** from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=quackwrangler.quackwrangler), or run `code --install-extension quackwrangler.quackwrangler`.
+2. **Double-click** any data file in the Explorer. It opens straight into QuackWrangler.
+3. **Explore.** Every column is profiled instantly. Click **Transform** to filter, sort, join, or reshape, and **Export** when you're done.
+
+That's it. No kernel to start, no environment to activate, no connection string.
+
+### Made for moments like these
+
+- **"What's actually in this file?"** A colleague sends a 2.5 GB, 25-million-row Parquet export. It opens in a fraction of a second, every column is profiled in about 3 seconds, and filtering to the rows with a missing value takes under a tenth of a second. _(Measured on an Apple M3 Pro.)_
+- **"I just need it cleaned."** Drop junk columns, fix types, remove duplicates, and export a tidy CSV, without writing a script you'll never run again.
+- **"Is this the same as last month?"** Compare the schemas of a folder of files and catch the column that changed type.
+- **"What's in this app's database?"** Open a `.sqlite` or `.duckdb` file, flip through its tables, and query them, all read-only.
+- **"Now make it reproducible."** Save your steps as a recipe, replay them on next month's file, or hand the result to Polars or dbt.
 
 <a id="privacy"></a>
 
@@ -183,6 +208,29 @@ Save any sequence of steps as a `.qw` recipe and replay it on another file, even
 
 </details>
 
+<a id="polars"></a>
+
+## 🤝 QuackWrangler and Polars: when to use which
+
+They work well together. QuackWrangler is where you **look at and shape** data; [Polars](https://pola.rs) is a fast DataFrame library for when that work becomes **code**.
+
+| Use **QuackWrangler** when you want to…                   | Reach for **Polars** when you want to…                         |
+| --------------------------------------------------------- | -------------------------------------------------------------- |
+| Open an unfamiliar file and understand it now             | Build a pipeline in Python that runs every day                 |
+| Clean, filter, join, and reshape by clicking              | Write logic that goes beyond the visual steps                  |
+| Check quality, nulls, and outliers at a glance            | Feed results into machine learning, APIs, or other Python code |
+| Avoid installing Python or setting up an environment      | Schedule, test, and version the transformation as code         |
+| Work in a file larger than memory (DuckDB spills to disk) | Stream very large data in code with Polars' lazy engine        |
+
+**Moving from QuackWrangler to Polars takes one click.** Open **Export** and choose:
+
+- **Continue in Polars…** writes your exact current result to a Parquet file and opens a short Python script that loads it with `pl.scan_parquet(...)`. Nothing is re-computed or approximated, so this works for **any** pipeline.
+- **Open Polars recipe** writes Python that re-creates your steps on the source file, so you can keep editing them as code. It supports local Parquet sources with null filters, renames, column drops, and single-column sorts, and refuses anything else rather than generating code that would behave differently.
+
+QuackWrangler itself needs no Python; you only need Polars installed (`pip install polars`) to run the generated code.
+
+> **About the benchmark:** Polars was the fastest engine on small files in our runs, and its streaming engine is very efficient. QuackWrangler pulled ahead at 10 million rows and used much less memory in this workload. Both are excellent; pick by workflow, not by a single number.
+
 ## Why QuackWrangler?
 
 | Workflow                    | QuackWrangler      | Typical file viewer | Python notebook workflow |
@@ -200,14 +248,13 @@ QuackWrangler sits between a basic file preview and a full notebook. It gives yo
 
 - DuckDB-native execution with automatic disk spilling
 - **No Python, Jupyter, or database setup required** — works immediately
-- Local-first privacy: file contents, rows, and cell values are processed on your machine and are never sent to external servers
 - Virtualized grid with synchronized headers and consistent column sizing
 - Professional column profiles with completeness, cardinality, ranges, percentiles, and distributions
 - Inline histogram, bar, scatter, line, box-plot, and correlation-heatmap charts backed by full DuckDB queries
 - Data-quality summary for nulls, duplicates, and potential IQR outliers
 - Expandable nested-data tree for structs, lists, maps, and JSON values, with JSON Pointer copying and extract/flatten/explode transforms
-- Parquet, CSV, TSV, JSON, JSONL/NDJSON, XLSX, and ODS viewing
-- Filters, sorting, deduplication, column rename/drop/add/cast, null filling, and grouping/aggregation
+- Parquet, CSV, TSV, JSON, JSONL/NDJSON, Excel (XLSX and XLS), ODS, Arrow IPC, and ORC files, plus DuckDB and SQLite databases with a table switcher
+- Filters, multi-column sorting, deduplication by any columns or whole rows, column rename/drop/add/cast, null filling, and grouping/aggregation
 - Full-dataset search across every column (`Cmd/Ctrl+F`)
 - Pivot and unpivot reshaping
 - Drag-and-drop transformation ordering
@@ -216,7 +263,8 @@ QuackWrangler sits between a basic file preview and a full notebook. It gives yo
 - Full transformed-data export to Parquet, CSV, or JSON
 - Undo and redo for the transformation pipeline, with `Cmd/Ctrl+Z`, `Cmd+Shift+Z`, and `Ctrl+Y` shortcuts
 - Visual IF/date/regex/text formula builder
-- Multi-file joins and union-by-name
+- Multi-file joins and union-by-name, including tables from DuckDB and SQLite files
+- A **Cancel** button that stops slow loads, queries, and remote reads
 - Shareable `.qw` workspaces and recent-file shortcuts
 - HTTPS/S3 sources, schema comparison/drift reports, and opt-in schema-only AI transform plans
 - Contextual dbt project detection with copyable model SQL and CTE snippets
@@ -225,7 +273,20 @@ QuackWrangler sits between a basic file preview and a full notebook. It gives yo
 
 The extension currently uses DuckDB because it can run analytical queries larger than the configured memory limit by spilling intermediate data to disk. An eager Polars DataFrame normally materializes its working data in RAM, which can use more memory on large files. Polars also has a streaming engine and can be very efficient, so this is not a claim that DuckDB always uses less memory; it describes QuackWrangler's current workload and the measured results above.
 
-## What's new in 0.5.0
+## What's new
+
+### Coming in the next release
+
+These are merged and tested on `main` but not yet published to the Marketplace:
+
+- **Open DuckDB and SQLite databases** with a table switcher, read-only, and use their tables in joins.
+- **Private S3 buckets** with your AWS profile, SSO, or instance role, plus clear one-line errors for remote files.
+- **Cancel** for slow loads, queries, and remote reads.
+- **Sort by several columns**, drop several columns at once, and remove duplicates by any columns or whole rows.
+- Signed links and passwords are kept out of recent files, logs, and saved recipes.
+- DuckDB 2.0.1.
+
+### In 0.5.0 (on the Marketplace now)
 
 - **Replay recipes on files with different column names.** Choose replacements when a `.qw` recipe references a missing column. Cancelling or failing validation leaves the current result and history intact.
 - **Act on missing values from Data Quality.** Inspect matching rows without changing the pipeline, or apply an undoable fill or exclusion.
@@ -233,6 +294,8 @@ The extension currently uses DuckDB because it can run analytical queries larger
 - **Keep the grid in view.** The compact toolbar puts transforms, steps, recipes, and export within reach. The searchable Operations panel opens beside the grid on wide editors and as a slide-over drawer in narrow splits. Quality, Charts, and SQL share one analysis tab strip.
 
 See the [changelog](CHANGELOG.md#050---2026-11-20) for full release notes and earlier versions.
+
+<a id="install"></a>
 
 ## Install
 
@@ -265,11 +328,11 @@ Alternatively, run **Extensions: Install from VSIX...** from the VS Code Command
 2. Choose **Open data file** for one file, or **Open data folder** to scan a directory.
 3. The folder view preserves subdirectories, hides unsupported files and empty folders, and opens a data file when selected.
 4. You can also right-click a supported file in Explorer and choose **Open in QuackWrangler**.
-5. Clicking a Parquet, CSV, or XLSX file opens the QuackWrangler visual editor by default. Other supported formats remain available through **Open in QuackWrangler** without replacing their normal VS Code editor association.
+5. Clicking any supported file opens it in QuackWrangler by default. To keep a format in another editor, right-click it, choose **Open With… → Configure default editor**, and pick the one you prefer.
 6. Inspect column profiles and values in the synchronized data grid.
 7. Select **Transform** in the top toolbar to open the Operations panel. Choose an operation, enter its parameters, and apply it. Press `Enter` to apply an open form or `Escape` to close it.
 8. Use `Cmd/Ctrl+Z` to undo and `Cmd+Shift+Z` or `Ctrl+Y` to redo; the toolbar actions are enabled only when the corresponding history action is available.
-9. Use **AI plan** to describe a goal and preview a validated visual transform plan, or use **Custom DuckDB query** to run one read-only `SELECT`, `WITH`, or `VALUES` statement.
+9. Use **AI plan** to describe a goal and preview a validated visual transform plan, or open the **SQL** tab to run one read-only `SELECT`, `WITH`, or `VALUES` statement.
 10. Export the complete transformed dataset, or the active custom-query result when the query view is open. You can also select rows and copy them as TSV, CSV, pipe-separated text, or JSON.
 
 Custom queries run against `current_data`, which is scoped to the current editor's transformed pipeline:
@@ -325,7 +388,15 @@ DuckDB and SQLite files open like any other file. Their tables and views appear 
 - **SQLite types are flexible.** If a column mixes numbers and text, DuckDB cannot give it one type, so the table opens with every column as text and the header shows an "all text" badge. Use a cast transform to convert columns.
 - **SQLite needs DuckDB's signed `sqlite` extension**, downloaded on first use like the Excel one. Local files only; a table from a database file can be the second source of a join or append (choose the database file under **Combine Files**, then pick a table), but database files cannot be schema-compared.
 
-HTTPS and S3 URLs are supported for formats handled by the corresponding DuckDB reader. **Private S3 buckets** use the AWS credentials available to VS Code: the `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` environment variables, the default profile in `~/.aws`, or the profile named by `AWS_PROFILE` (start VS Code from a terminal that has it set), plus single sign-on and EC2 instance roles through DuckDB's `aws` extension. Public buckets are tried without credentials first, so they keep working even when a stored key is invalid or expired. If a private bucket is denied and no credentials are configured, DuckDB also asks the EC2 metadata service, which can add about ten seconds on a laptop; set `AWS_EC2_METADATA_DISABLED=true` before starting VS Code to skip that lookup. QuackWrangler never stores or asks for AWS keys, and they never appear in recipes or logs. Remote files open lazily and are read with HTTP range requests where the server allows them, so a Parquet file does not have to be downloaded in full. Some files store everything in one large block and need much of it downloaded before the first rows can show (a 23 MB public Parquet file took about 20 seconds); the progress bar then repeats its message with a reminder that loading is still in progress. Failures are explained in one line, for example that a file was not found (404), that access was denied (403, with a pointer to AWS credentials for private S3 objects), or that a link returned a web page instead of data. Query strings and signed tokens are left out of those messages, and DuckDB's full text stays in **View → Output → QuackWrangler** with credentials in any address replaced. Links that carry credentials (pre-signed S3 or Azure SAS URLs, or a user name and password) are never added to recent files, and are cleaned from saved `.qw` recipes. Remote access uses DuckDB `httpfs`; private S3 authentication follows DuckDB/AWS credential-chain configuration, so QuackWrangler does not place cloud credentials in workspace files.
+### Remote files (HTTPS and S3)
+
+Run **QuackWrangler: Open Remote HTTPS/S3 Data** and paste an address. Any format with a DuckDB reader works.
+
+- **Only what's needed is downloaded.** Remote files open lazily and are read with HTTP range requests where the server allows them. A file stored as one large block has to download first (a 23 MB public Parquet file took about 20 seconds), and the progress bar tells you it is still working.
+- **Private S3 buckets** use the AWS credentials available to VS Code: `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`, the default profile in `~/.aws`, the profile named by `AWS_PROFILE` (start VS Code from a terminal that has it set), single sign-on, or an EC2 instance role. Public buckets are tried without credentials first, so they keep working even when a stored key is invalid or expired.
+- **Slow denial on a laptop?** When a private bucket is denied and no credentials are configured, DuckDB also asks the EC2 metadata service, which can add about ten seconds. Set `AWS_EC2_METADATA_DISABLED=true` before starting VS Code to skip it.
+- **Clear errors.** A failure is explained in one line: not found (404), access denied (403, with a pointer to AWS credentials for private S3), sign-in required, server error, timeout, or a link that returned a web page instead of data. DuckDB's full text stays in **View → Output → QuackWrangler**.
+- **Credentials stay out of sight.** QuackWrangler never asks for or stores AWS keys. Links that carry credentials (pre-signed S3 or Azure SAS URLs, or a user name and password) are never added to recent files, are cleaned from saved `.qw` recipes, and are redacted in logs and messages.
 
 XLSX, ODS, Arrow IPC, ORC, and SQLite use signed DuckDB extensions. QuackWrangler loads cached copies first, so only the first use of a missing extension requires network access. Legacy `.xls` files are converted in-process to a temporary `.xlsx` file, then use the same XLSX reader and type handling. Password-protected or malformed legacy workbooks may still fail conversion.
 
