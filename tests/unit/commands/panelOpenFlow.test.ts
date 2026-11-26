@@ -266,6 +266,47 @@ describe('custom-editor file opening flow', () => {
     );
   });
 
+  it('explains a missing remote file in plain words and keeps the raw error in the log', async () => {
+    mocks.loadFile.mockRejectedValueOnce(
+      new Error(
+        "Failed to load file https://data.example.com/a.parquet?sig=hidden: HTTP Error: HTTP HEAD error on 'https://data.example.com/a.parquet?sig=hidden' (HTTP 404 Not Found)",
+      ),
+    );
+
+    await openDataWranglerCustomEditor(
+      { fsPath: 'https://data.example.com/a.parquet?sig=hidden' } as never,
+      {} as never,
+    );
+
+    const shown = mocks.showErrorMessage.mock.calls[0][0] as string;
+    expect(shown).toMatch(/not found \(404\)/i);
+    expect(shown).not.toContain('sig=hidden');
+    expect(mocks.posted).toContainEqual(
+      expect.objectContaining({
+        type: 'error',
+        message: expect.stringMatching(/not found \(404\)/i),
+      }),
+    );
+    expect(mocks.appendLine).toHaveBeenCalledWith(expect.stringContaining('HTTP HEAD error on'));
+  });
+
+  it('stops the slow-load reminder after a remote load fails', async () => {
+    vi.useFakeTimers();
+    try {
+      mocks.loadFile.mockRejectedValueOnce(new Error('boom'));
+      await openDataWranglerCustomEditor(
+        { fsPath: 'https://data.example.com/a.parquet' } as never,
+        {} as never,
+      );
+      const before = mocks.posted.length;
+      vi.advanceTimersByTime(60000);
+      expect(mocks.posted.length).toBe(before);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('can open CSV after XLSX reader preparation fails', async () => {
     mocks.prepareDataFileReader.mockRejectedValueOnce(new Error('excel extension unavailable'));
 
