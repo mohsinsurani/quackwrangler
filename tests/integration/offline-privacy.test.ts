@@ -1,6 +1,6 @@
 import { DuckDBInstance } from '@duckdb/node-api';
 import { createHash } from 'node:crypto';
-import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdtemp, open, rm, writeFile } from 'node:fs/promises';
 import { createServer, Server } from 'node:http';
 import { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
@@ -20,11 +20,18 @@ const requests: string[] = [];
 const sources: Record<string, string> = {};
 
 async function fingerprint(path: string): Promise<string> {
-  const info = await stat(path);
-  const digest = createHash('sha256')
-    .update(await readFile(path))
-    .digest('hex');
-  return `${digest}:${info.size}:${info.mtimeMs}`;
+  // One open handle for both the size/mtime and the content, so the two cannot describe different
+  // versions of the file.
+  const handle = await open(path, 'r');
+  try {
+    const info = await handle.stat();
+    const digest = createHash('sha256')
+      .update(await handle.readFile())
+      .digest('hex');
+    return `${digest}:${info.size}:${info.mtimeMs}`;
+  } finally {
+    await handle.close();
+  }
 }
 
 beforeAll(async () => {
