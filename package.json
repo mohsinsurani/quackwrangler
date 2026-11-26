@@ -42,7 +42,7 @@
   },
   "engines": {
     "vscode": "^1.85.0",
-    "node": ">=20"
+    "node": ">=22"
   },
   "main": "./dist/extension.cjs",
   "extensionKind": [
@@ -403,15 +403,15 @@
     "test:ui:linux": "bash tests/vscode/ui/linux/run.sh"
   },
   "dependencies": {
-    "@duckdb/node-api": "^2.0.0-r.1",
+    "@duckdb/node-api": "^2.0.1-r.1",
     "@e965/xlsx": "^0.20.3"
   },
   "devDependencies": {
-    "@types/node": "^26.6.6",
+    "@types/node": "^26.6.11",
     "@types/vscode": "1.85.0",
-    "@typescript-eslint/eslint-plugin": "^8.73.0",
-    "@typescript-eslint/parser": "^8.73.0",
-    "@vitest/coverage-v8": "^5.1.1",
+    "@typescript-eslint/eslint-plugin": "^8.74.0",
+    "@typescript-eslint/parser": "^8.74.0",
+    "@vitest/coverage-v8": "^5.1.2",
     "@vscode/vsce": "^4.1.1",
     "esbuild": "^0.28.2",
     "eslint": "^9.39.5",
@@ -422,7 +422,7 @@
     "playwright-core": "^1.65.1",
     "prettier": "^3.10.1",
     "typescript": "^6.0.3",
-    "vitest": "^5.1.1"
+    "vitest": "^5.1.2"
   },
   "overrides": {
     "@azure/msal-node": "^7.1.0",

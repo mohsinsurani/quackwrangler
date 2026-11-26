@@ -44,7 +44,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v7
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
 
       - name: Install dependencies
@@ -112,7 +112,7 @@ jobs:
             --workdir /workspace \
             --env EXPECTED_VERSION \
             --env DUCKDB_BINDING \
-            node:20-alpine \
+            node:22-alpine \
              sh -c "npm ci --include=optional && npm --prefix webview-ui ci && node scripts/verify-release-target.mjs && npm run lint && QW_SKIP_OPTIONAL_EXTENSION_TESTS=true npm test && npm run build && npm run package"
 
       - name: Upload targeted VSIX

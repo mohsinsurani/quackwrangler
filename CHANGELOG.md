@@ -4,6 +4,11 @@ All notable changes to QuackWrangler are documented here using [Keep a Changelog
 
 ## [Unreleased]
 
+### Changed
+
+- Updated DuckDB to 2.0.1, a bug-fix release. DuckDB extensions (Excel, spatial, SQLite, Arrow, ORC, httpfs) are cached per DuckDB version, so each one downloads once more on first use.
+- Node.js 22 is now the minimum for development and CI; Node.js 20 reached end of life. CI tests Node.js 22 and 24.
+
 ### Added
 
 - Open DuckDB and SQLite database files (`.duckdb`, `.ddb`, `.sqlite`, `.sqlite3`, `.db`, `.db3`) like any other file. A table switcher in the header lists tables, views, and extra schemas; each opens as a normal dataset with profiles, quality, transforms, SQL, charts, and exports.
