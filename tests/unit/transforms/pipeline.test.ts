@@ -202,6 +202,20 @@ describe('WranglingSession', () => {
     ['fill_nulls', { column: 'name', value: 'unknown' }, 'COALESCE("name", \'unknown\')'],
     ['sort_rows', { column: 'amount', direction: 'DESC' }, 'ORDER BY "amount" DESC'],
     ['deduplicate', { columns: ['id'] }, 'PARTITION BY "id"'],
+    [
+      'sort_rows',
+      {
+        keys: [
+          { column: 'region', direction: 'ASC' },
+          { column: 'price', direction: 'DESC' },
+        ],
+      },
+      'ORDER BY "region" ASC, "price" DESC',
+    ],
+    ['drop_column', { columns: ['a', 'b'] }, 'EXCLUDE ("a", "b")'],
+    ['drop_column', { columns: ['a', 'b', 'a'] }, 'EXCLUDE ("a", "b")'],
+    ['deduplicate', { columns: ['k1', 'k2', 'k1'] }, 'PARTITION BY "k1", "k2")'],
+    ['deduplicate', { columns: [] }, 'SELECT DISTINCT * FROM current_data'],
   ])('executes displayed transform %s', (type, params, expected) => {
     const session = new WranglingSession({} as any);
     session.load('/tmp/data.csv');
@@ -580,5 +594,59 @@ describe('pipeline ordering and reshape transforms', () => {
     await session.getPage(0, 100);
     const describeCalls = query.mock.calls.filter(([sql]) => String(sql).startsWith('DESCRIBE'));
     expect(describeCalls).toHaveLength(1);
+  });
+
+  describe('multi-column sorting', () => {
+    const session = (): WranglingSession => {
+      const created = new WranglingSession({} as never);
+      created.load('/tmp/data.csv');
+      return created;
+    };
+
+    it('still reads the single-column form saved by earlier versions', () => {
+      const target = session();
+      target.apply('sort_rows', { column: 'amount', direction: 'DESC' });
+      expect(target.getSql()).toContain('ORDER BY "amount" DESC');
+      const ascending = session();
+      ascending.apply('sort_rows', { column: 'amount', ascending: true });
+      expect(ascending.getSql()).toContain('ORDER BY "amount" ASC');
+    });
+
+    it('quotes every key', () => {
+      const target = session();
+      target.apply('sort_rows', { keys: [{ column: 'we"ird', direction: 'DESC' }] });
+      expect(target.getSql()).toContain('ORDER BY "we""ird" DESC');
+    });
+
+    it.each([
+      ['an empty list', { keys: [] }, /column is required/],
+      ['a key without a column', { keys: [{ direction: 'ASC' }] }, /needs a column/],
+      [
+        'the same column twice',
+        {
+          keys: [
+            { column: 'a', direction: 'ASC' },
+            { column: 'a', direction: 'DESC' },
+          ],
+        },
+        /used twice/,
+      ],
+    ])('rejects %s', (_label, params, message) => {
+      expect(() => session().apply('sort_rows', params as Record<string, unknown>)).toThrow(
+        message,
+      );
+    });
+
+    it('describes the keys readably instead of printing objects', () => {
+      const target = session();
+      target.apply('sort_rows', {
+        keys: [
+          { column: 'region', direction: 'ASC' },
+          { column: 'price', direction: 'DESC' },
+        ],
+      });
+      expect(target.getHistory()[0].description).toBe('sort rows: region asc, price desc');
+      expect(target.getHistory()[0].description).not.toContain('[object Object]');
+    });
   });
 });

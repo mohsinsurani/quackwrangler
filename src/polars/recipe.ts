@@ -46,6 +46,10 @@ export function buildPolarsRecipe(sourcePath: string, history: TransformOperatio
         throw new Error('The recipe contains an invalid column removal.');
     }
     if (step.type === 'sort_rows' || step.type === 'sortRows') {
+      if (Array.isArray(step.params.keys))
+        throw new Error(
+          'Polars recipe export does not support sorting by several columns yet. Continue from the Parquet result to preserve the exact ordering.',
+        );
       if (typeof step.params.column !== 'string' || !step.params.column)
         throw new Error('The recipe contains an invalid sort.');
       if (step.params.nullsFirst === true)

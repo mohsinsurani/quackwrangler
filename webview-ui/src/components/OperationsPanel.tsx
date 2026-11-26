@@ -13,7 +13,11 @@ interface OperationsPanelProps {
   onUndo: () => void;
   onRedo: () => void;
   onCollapse: () => void;
-  secondaryFile?: { filePath: string; columns: string[] };
+  secondaryFile?: {
+    filePath: string;
+    columns: string[];
+    table?: { schema: string; name: string };
+  };
   onSelectSecondaryFile: () => void;
 }
 
@@ -55,6 +59,80 @@ const categoryCodicons: Record<string, string> = {
   'Combine Files': 'combine',
 };
 
+interface SortKeyValue {
+  column: string;
+  direction: 'ASC' | 'DESC';
+}
+
+/** An ordered list of sort keys: pick a column and direction for each, add or remove keys. */
+function SortKeyEditor({
+  id,
+  columns,
+  value,
+  onChange,
+}: {
+  id: string;
+  columns: ColumnInfo[];
+  value: SortKeyValue[];
+  onChange: (next: SortKeyValue[]) => void;
+}): React.ReactElement {
+  const used = new Set(value.map((key) => key.column));
+  const available = columns.filter((column) => !used.has(column.name));
+  const update = (index: number, patch: Partial<SortKeyValue>): void =>
+    onChange(value.map((key, position) => (position === index ? { ...key, ...patch } : key)));
+  return (
+    <div id={id} className="sort-keys" role="group" aria-label="Sort keys">
+      {value.map((key, index) => (
+        <div key={index} className="sort-key-row">
+          <span className="sort-key-rank" aria-hidden="true">
+            {index + 1}
+          </span>
+          <select
+            className="param-select"
+            aria-label={`Sort key ${index + 1} column`}
+            value={key.column}
+            onChange={(event) => update(index, { column: event.target.value })}
+          >
+            {columns
+              .filter((column) => column.name === key.column || !used.has(column.name))
+              .map((column) => (
+                <option key={column.name} value={column.name}>
+                  {column.displayName}
+                </option>
+              ))}
+          </select>
+          <select
+            className="param-select sort-direction"
+            aria-label={`Sort key ${index + 1} direction`}
+            value={key.direction}
+            onChange={(event) => update(index, { direction: event.target.value as 'ASC' | 'DESC' })}
+          >
+            <option value="ASC">Ascending</option>
+            <option value="DESC">Descending</option>
+          </select>
+          <button
+            type="button"
+            className="sort-key-remove"
+            aria-label={`Remove sort key ${index + 1}`}
+            disabled={value.length < 2}
+            onClick={() => onChange(value.filter((_, position) => position !== index))}
+          >
+            <span className="codicon codicon-close" aria-hidden="true" />
+          </button>
+        </div>
+      ))}
+      <button
+        type="button"
+        className="sort-key-add"
+        disabled={available.length === 0}
+        onClick={() => onChange([...value, { column: available[0].name, direction: 'ASC' }])}
+      >
+        <span className="codicon codicon-add" aria-hidden="true" /> Then by…
+      </button>
+    </div>
+  );
+}
+
 function OperationIcon({ name, category = false }: { name: string; category?: boolean }) {
   const icon = category ? categoryCodicons[name] : operationCodicons[name];
   return <span className={`codicon codicon-${icon ?? 'circle-outline'}`} aria-hidden="true" />;
@@ -63,7 +141,8 @@ function OperationIcon({ name, category = false }: { name: string; category?: bo
 interface ParamDef {
   name: string;
   label: string;
-  type: 'text' | 'number' | 'select' | 'column' | 'secondary-column' | 'file';
+  type:
+    'text' | 'number' | 'select' | 'column' | 'columns' | 'sort-keys' | 'secondary-column' | 'file';
   required: boolean;
   options?: Array<{ label: string; value: string }>;
   defaultValue?: unknown;
@@ -111,7 +190,15 @@ const OPERATION_CATEGORIES: OperationCategory[] = [
       {
         id: 'deduplicate',
         name: 'Remove Duplicates',
-        params: [{ name: 'columns', label: 'Columns', type: 'column', required: true }],
+        // Leaving every column unticked compares whole rows.
+        params: [
+          {
+            name: 'columns',
+            label: 'Columns that make a row a duplicate (none = whole row)',
+            type: 'columns',
+            required: false,
+          },
+        ],
       },
     ],
   },
@@ -128,8 +215,8 @@ const OPERATION_CATEGORIES: OperationCategory[] = [
       },
       {
         id: 'drop_column',
-        name: 'Drop Column',
-        params: [{ name: 'column', label: 'Column', type: 'column', required: true }],
+        name: 'Drop Columns',
+        params: [{ name: 'columns', label: 'Columns to remove', type: 'columns', required: true }],
       },
       {
         id: 'add_column',
@@ -268,17 +355,7 @@ const OPERATION_CATEGORIES: OperationCategory[] = [
         id: 'sort_rows',
         name: 'Sort',
         params: [
-          { name: 'column', label: 'Column', type: 'column', required: true },
-          {
-            name: 'direction',
-            label: 'Direction',
-            type: 'select',
-            required: true,
-            options: [
-              { label: 'Ascending', value: 'ASC' },
-              { label: 'Descending', value: 'DESC' },
-            ],
-          },
+          { name: 'keys', label: 'Sort by (first column wins)', type: 'sort-keys', required: true },
         ],
       },
     ],
@@ -446,6 +523,11 @@ export const OperationsPanel: React.FC<OperationsPanelProps> = React.memo(
             initial[p.name] = p.defaultValue;
           } else if (p.type === 'column' && p.required && columns.length > 0) {
             initial[p.name] = columns[0].name;
+          } else if (p.type === 'columns') {
+            initial[p.name] = [];
+          } else if (p.type === 'sort-keys') {
+            initial[p.name] =
+              columns.length > 0 ? [{ column: columns[0].name, direction: 'ASC' }] : [];
           } else {
             initial[p.name] = '';
           }
@@ -463,20 +545,38 @@ export const OperationsPanel: React.FC<OperationsPanelProps> = React.memo(
     React.useEffect(() => {
       if (!selectedOp || !['join_file', 'union_file'].includes(selectedOp.id) || !secondaryFile)
         return;
-      setFormData((current) => ({
-        ...current,
-        filePath: secondaryFile.filePath,
-        ...(selectedOp.id === 'join_file' && !current.rightColumn
-          ? { rightColumn: secondaryFile.columns[0] ?? '' }
-          : {}),
-      }));
+      setFormData((current) => {
+        const changed =
+          current.filePath !== secondaryFile.filePath ||
+          JSON.stringify(current.table ?? null) !== JSON.stringify(secondaryFile.table ?? null);
+        const next: Record<string, unknown> = {
+          ...current,
+          filePath: secondaryFile.filePath,
+        };
+        // A database source also names the table inside it; other files have no table.
+        if (secondaryFile.table) next.table = secondaryFile.table;
+        else delete next.table;
+        // A different source has different columns, so the old match column no longer applies.
+        if (selectedOp.id === 'join_file' && (changed || !current.rightColumn))
+          next.rightColumn = secondaryFile.columns[0] ?? '';
+        return next;
+      });
     }, [secondaryFile, selectedOp]);
 
     const handleSubmit = useCallback(() => {
       if (!selectedOp) return;
-      const missingRequired = selectedOp.params.find(
-        (param) => param.required && String(formData[param.name] ?? '').trim() === '',
-      );
+      const missingRequired = selectedOp.params.find((param) => {
+        if (!param.required) return false;
+        const value = formData[param.name];
+        if (param.type === 'columns') return !Array.isArray(value) || value.length === 0;
+        if (param.type === 'sort-keys')
+          return (
+            !Array.isArray(value) ||
+            value.length === 0 ||
+            value.some((key) => !(key as { column?: string }).column)
+          );
+        return String(value ?? '').trim() === '';
+      });
       if (missingRequired) {
         setFormError(`${missingRequired.label} is required`);
         return;
@@ -775,7 +875,11 @@ export const OperationsPanel: React.FC<OperationsPanelProps> = React.memo(
                               className="param-input"
                               type="text"
                               readOnly
-                              value={String(formData[param.name] || '')}
+                              value={
+                                formData.table && formData[param.name]
+                                  ? `${String(formData[param.name])} · ${String((formData.table as { name: string }).name)}`
+                                  : String(formData[param.name] || '')
+                              }
                               placeholder="No file selected"
                             />
                             <button type="button" onClick={onSelectSecondaryFile}>
@@ -796,6 +900,47 @@ export const OperationsPanel: React.FC<OperationsPanelProps> = React.memo(
                               </option>
                             ))}
                           </select>
+                        ) : param.type === 'columns' ? (
+                          <div
+                            id={inputId}
+                            className="column-checklist"
+                            role="group"
+                            aria-label={param.label}
+                          >
+                            {columns.map((col) => {
+                              const selected = Array.isArray(formData[param.name])
+                                ? (formData[param.name] as string[])
+                                : [];
+                              return (
+                                <label key={col.name} className="column-check">
+                                  <input
+                                    type="checkbox"
+                                    checked={selected.includes(col.name)}
+                                    onChange={(event) =>
+                                      handleParamChange(
+                                        param.name,
+                                        event.target.checked
+                                          ? [...selected, col.name]
+                                          : selected.filter((name) => name !== col.name),
+                                      )
+                                    }
+                                  />
+                                  <span title={col.name}>{col.displayName}</span>
+                                </label>
+                              );
+                            })}
+                          </div>
+                        ) : param.type === 'sort-keys' ? (
+                          <SortKeyEditor
+                            id={inputId}
+                            columns={columns}
+                            value={
+                              Array.isArray(formData[param.name])
+                                ? (formData[param.name] as SortKeyValue[])
+                                : []
+                            }
+                            onChange={(next) => handleParamChange(param.name, next)}
+                          />
                         ) : param.type === 'column' || param.type === 'secondary-column' ? (
                           <select
                             id={inputId}

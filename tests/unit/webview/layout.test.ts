@@ -322,6 +322,28 @@ describe('webview layout contracts', () => {
     expect(rule('.cancel-btn')).toContain('cursor: pointer');
   });
 
+  it('lets users sort by several columns and choose several columns to drop or deduplicate', () => {
+    expect(operationsSource).toContain("type: 'sort-keys'");
+    expect(operationsSource).toContain('Then by…');
+    expect(operationsSource).toContain('function SortKeyEditor');
+    expect(operationsSource).toContain("type: 'columns'");
+    expect(operationsSource).toContain('className="column-checklist"');
+    // Deduplicate may be applied with no columns (whole rows); dropping may not.
+    const deduplicate = operationsSource.slice(operationsSource.indexOf("id: 'deduplicate'"));
+    expect(deduplicate.slice(0, 500)).toContain('required: false');
+    const drop = operationsSource.slice(operationsSource.indexOf("id: 'drop_column'"));
+    expect(drop.slice(0, 300)).toContain('required: true');
+    expect(appSource).toContain('+${keys.length - 1}');
+    expect(rule('.column-checklist')).toContain('max-height');
+  });
+
+  it('carries the chosen database table into join and union steps and shows it', () => {
+    expect(appSource).toContain('table: message.table');
+    expect(operationsSource).toContain('if (secondaryFile.table) next.table = secondaryFile.table');
+    expect(operationsSource).toContain('else delete next.table');
+    expect(operationsSource).toContain('(formData.table as { name: string }).name');
+  });
+
   it('shows a transient success toast after a transform is applied', () => {
     expect(appSource).toContain('className="success-toast"');
     expect(appSource).toContain('role="status"');

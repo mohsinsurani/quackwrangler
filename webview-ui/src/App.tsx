@@ -93,6 +93,16 @@ function stepLabel(step: TransformStep): string {
     deduplicate: 'Remove duplicates',
   };
   const name = names[step.name] ?? transformLabel(step.name);
+  const keys = step.params.keys;
+  if (Array.isArray(keys) && keys.length > 0) {
+    const first = (keys[0] as { column?: string }).column ?? '';
+    return keys.length > 1 ? `${name} · ${first} +${keys.length - 1}` : `${name} · ${first}`;
+  }
+  const list = step.params.columns;
+  if (Array.isArray(list) && list.length > 0) {
+    const first = String(list[0]);
+    return list.length > 1 ? `${name} · ${first} +${list.length - 1}` : `${name} · ${first}`;
+  }
   const column = step.params.column ?? step.params.oldName ?? step.params.name;
   return typeof column === 'string' && column ? `${name} · ${column}` : name;
 }
@@ -139,7 +149,11 @@ export const App: React.FC = () => {
     message: string;
     source: string;
   }>();
-  const [secondaryFile, setSecondaryFile] = useState<{ filePath: string; columns: string[] }>();
+  const [secondaryFile, setSecondaryFile] = useState<{
+    filePath: string;
+    columns: string[];
+    table?: { schema: string; name: string };
+  }>();
   const searchInputRef = useRef<HTMLInputElement>(null);
   const exportButtonRef = useRef<HTMLButtonElement>(null);
   const recipeButtonRef = useRef<HTMLButtonElement>(null);
@@ -354,6 +368,7 @@ export const App: React.FC = () => {
         setSecondaryFile({
           filePath: message.filePath,
           columns: message.columns.map((column: { name: string }) => column.name),
+          table: message.table,
         });
       } else if (message.type === 'exportComplete') {
         if (message.requestId !== latestRequests.current.export) return;

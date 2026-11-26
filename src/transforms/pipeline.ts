@@ -181,10 +181,60 @@ function nestedExpression(params: Record<string, unknown>): string {
   return expression;
 }
 
+interface SortKey {
+  column: string;
+  ascending: boolean;
+}
+
+/**
+ * Reads the sort keys of a `sort_rows` step. `keys` holds several columns with a direction each;
+ * the single `column` and `direction` form that earlier steps and saved recipes use still works.
+ */
+function sortKeys(params: Record<string, unknown>): SortKey[] {
+  if (Array.isArray(params.keys)) {
+    const keys = params.keys.map((entry): SortKey => {
+      const candidate = entry as { column?: unknown; direction?: unknown; ascending?: unknown };
+      if (typeof candidate.column !== 'string' || !candidate.column.trim())
+        throw new Error('Every sort key needs a column');
+      const ascending =
+        typeof candidate.ascending === 'boolean'
+          ? candidate.ascending
+          : String(candidate.direction ?? 'ASC').toUpperCase() !== 'DESC';
+      return { column: candidate.column, ascending };
+    });
+    if (keys.length === 0) throw new Error('column is required');
+    const seen = new Set<string>();
+    for (const key of keys) {
+      if (seen.has(key.column)) throw new Error(`Column "${key.column}" is used twice in the sort`);
+      seen.add(key.column);
+    }
+    return keys;
+  }
+  return [
+    {
+      column: requiredString(params, 'column'),
+      ascending: Boolean(params.ascending ?? params.direction !== 'DESC'),
+    },
+  ];
+}
+
+/** The table chosen inside a database file used as a join or union source, if any. */
+function secondaryTable(
+  params: Record<string, unknown>,
+): { schema: string; name: string } | undefined {
+  const table = params.table as { schema?: unknown; name?: unknown } | undefined;
+  if (!table) return undefined;
+  if (typeof table.schema !== 'string' || typeof table.name !== 'string' || !table.name)
+    throw new Error('The chosen database table is not valid');
+  return { schema: table.schema, name: table.name };
+}
+
 function operationSql(
   type: string,
   params: Record<string, unknown>,
-  secondaryTableRef: (filePath: string) => string = (filePath) => getTableRef(filePath),
+  secondaryTableRef: (filePath: string, table?: { schema: string; name: string }) => string = (
+    filePath,
+  ) => getTableRef(filePath),
 ): string {
   switch (type) {
     case 'filterRows':
@@ -192,14 +242,17 @@ function operationSql(
       return `SELECT * FROM current_data WHERE ${structuredFilterSql(params)}`;
     case 'sortRows':
     case 'sort_rows': {
-      const column = quoteIdentifier(requiredString(params, 'column'));
-      const ascending = params.ascending ?? params.direction !== 'DESC';
-      return `SELECT * FROM current_data ORDER BY ${column} ${ascending ? 'ASC' : 'DESC'}`;
+      const keys = sortKeys(params);
+      return `SELECT * FROM current_data ORDER BY ${keys
+        .map((key) => `${quoteIdentifier(key.column)} ${key.ascending ? 'ASC' : 'DESC'}`)
+        .join(', ')}`;
     }
     case 'dropColumn':
     case 'drop_column': {
       const values = Array.isArray(params.columns) ? params.columns : [params.column];
-      const columns = values.filter((value): value is string => typeof value === 'string');
+      const columns = [
+        ...new Set(values.filter((value): value is string => typeof value === 'string' && !!value)),
+      ];
       if (columns.length === 0) throw new Error('column is required');
       return `SELECT * EXCLUDE (${columns.map(quoteIdentifier).join(', ')}) FROM current_data`;
     }
@@ -235,11 +288,11 @@ function operationSql(
       if (!new Set(['INNER', 'LEFT', 'RIGHT', 'FULL']).has(joinType)) {
         throw new Error(`Unsupported join type: ${joinType}`);
       }
-      return `SELECT left_data.*, right_data.* FROM current_data AS left_data ${joinType} JOIN ${secondaryTableRef(filePath)} AS right_data ON left_data.${leftColumn} = right_data.${rightColumn}`;
+      return `SELECT left_data.*, right_data.* FROM current_data AS left_data ${joinType} JOIN ${secondaryTableRef(filePath, secondaryTable(params))} AS right_data ON left_data.${leftColumn} = right_data.${rightColumn}`;
     }
     case 'union_file': {
       const filePath = requiredString(params, 'filePath');
-      return `SELECT * FROM current_data UNION ALL BY NAME SELECT * FROM ${secondaryTableRef(filePath)}`;
+      return `SELECT * FROM current_data UNION ALL BY NAME SELECT * FROM ${secondaryTableRef(filePath, secondaryTable(params))}`;
     }
     case 'castType':
     case 'cast_type': {
@@ -279,9 +332,11 @@ function operationSql(
       const values = Array.isArray(params.columns)
         ? params.columns
         : [params.columns ?? params.column];
-      const columns = values.filter(
-        (value): value is string => typeof value === 'string' && value.length > 0,
-      );
+      const columns = [
+        ...new Set(
+          values.filter((value): value is string => typeof value === 'string' && value.length > 0),
+        ),
+      ];
       return columns.length
         ? `SELECT * FROM current_data QUALIFY ROW_NUMBER() OVER (PARTITION BY ${columns.map(quoteIdentifier).join(', ')}) = 1`
         : 'SELECT DISTINCT * FROM current_data';
@@ -333,8 +388,22 @@ function operationSql(
   }
 }
 
+function describeValue(value: unknown): string {
+  if (Array.isArray(value))
+    return value
+      .map((entry) => {
+        if (entry && typeof entry === 'object') {
+          const key = entry as { column?: unknown; direction?: unknown };
+          return `${String(key.column ?? '')} ${String(key.direction ?? 'ASC').toLowerCase()}`;
+        }
+        return String(entry);
+      })
+      .join(', ');
+  return String(value);
+}
+
 function descriptionFor(type: string, params: Record<string, unknown>): string {
-  return `${type.replace(/_/g, ' ')}: ${Object.values(params).filter(Boolean).join(', ')}`;
+  return `${type.replace(/_/g, ' ')}: ${Object.values(params).filter(Boolean).map(describeValue).join(', ')}`;
 }
 
 interface RecipeReplayOptions {
@@ -382,6 +451,13 @@ async function remapRecipeInputs(
       break;
     case 'sortRows':
     case 'sort_rows':
+      if (Array.isArray(params.keys)) {
+        for (const entry of params.keys) {
+          const key = entry as { column?: unknown };
+          if (typeof key.column === 'string' && key.column) key.column = await resolve(key.column);
+        }
+      } else await field('column');
+      break;
     case 'castType':
     case 'cast_type':
     case 'fillMissing':
@@ -506,8 +582,8 @@ export class WranglingSession {
   apply(type: string, params: Record<string, unknown>): void {
     // Secondary sources reuse any schema already resolved on this connection so
     // joins and unions do not re-run CSV type detection per query.
-    const sql = operationSql(type, params, (filePath) =>
-      getConnectionTableRef(this.connection, filePath),
+    const sql = operationSql(type, params, (filePath, table) =>
+      getConnectionTableRef(this.connection, filePath, undefined, table),
     );
     this.history.push({
       id: randomUUID(),
@@ -558,8 +634,8 @@ export class WranglingSession {
         throw new Error('Text columns require a text replacement value');
       params = { ...params, targetType: castTarget };
     }
-    const sql = operationSql(type, params, (filePath) =>
-      getConnectionTableRef(this.connection, filePath),
+    const sql = operationSql(type, params, (filePath, table) =>
+      getConnectionTableRef(this.connection, filePath, undefined, table),
     );
     const operation: TransformOperation = {
       id: randomUUID(),
@@ -710,8 +786,8 @@ export class WranglingSession {
   ): TransformOperation[] {
     return history.map((step) => {
       const params = structuredClone(step.params);
-      const sql = operationSql(step.type, params, (filePath) =>
-        getConnectionTableRef(this.connection, filePath),
+      const sql = operationSql(step.type, params, (filePath, table) =>
+        getConnectionTableRef(this.connection, filePath, undefined, table),
       );
       return {
         id: randomUUID(),
@@ -807,8 +883,8 @@ export class WranglingSession {
             );
           params = { ...params, targetType };
         }
-        const sql = operationSql(step.type, params, (filePath) =>
-          getConnectionTableRef(this.connection, filePath),
+        const sql = operationSql(step.type, params, (filePath, table) =>
+          getConnectionTableRef(this.connection, filePath, undefined, table),
         );
         candidate.push({
           id: randomUUID(),
