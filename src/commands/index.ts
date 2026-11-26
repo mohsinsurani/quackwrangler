@@ -55,9 +55,7 @@ function getConfig(): DataWranglerConfig {
     memoryLimit: config.get<string>('duckdb.memoryLimit', '80%'),
     tempDirectory: config.get<string>('duckdb.tempDirectory', ''),
     maxTempDirectorySize: config.get<string>('duckdb.maxTempDirectorySize', '15GB'),
-    autoLoadExtensions: config.get<string[]>('duckdb.autoLoadExtensions', []),
     pageSize: config.get<number>('display.pageSize', 100),
-    maxRowsPreview: config.get<number>('display.maxRows', 10000),
     loadingMode: config.get<'auto' | 'eager' | 'lazy'>('duckdb.loadingMode', 'auto'),
     eagerFileSizeLimitMb: config.get<number>('duckdb.eagerFileSizeLimitMb', 64),
     threads: config.get<number>('duckdb.threads', 0),
@@ -244,13 +242,6 @@ function derivedOutputPath(state: PanelState, source: string, suffix: string): s
 
 function getCustomQuerySource(session: WranglingSession, customQuerySql: string): string {
   return `WITH current_data AS (${session.getSql()}) SELECT * FROM (${customQuerySql}) AS custom_query`;
-}
-
-function getActiveExportSql(state: PanelState): string {
-  if (!state.session) throw new Error('No active wrangling session');
-  return state.customQuerySql
-    ? getCustomQuerySource(state.session, state.customQuerySql)
-    : state.session.getSql();
 }
 
 async function postCustomQuery(
@@ -480,8 +471,6 @@ async function handleWebviewMessage(
           });
         }
         return;
-      case 'searchChange':
-        return;
       case 'executeCustomQuery':
         if (!session) throw new Error('Open a data file before running a query');
         {
@@ -657,10 +646,7 @@ async function handleWebviewMessage(
         await saveWorkspaceCommand(panel);
         return;
       case 'openRecipePicker':
-        await pickRecipeFile(panel, message.requestId);
-        return;
-      case 'replayRecipe':
-        await replayWorkspaceCommand(panel, message.filePath, message.requestId);
+        await replayWorkspaceCommand(panel, undefined, message.requestId);
         return;
       case 'polarsHandoff':
         await exportPolarsHandoff(panel, message);
@@ -982,7 +968,7 @@ async function loadDataIntoPanel(
     }
     await rememberRecentFile(filePath);
     progress(REMOTE_LOAD_STAGES.ready);
-    await postSession(panel, 0, Math.min(config.maxRowsPreview, config.pageSize), requestId);
+    await postSession(panel, 0, config.pageSize, requestId);
     outputChannel?.appendLine(`[Load] Ready: ${filePath}`);
   } catch (error) {
     // Restore the previous session so an already-loaded panel remains usable.
@@ -1187,10 +1173,6 @@ async function replayWorkspaceCommand(
   await postSession(panel, 0, getConfig().pageSize, requestId);
 }
 
-async function pickRecipeFile(panel: DataWranglerPanel, requestId?: string): Promise<void> {
-  await replayWorkspaceCommand(panel, undefined, requestId);
-}
-
 async function exportPolarsHandoff(
   panel: DataWranglerPanel,
   message: Extract<WebviewMessage, { type: 'polarsHandoff' }>,
@@ -1236,33 +1218,10 @@ async function exportPolarsHandoff(
     await vscode.window.showTextDocument(document, { preview: false });
     return;
   }
-  if (mode === 'recipe') {
-    const recipe = buildPolarsRecipe(sourcePath, session.getHistory());
-    const document = await vscode.workspace.openTextDocument({
-      language: 'python',
-      content: recipe,
-    });
-    await vscode.window.showTextDocument(document, { preview: false });
-    return;
-  }
-  const target = await vscode.window.showSaveDialog({
-    defaultUri: vscode.Uri.file(derivedOutputPath(state, sourcePath, '_result.parquet')),
-    filters: { Parquet: ['parquet'] },
-    saveLabel: 'Export result for Polars',
-  });
-  if (!target) return;
-  if (
-    state.session !== targetSession ||
-    state.sessionId !== targetSessionId ||
-    targetSession.getRevision() !== targetRevision
-  )
-    throw new Error(
-      'The data changed while choosing an export location. Review the current result and try again.',
-    );
-  await exportResults(await getPanelConnection(panel), exportSql, target.fsPath, 'parquet');
+  const recipe = buildPolarsRecipe(sourcePath, session.getHistory());
   const document = await vscode.workspace.openTextDocument({
     language: 'python',
-    content: `import polars as pl\n\n# Install Polars in your Python environment: python -m pip install polars\nresult = pl.scan_parquet(${JSON.stringify(target.fsPath)}).collect()\n`,
+    content: recipe,
   });
   await vscode.window.showTextDocument(document, { preview: false });
 }
@@ -1281,6 +1240,7 @@ export async function openWorkspaceCommand(uri?: vscode.Uri): Promise<void> {
   if (!selected) return;
   const parsed = JSON.parse(await readFile(selected.fsPath, 'utf8')) as Partial<SavedWorkspace>;
   if (
+    !parsed ||
     parsed.version !== 1 ||
     typeof parsed.sourceFile !== 'string' ||
     !Array.isArray(parsed.transforms)
@@ -1298,12 +1258,14 @@ export async function openWorkspaceCommand(uri?: vscode.Uri): Promise<void> {
       ? { schema: parsed.sourceTable.schema, name: parsed.sourceTable.name }
       : undefined;
   const panel = DataWranglerPanel.createOrShow(extensionUri, parsed.sourceFile);
+  const before = getPanelState(panel).session;
   await loadDataIntoPanel(panel, parsed.sourceFile, undefined, undefined, table);
-  const session = getPanelState(panel).session;
-  await session?.restoreValidated(
-    parsed.transforms.map((step) => ({ type: String(step.type), params: step.params ?? {} })),
-  );
-  await postSession(panel);
+  // A failed load keeps the previous session (or none) and has already reported the error. Never
+  // apply the recipe to data it was not saved from.
+  const loaded = getPanelState(panel).session;
+  if (!loaded || loaded === before) return;
+  // The same replay as Run recipe: validated steps, with a picker for columns that were renamed.
+  await replayWorkspaceCommand(panel, selected.fsPath);
 }
 
 export async function openDataWranglerCustomEditor(
@@ -1393,79 +1355,9 @@ export async function copyDbtSqlCommand(): Promise<void> {
   }
 }
 
-export async function exportDataCommand(): Promise<void> {
-  const format = await vscode.window.showQuickPick(['parquet', 'csv', 'json'], {
-    placeHolder: 'Select export format',
-  });
-
-  if (!format) {
-    return;
-  }
-
-  const defaultUri = DataWranglerPanel.currentPanel?.filePath
-    ? vscode.Uri.file(DataWranglerPanel.currentPanel.filePath.replace(/\.[^.]+$/, `.${format}`))
-    : undefined;
-
-  const uri = await vscode.window.showSaveDialog({
-    defaultUri,
-    filters: {
-      [format.toUpperCase()]: [format],
-    },
-  });
-
-  if (!uri) {
-    return;
-  }
-
-  try {
-    const panel = DataWranglerPanel.currentPanel;
-    const activeState = panel ? getPanelState(panel) : null;
-    const conn = activeState ? await getPanelConnection(panel!) : await getSharedConnection();
-    await exportResults(
-      conn,
-      activeState?.session ? getActiveExportSql(activeState) : 'SELECT * FROM current_data',
-      uri.fsPath,
-      format as 'parquet' | 'csv' | 'json',
-    );
-    vscode.window.showInformationMessage(`Data exported to ${uri.fsPath}`);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    vscode.window.showErrorMessage(`Export failed: ${message}`);
-  }
-}
-
 export async function disposeCommands(): Promise<void> {
   await sharedConnection?.close();
   sharedConnection = null;
   await cleanupDirectory(sharedManagedTempDirectory);
   sharedManagedTempDirectory = undefined;
-}
-
-export async function summarizeFileCommand(): Promise<void> {
-  const panel = DataWranglerPanel.currentPanel;
-  const activeSession = panel ? getPanelState(panel).session : null;
-  if (!panel || !activeSession) {
-    vscode.window.showWarningMessage('No file loaded. Open a file first.');
-    return;
-  }
-
-  try {
-    const state = getPanelState(panel);
-    const revision = activeSession.getRevision();
-    const sql = activeSession.getSql();
-    const stats = await activeSession.getStatistics();
-    panel.postMessage({
-      type: 'stats',
-      stats,
-      quality: await activeSession.getQualitySummary(stats, sql),
-      sessionId: state.sessionId,
-      revision,
-    });
-    vscode.window.showInformationMessage(
-      `Summarized ${stats.length} columns in ${activeSession.getFilePath().split(/[\\/]/).pop()}`,
-    );
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    vscode.window.showErrorMessage(`Summarize failed: ${message}`);
-  }
 }
