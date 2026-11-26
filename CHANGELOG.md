@@ -6,6 +6,7 @@ All notable changes to QuackWrangler are documented here using [Keep a Changelog
 
 ### Added
 
+- A **Cancel** button next to the spinner stops a slow load, query, transform, or remote read without an error and leaves the data and steps as they were. A cancelled load keeps the file that was already open.
 - Clear one-line explanations for remote loading failures (not found, access denied, sign-in required, server error, timeout, unreachable host, certificate problem, or a link that returns a web page), with signed query strings left out. A private S3 object that is denied now points to AWS credentials.
 - While a remote file is slow to start, the progress message repeats with a reminder that loading is still in progress.
 - Remote loading tests: a real local HTTP server test on every CI run, `npm run test:remote` for public HTTPS and anonymous S3 files, and a weekly `Remote sources` workflow for it on Linux, Windows, and macOS.

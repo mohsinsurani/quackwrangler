@@ -33,6 +33,7 @@ export type WebviewMessage = (
   | { type: 'openFolderPicker' }
   | { type: 'selectSecondaryFile' }
   | { type: 'refresh' }
+  | { type: 'cancel' }
   | { type: 'selectTable'; schema: string; name: string }
   | { type: 'getStats' }
   | { type: 'generateAITransforms' }

@@ -8,7 +8,7 @@ import * as vscode from 'vscode';
 import { suggestTransforms, validateAISettings } from '../ai/assistant.js';
 import { findDbtProject } from '../dbt/context.js';
 import { buildDbtSql, DbtExportStyle } from '../dbt/export.js';
-import { DuckDBConnection } from '../duckdb/connection.js';
+import { DuckDBConnection, isCancellation } from '../duckdb/connection.js';
 import { describeTable, loadDatabaseTable, releaseDatabase } from '../duckdb/database-source.js';
 import { getFileMetadata, loadFile, prepareDataFileReader } from '../duckdb/parquet-loader.js';
 import { exportResults, normalizeReadOnlyQuery } from '../duckdb/query-engine.js';
@@ -496,6 +496,11 @@ async function handleWebviewMessage(
         state.inspectionFilter = null;
         await postSession(panel, 0, getConfig().pageSize, message.requestId);
         return;
+      case 'cancel':
+        // No requestId on purpose: the work being cancelled answers under its own request, so the
+        // editor keeps matching that answer to what it asked for.
+        state.connection?.cancel();
+        return;
       case 'refresh':
         if (!session?.getFilePath()) return;
         state.customQuerySql = null;
@@ -662,6 +667,12 @@ async function handleWebviewMessage(
         return;
     }
   } catch (error) {
+    if (isCancellation(error)) {
+      // The user asked for this, so it is neither logged as a failure nor shown as an error.
+      outputChannel?.appendLine("[Cancel] Work stopped at the user's request");
+      panel.postMessage({ type: 'cancelled', requestId: message.requestId });
+      return;
+    }
     outputChannel?.appendLine(
       `[Diagnostic] ${JSON.stringify(redactedDiagnostic(error, state.session?.getFilePath()))}`,
     );
@@ -984,6 +995,11 @@ async function loadDataIntoPanel(
     state.database = previousDatabase;
     if (previousSession) {
       await postSession(panel, 0, getConfig().pageSize, requestId).catch(() => undefined);
+    }
+    if (isCancellation(error)) {
+      outputChannel?.appendLine(`[Load] Cancelled: ${redactRemoteSource(filePath)}`);
+      panel.postMessage({ type: 'cancelled', requestId });
+      return;
     }
     // Remote failures get one clear sentence; the log below keeps DuckDB's full text.
     const message = describeRemoteError(error, filePath);

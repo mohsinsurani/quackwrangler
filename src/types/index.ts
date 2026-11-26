@@ -124,6 +124,7 @@ export type WebviewMessage =
   | ({ type: 'openFolderPicker' } & RequestMessage)
   | ({ type: 'selectSecondaryFile' } & RequestMessage)
   | ({ type: 'refresh' } & RequestMessage)
+  | ({ type: 'cancel' } & RequestMessage)
   | ({ type: 'selectTable'; schema: string; name: string } & RequestMessage)
   | ({ type: 'removeTransform'; id: string } & RequestMessage)
   | ({ type: 'reorderTransforms'; sourceId: string; targetId: string } & RequestMessage)
@@ -171,6 +172,7 @@ export type ExtensionMessage =
     } & ResponseContext &
       SessionContext)
   | ({ type: 'error'; message: string } & ResponseContext)
+  | ({ type: 'cancelled' } & ResponseContext)
   | ({
       type: 'exportComplete';
       outputPath: string;

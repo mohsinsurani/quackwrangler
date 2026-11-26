@@ -263,6 +263,29 @@ button:disabled {
   opacity: 0.42;
 }
 
+.cancel-btn {
+  display: inline-flex;
+  height: 24px;
+  align-items: center;
+  gap: 5px;
+  padding: 0 9px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: var(--surface-raised);
+  color: var(--text);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.cancel-btn:hover {
+  background: var(--surface-hover);
+}
+
+.cancel-btn:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 1px;
+}
+
 .loading-spinner {
   width: 16px;
   height: 16px;

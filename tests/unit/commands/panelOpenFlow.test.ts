@@ -26,6 +26,7 @@ const mocks = vi.hoisted(() => {
       return revision;
     },
     history: [] as unknown[],
+    cancelled: 0,
     panel,
     executeCommand: vi.fn().mockResolvedValue(undefined),
     showOpenDialog: vi.fn(),
@@ -86,9 +87,15 @@ vi.mock('node:fs/promises', async () => {
   return { ...actual, readFile: mocks.readFile, writeFile: mocks.writeFile };
 });
 
-vi.mock('../../../src/duckdb/connection.js', () => ({
+vi.mock('../../../src/duckdb/connection.js', async (importOriginal) => ({
+  // Keep the real cancellation helpers; only the connection itself is replaced.
+  ...(await importOriginal<typeof import('../../../src/duckdb/connection.js')>()),
   DuckDBConnection: class {
     isConnected(): boolean {
+      return true;
+    }
+    cancel(): boolean {
+      mocks.cancelled += 1;
       return true;
     }
     async connect(): Promise<void> {}
@@ -906,6 +913,67 @@ describe('database files', () => {
       sourceTable: { schema: 'main', name: 'customers' },
     });
     (DataWranglerPanel as unknown as { currentPanel: unknown }).currentPanel = undefined;
+  });
+});
+
+describe('cancelling work', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.posted.length = 0;
+    mocks.cancelled = 0;
+    mocks.attach.mockReturnValue(mocks.panel);
+    configureCommands(
+      { fsPath: '/extension' } as never,
+      { appendLine: mocks.appendLine } as never,
+      {
+        globalStorageUri: { fsPath: '/writable/global-storage' },
+        globalState: { get: vi.fn(() => []), update: vi.fn() },
+      } as never,
+    );
+  });
+
+  it('asks the panel connection to stop when the editor sends cancel', async () => {
+    await openDataWranglerCustomEditor({ fsPath: '/data/a.parquet' } as never, {} as never);
+    await latestMessageHandler()({ type: 'cancel' });
+    expect(mocks.cancelled).toBe(1);
+  });
+
+  it('reports a cancelled load as cancelled, not as an error, and keeps the earlier data', async () => {
+    await openDataWranglerCustomEditor({ fsPath: '/data/current.parquet' } as never, {} as never);
+    mocks.posted.length = 0;
+    const { QueryCancelledError } = await import('../../../src/duckdb/connection.js');
+    mocks.loadFile.mockRejectedValueOnce(new QueryCancelledError());
+
+    await latestMessageHandler()({ type: 'refresh', requestId: 'grid-5' });
+
+    expect(mocks.posted).toContainEqual({ type: 'cancelled', requestId: 'grid-5' });
+    expect(mocks.posted.some((message) => (message as { type: string }).type === 'error')).toBe(
+      false,
+    );
+    expect(mocks.showErrorMessage).not.toHaveBeenCalled();
+    expect(mocks.posted).toContainEqual(
+      expect.objectContaining({
+        type: 'sessionUpdated',
+        schema: expect.objectContaining({ filePath: '/data/current.parquet' }),
+      }),
+    );
+  });
+
+  it('reports DuckDB interrupt errors from other requests as cancelled too', async () => {
+    await openDataWranglerCustomEditor({ fsPath: '/data/current.parquet' } as never, {} as never);
+    mocks.posted.length = 0;
+    mocks.showOpenDialog.mockResolvedValueOnce([{ fsPath: '/data/r.qw' }]);
+    mocks.readFile.mockResolvedValueOnce(
+      JSON.stringify({ version: 1, transforms: [{ type: 'sort_rows', params: { column: 'v' } }] }),
+    );
+    mocks.restoreValidated.mockRejectedValueOnce(new Error('INTERRUPT Error: Interrupted!'));
+
+    await latestMessageHandler()({ type: 'openRecipePicker', requestId: 'grid-8' });
+
+    expect(mocks.posted).toContainEqual({ type: 'cancelled', requestId: 'grid-8' });
+    expect(mocks.posted.some((message) => (message as { type: string }).type === 'error')).toBe(
+      false,
+    );
   });
 });
 
