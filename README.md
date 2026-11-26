@@ -33,7 +33,7 @@ profiles, filters, joins, charts, and SQL. <strong>Built-in DuckDB. No Python. N
   <a href="#privacy">Privacy</a> ·
   <a href="#performance">Performance</a> ·
   <a href="#features">Features</a> ·
-  <a href="#polars">Polars</a> ·
+  <a href="#polars">Polars handoff</a> ·
   <a href="#install">Install</a> ·
   <a href="CHANGELOG.md">Changelog</a>
 </p>
@@ -62,7 +62,7 @@ That's it. No kernel to start, no environment to activate, no connection string.
 - **"I just need it cleaned."** Drop junk columns, fix types, remove duplicates, and export a tidy CSV, without writing a script you'll never run again.
 - **"Is this the same as last month?"** Compare the schemas of a folder of files and catch the column that changed type.
 - **"What's in this app's database?"** Open a `.sqlite` or `.duckdb` file, flip through its tables, and query them, all read-only.
-- **"Now make it reproducible."** Save your steps as a recipe, replay them on next month's file, or hand the result to Polars or dbt.
+- **"Now make it reproducible."** Save your steps as a recipe, replay them on next month's file, or turn them into [Polars code](#polars) or dbt SQL.
 
 <a id="privacy"></a>
 
@@ -182,7 +182,7 @@ Click a struct, list, map, or JSON cell to browse it as a tree, then extract a f
 
 ### 🔁 Reuse your work
 
-Save any sequence of steps as a `.qw` recipe and replay it on another file, even when column names changed. Export Parquet, CSV, or JSON, copy as dbt SQL, or hand off to Polars.
+Save any sequence of steps as a `.qw` recipe and replay it on another file, even when column names changed. Export Parquet, CSV, or JSON, copy as dbt SQL, or [continue in Polars](#polars) with one click.
 
 </td>
 </tr>
@@ -197,7 +197,7 @@ Save any sequence of steps as a `.qw` recipe and replay it on another file, even
 - **Sort, drop, and deduplicate by several columns:** **Sort** takes any number of columns with a direction for each ("Then by…"), **Drop Columns** removes several at once, and **Remove Duplicates** compares the columns you tick, or whole rows when none are ticked.
 - **Join or append files:** open **Combine Files**, choose another supported file, then configure a join or append rows by matching column names.
 - **Save an analysis:** run **QuackWrangler: Save Workspace** from the Command Palette to create a portable `.qw` file. Use **QuackWrangler: Open Workspace** to reopen its source file (and database table) and replay its steps; if a referenced column was renamed, you pick a replacement, and if the source cannot be opened no steps are applied.
-- **Reuse work:** save the current transform history as a `.qw` recipe, then use **Run recipe…** on the file you want to transform. If a referenced column is missing, pick a replacement from the columns and types available at that step. Cancelling leaves the current result and history intact. Use **Export → Continue in Polars** to export the exact result to Parquet and open a small Python handoff. Running that code requires Polars in your Python environment; QuackWrangler itself does not require Python. **Open Polars recipe** currently supports local Parquet sources and verified null filters, renames, drops, and sorts; other sources, operations, and selector-like column names are refused rather than silently changing their meaning.
+- **Reuse work:** save the current transform history as a `.qw` recipe, then use **Run recipe…** on the file you want to transform. If a referenced column is missing, pick a replacement from the columns and types available at that step. Cancelling leaves the current result and history intact. To continue in Python, see [Take your work to Polars](#polars).
 - **Cancel:** a **Cancel** button appears next to the spinner while anything is running (loading a file, a query, a transform, a slow remote read). It stops the work, keeps your data and steps as they were, and shows no error. A remote read waiting on one very large download can take several seconds to react.
 - **Recent files:** the QuackWrangler activity-bar view keeps the ten most recently opened data files.
 - **Work with nested data:** select a struct, list, map, or JSON cell to browse it as a tree, copy a JSON Pointer, extract a field, flatten an object, or explode an array into rows.
@@ -210,26 +210,50 @@ Save any sequence of steps as a `.qw` recipe and replay it on another file, even
 
 <a id="polars"></a>
 
-## 🤝 QuackWrangler and Polars: when to use which
+## 🐻‍❄️ Take your work to Polars (built in)
 
-They work well together. QuackWrangler is where you **look at and shape** data; [Polars](https://pola.rs) is a fast DataFrame library for when that work becomes **code**.
+QuackWrangler has a built-in bridge to [Polars](https://pola.rs), the fast Python DataFrame library. Explore and clean your data visually, then carry the result or the steps straight into Python — **in one click, from the Export menu**.
 
-| Use **QuackWrangler** when you want to…                   | Reach for **Polars** when you want to…                         |
-| --------------------------------------------------------- | -------------------------------------------------------------- |
-| Open an unfamiliar file and understand it now             | Build a pipeline in Python that runs every day                 |
-| Clean, filter, join, and reshape by clicking              | Write logic that goes beyond the visual steps                  |
-| Check quality, nulls, and outliers at a glance            | Feed results into machine learning, APIs, or other Python code |
-| Avoid installing Python or setting up an environment      | Schedule, test, and version the transformation as code         |
-| Work in a file larger than memory (DuckDB spills to disk) | Stream very large data in code with Polars' lazy engine        |
+| Option in **Export**    | What you get                                                                              | Use it when                                                                       |
+| ----------------------- | ----------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| **Continue in Polars…** | Your exact current result saved as Parquet, plus a ready-to-run Python file that loads it | You want the **cleaned data** in Python, whatever steps you used                  |
+| **Open Polars recipe**  | A Python file that **re-creates your steps** with Polars, starting from the original file | You want the **logic as code**, to edit, rerun on new files, or put in a pipeline |
 
-**Moving from QuackWrangler to Polars takes one click.** Open **Export** and choose:
+### How to use it
 
-- **Continue in Polars…** writes your exact current result to a Parquet file and opens a short Python script that loads it with `pl.scan_parquet(...)`. Nothing is re-computed or approximated, so this works for **any** pipeline.
-- **Open Polars recipe** writes Python that re-creates your steps on the source file, so you can keep editing them as code. It supports local Parquet sources with null filters, renames, column drops, and single-column sorts, and refuses anything else rather than generating code that would behave differently.
+1. Open a file and apply your steps (filter, drop columns, rename, sort, and so on).
+2. Click **Export** in the toolbar.
+3. Choose **Continue in Polars…** or **Open Polars recipe**.
+   - _Continue in Polars_ asks where to save the Parquet file, then opens the Python file in a new editor tab.
+   - _Open Polars recipe_ opens the Python file straight away.
+4. Run it with Python. You need Polars installed once: `pip install polars`. QuackWrangler itself never needs Python.
 
-QuackWrangler itself needs no Python; you only need Polars installed (`pip install polars`) to run the generated code.
+### What the recipe looks like
 
-> **About the benchmark:** Polars was the fastest engine on small files in our runs, and its streaming engine is very efficient. QuackWrangler pulled ahead at 10 million rows and used much less memory in this workload. Both are excellent; pick by workflow, not by a single number.
+These four visual steps — keep rows where `region` is not empty, drop `note`, rename `amount` to `revenue`, and sort by `revenue` descending — become:
+
+```python
+import polars as pl
+
+source = "/data/orders.parquet"
+query = pl.scan_parquet(source)
+query = query.filter(pl.col("region").is_not_null())
+query = query.drop(["note"])
+query = query.rename({"amount": "revenue"})
+query = query.sort("revenue", descending=True, nulls_last=True, maintain_order=True)
+
+result = query.collect()
+```
+
+It uses Polars' lazy `scan_parquet`, so Polars only reads what it needs. Running it gives exactly the rows QuackWrangler showed; this is checked by an automated test that runs generated recipes with real Polars.
+
+### Which one should I pick?
+
+- **Continue in Polars works for everything.** Any file type, any step, SQL query results, even remote files: it saves the exact result, so nothing is translated or approximated. If in doubt, use this.
+- **Open Polars recipe is for simple, repeatable cleaning.** It currently supports **local Parquet files** with **null / not-null filters, renames, column drops, and single-column sorts**. If your steps go beyond that, QuackWrangler says so and suggests _Continue in Polars_ instead of writing code that would give a different answer.
+- Both options are paused while you are **inspecting rows** (for example after _Inspect rows_ in the Quality tab), because that view is temporary. Clear the inspection first.
+
+> **Tip:** working on a CSV or Excel file and want a recipe? Export it to Parquet first (**Export → Parquet**), open the Parquet file, apply your steps, then use **Open Polars recipe**.
 
 ## Why QuackWrangler?
 
