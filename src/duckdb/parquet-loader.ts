@@ -101,7 +101,7 @@ function getReadFunction(fileType: FileType): string {
       return 'read_orc';
     case 'database':
       throw new Error(
-        'Database files open one table at a time and cannot be used as a join, union, or schema comparison source yet. Open the table, export it to Parquet or CSV, and use that file.',
+        'A database file has several tables, so choose one. Database tables can be a join or union source, but not a schema comparison source.',
       );
     default:
       throw new Error(`Unsupported file type: ${fileType}`);
@@ -332,11 +332,38 @@ export function getTableRef(
 /**
  * Builds a reader reference using any schema already resolved for `connection`.
  */
+/** Aliases of databases attached as the second source of a join or union, per connection. */
+const secondaryDatabases = new WeakMap<DuckDBConnection, Map<string, string>>();
+
+export function registerSecondaryDatabase(
+  connection: DuckDBConnection,
+  filePath: string,
+  alias: string,
+): void {
+  const known = secondaryDatabases.get(connection) ?? new Map<string, string>();
+  secondaryDatabases.set(connection, known);
+  known.set(filePath, alias);
+}
+
+export function secondaryDatabaseAlias(
+  connection: DuckDBConnection,
+  filePath: string,
+): string | undefined {
+  return secondaryDatabases.get(connection)?.get(filePath);
+}
+
 export function getConnectionTableRef(
   connection: DuckDBConnection,
   filePath: string,
   fileType?: FileType,
+  table?: { schema: string; name: string },
 ): string {
+  if ((fileType ?? detectFileType(filePath)) === 'database') {
+    if (!table) throw new Error('Choose a table from the database file.');
+    const alias = secondaryDatabaseAlias(connection, filePath);
+    if (!alias) throw new Error('The database file has not been opened yet.');
+    return `${quoteIdentifier(alias)}.${quoteIdentifier(table.schema)}.${quoteIdentifier(table.name)}`;
+  }
   const readerPath = convertedLegacyExcel.get(connection)?.get(filePath) ?? filePath;
   const legacyXls = fileType === 'xls' || detectFileType(filePath) === 'xls';
   const readerType = legacyXls ? 'xlsx' : fileType;
@@ -505,6 +532,7 @@ export async function prepareRemoteReader(connection: DuckDBConnection): Promise
 export async function getFileMetadata(
   connection: DuckDBConnection,
   filePath: string,
+  options: { rowCount?: boolean } = {},
 ): Promise<TableSchema> {
   const fileType = detectFileType(filePath);
   if (fileType === 'unknown') throw new Error('Unsupported or missing remote file extension');
@@ -514,8 +542,11 @@ export async function getFileMetadata(
     await prepareSourceSchema(connection, filePath, fileType);
     const tableRef = getConnectionTableRef(connection, filePath, fileType);
 
-    const countResult = await connection.query(`SELECT COUNT(*) as cnt FROM ${tableRef}`);
-    const rowCount = (countResult.rows[0]?.[0] as number) ?? 0;
+    // Counting reads every row. Callers that only need the columns (schema comparison) skip it.
+    const rowCount =
+      options.rowCount === false
+        ? 0
+        : ((await connection.query(`SELECT COUNT(*) as cnt FROM ${tableRef}`)).rows[0]?.[0] ?? 0);
 
     const schemaResult = await connection.query(`DESCRIBE SELECT * FROM ${tableRef}`);
 

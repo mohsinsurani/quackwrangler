@@ -41,6 +41,9 @@ const mocks = vi.hoisted(() => {
     loadFile: vi.fn().mockResolvedValue(undefined),
     prepareDataFileReader: vi.fn().mockResolvedValue(undefined),
     loadDatabaseTable: vi.fn(),
+    attachSecondaryDatabase: vi.fn(),
+    describeSecondaryTable: vi.fn(),
+    getFileMetadata: vi.fn(),
     releaseDatabase: vi.fn().mockResolvedValue(undefined),
     exportResults: vi.fn().mockResolvedValue(undefined),
     attach: vi.fn(() => panel),
@@ -128,12 +131,14 @@ vi.mock('../../../src/duckdb/query-engine.js', () => ({
 vi.mock('../../../src/duckdb/parquet-loader.js', () => ({
   loadFile: mocks.loadFile,
   prepareDataFileReader: mocks.prepareDataFileReader,
-  getFileMetadata: vi.fn(),
+  getFileMetadata: mocks.getFileMetadata,
 }));
 
 vi.mock('../../../src/duckdb/database-source.js', () => ({
   loadDatabaseTable: mocks.loadDatabaseTable,
   releaseDatabase: mocks.releaseDatabase,
+  attachSecondaryDatabase: mocks.attachSecondaryDatabase,
+  describeSecondaryTable: mocks.describeSecondaryTable,
   describeTable: (table: { schema: string; name: string; view: boolean }) =>
     `${table.schema === 'main' ? '' : `${table.schema}.`}${table.name}${table.view ? ' (view)' : ''}`,
 }));
@@ -913,6 +918,133 @@ describe('database files', () => {
       sourceTable: { schema: 'main', name: 'customers' },
     });
     (DataWranglerPanel as unknown as { currentPanel: unknown }).currentPanel = undefined;
+  });
+});
+
+describe('choosing a second file to join or union', () => {
+  const orders = { schema: 'main', name: 'orders', view: false };
+  const customers = { schema: 'main', name: 'customers', view: false };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.posted.length = 0;
+    mocks.attach.mockReturnValue(mocks.panel);
+    mocks.attachSecondaryDatabase.mockResolvedValue({
+      kind: 'duckdb',
+      tables: [orders, customers],
+    });
+    mocks.describeSecondaryTable.mockResolvedValue([{ name: 'id', type: 'INTEGER' }]);
+    mocks.getFileMetadata.mockResolvedValue({
+      columns: [{ name: 'k', type: 'VARCHAR', nullable: true }],
+      rowCount: 3,
+      filePath: '/data/b.csv',
+    });
+    configureCommands(
+      { fsPath: '/extension' } as never,
+      { appendLine: mocks.appendLine } as never,
+      {
+        globalStorageUri: { fsPath: '/writable/global-storage' },
+        globalState: { get: vi.fn(() => []), update: vi.fn() },
+      } as never,
+    );
+  });
+
+  async function openAndPick(picked: string): Promise<void> {
+    await openDataWranglerCustomEditor({ fsPath: '/data/a.csv' } as never, {} as never);
+    mocks.posted.length = 0;
+    mocks.showOpenDialog.mockResolvedValueOnce([{ fsPath: picked }]);
+    await latestMessageHandler()({ type: 'selectSecondaryFile', requestId: 'grid-2' });
+  }
+
+  it('asks which table to use when the second file is a database', async () => {
+    mocks.showQuickPick.mockResolvedValueOnce({ label: 'customers', table: customers });
+    await openAndPick('/data/shop.duckdb');
+
+    expect(mocks.showQuickPick).toHaveBeenCalledWith(
+      expect.arrayContaining([expect.objectContaining({ label: 'orders' })]),
+      expect.objectContaining({ placeHolder: expect.stringContaining('shop.duckdb') }),
+    );
+    expect(mocks.posted).toContainEqual(
+      expect.objectContaining({
+        type: 'secondaryFileSelected',
+        filePath: '/data/shop.duckdb',
+        table: { schema: 'main', name: 'customers' },
+        columns: [expect.objectContaining({ name: 'id', type: 'INTEGER' })],
+      }),
+    );
+    expect(mocks.getFileMetadata).not.toHaveBeenCalled();
+  });
+
+  it('does not ask when the database has a single table', async () => {
+    mocks.attachSecondaryDatabase.mockResolvedValueOnce({ kind: 'duckdb', tables: [orders] });
+    await openAndPick('/data/one.duckdb');
+    expect(mocks.showQuickPick).not.toHaveBeenCalled();
+    expect(mocks.posted).toContainEqual(
+      expect.objectContaining({
+        type: 'secondaryFileSelected',
+        table: { schema: 'main', name: 'orders' },
+      }),
+    );
+  });
+
+  it('leaves the form alone when the table picker is dismissed', async () => {
+    mocks.showQuickPick.mockResolvedValueOnce(undefined);
+    await openAndPick('/data/shop.duckdb');
+    expect(mocks.posted.some((m) => (m as { type: string }).type === 'secondaryFileSelected')).toBe(
+      false,
+    );
+    expect(mocks.posted.some((m) => (m as { type: string }).type === 'error')).toBe(false);
+  });
+
+  it('keeps the plain-file path unchanged for CSV and similar files', async () => {
+    await openAndPick('/data/b.csv');
+    expect(mocks.attachSecondaryDatabase).not.toHaveBeenCalled();
+    expect(mocks.posted).toContainEqual(
+      expect.objectContaining({
+        type: 'secondaryFileSelected',
+        filePath: '/data/b.csv',
+        columns: [expect.objectContaining({ name: 'k' })],
+      }),
+    );
+    expect(
+      (
+        mocks.posted.find((m) => (m as { type: string }).type === 'secondaryFileSelected') as {
+          table?: unknown;
+        }
+      ).table,
+    ).toBeUndefined();
+  });
+
+  it('attaches a database before applying a join or union step that uses it', async () => {
+    await openDataWranglerCustomEditor({ fsPath: '/data/a.csv' } as never, {} as never);
+    await latestMessageHandler()({
+      type: 'applyTransform',
+      transform: {
+        type: 'union_file',
+        params: { filePath: '/data/shop.duckdb', table: { schema: 'main', name: 'orders' } },
+      },
+    });
+    expect(mocks.attachSecondaryDatabase).toHaveBeenCalledWith(
+      expect.anything(),
+      '/data/shop.duckdb',
+    );
+    expect(mocks.prepareDataFileReader).not.toHaveBeenCalledWith(
+      expect.anything(),
+      '/data/shop.duckdb',
+    );
+  });
+
+  it('reports a database that cannot be attached as an error', async () => {
+    mocks.attachSecondaryDatabase.mockRejectedValueOnce(
+      new Error('not a DuckDB or SQLite database'),
+    );
+    await openAndPick('/data/Thumbs.db');
+    expect(mocks.posted).toContainEqual(
+      expect.objectContaining({
+        type: 'error',
+        message: expect.stringContaining('not a DuckDB or SQLite'),
+      }),
+    );
   });
 });
 

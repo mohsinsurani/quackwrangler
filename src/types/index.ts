@@ -198,4 +198,10 @@ export type ExtensionMessage =
       SessionContext)
   | ({ type: 'chartResult'; chart: ChartRequest; result: QueryResult } & ResponseContext &
       SessionContext)
-  | ({ type: 'secondaryFileSelected'; filePath: string; columns: ColumnInfo[] } & ResponseContext);
+  | ({
+      type: 'secondaryFileSelected';
+      filePath: string;
+      columns: ColumnInfo[];
+      // Set when the second file is a database: the table that was chosen in it.
+      table?: { schema: string; name: string };
+    } & ResponseContext);

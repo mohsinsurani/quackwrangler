@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   detectFileType,
   getConnectionTableRef,
+  getFileMetadata,
   getTableRef,
   loadFile,
   prepareDataFileReader,
@@ -124,7 +125,25 @@ describe('data file readers', () => {
     for (const name of ['a.duckdb', 'a.ddb', 'a.sqlite', 'a.sqlite3', 'a.db', 'a.db3', 'A.DB']) {
       expect(detectFileType(`/tmp/${name}`)).toBe('database');
     }
-    expect(() => getTableRef('/tmp/shop.duckdb')).toThrow(/one table at a time/);
+    expect(() => getTableRef('/tmp/shop.duckdb')).toThrow(/several tables, so choose one/);
+  });
+
+  it('skips the row count when only the columns are needed', async () => {
+    const query = vi.fn().mockImplementation(async (sql: string) => {
+      if (sql.startsWith('DESCRIBE'))
+        return { rows: [['id', 'BIGINT', 'YES']], columns: [], rowCount: 1, duration: 0 };
+      return { rows: [[5]], columns: [], rowCount: 1, duration: 0 };
+    });
+    const withCount = await getFileMetadata({ query } as never, '/tmp/data.parquet');
+    expect(withCount.rowCount).toBe(5);
+    expect(query.mock.calls.some(([sql]) => /COUNT\(\*\)/.test(String(sql)))).toBe(true);
+
+    query.mockClear();
+    const withoutCount = await getFileMetadata({ query } as never, '/tmp/data.parquet', {
+      rowCount: false,
+    });
+    expect(withoutCount.columns.map((column) => column.name)).toEqual(['id']);
+    expect(query.mock.calls.some(([sql]) => /COUNT\(\*\)/.test(String(sql)))).toBe(false);
   });
 
   it('does not run a reader query for a database path', async () => {

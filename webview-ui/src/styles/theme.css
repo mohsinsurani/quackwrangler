@@ -662,6 +662,77 @@ button:disabled {
   color: var(--vscode-errorForeground, #f48771);
 }
 
+.column-checklist {
+  display: grid;
+  max-height: 160px;
+  gap: 2px;
+  padding: 4px 6px;
+  overflow: auto;
+  border: 1px solid var(--vscode-input-border, var(--border));
+  border-radius: 2px;
+  background: var(--input);
+}
+
+.column-check {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 0;
+  font-size: 12px;
+}
+
+.column-check span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sort-keys {
+  display: grid;
+  gap: 5px;
+}
+
+.sort-key-row {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) minmax(0, 0.8fr) 24px;
+  align-items: center;
+  gap: 5px;
+}
+
+.sort-key-rank {
+  color: var(--muted);
+  font-size: 11px;
+  text-align: center;
+}
+
+.sort-key-remove,
+.sort-key-add {
+  display: inline-flex;
+  height: 24px;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: var(--surface-raised);
+  color: var(--text);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.sort-key-add {
+  justify-self: start;
+  padding: 0 9px;
+}
+
+.sort-key-remove:disabled,
+.sort-key-add:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
 .param-input,
 .param-select {
   width: 100%;

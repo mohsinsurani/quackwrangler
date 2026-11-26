@@ -448,6 +448,87 @@ async function step(name, fn) {
       },
     );
 
+    await step(
+      'Sort by two columns, drop two columns, and remove whole-row duplicates',
+      async () => {
+        const stepCount = async () =>
+          Number(
+            /·\s*(\d+)/.exec(await text('.workspace-actions button:has-text("Steps")'))?.[1] ?? NaN,
+          );
+        const settle = async (expected) => {
+          for (let i = 0; i < 24 && (await stepCount()) !== expected; i++)
+            await f.waitForTimeout(250);
+          if ((await stepCount()) !== expected)
+            throw new Error(`expected ${expected} steps, found ${await stepCount()}`);
+        };
+        const chipNames = () => f.locator('.chip-name').allInnerTexts();
+        const openOperation = async (name) => {
+          if (!(await f.locator('.operation-search').count()))
+            await click('.workspace-actions button:has-text("Transform")');
+          await f.locator('.operation-search').fill(name);
+          await click(`.operation-btn:has-text("${name}")`);
+        };
+        // An earlier step already sorted by one column, so a new sort replaces it (a sort that
+        // directly follows a sort never adds a step). That makes the count start unchanged.
+        const before = await stepCount();
+
+        // Two sort keys, entered the way a user would: first key, "Then by…", second key.
+        await openOperation('Sort');
+        await f.locator('.sort-key-row').first().waitFor({ timeout: 6000 });
+        await f.locator('.sort-key-row select').nth(0).selectOption('region');
+        await click('.sort-key-add');
+        await f.locator('.sort-key-row').nth(1).waitFor({ timeout: 4000 });
+        await f.locator('.sort-key-row').nth(1).locator('select').nth(0).selectOption('price');
+        await f.locator('.sort-key-row').nth(1).locator('select').nth(1).selectOption('DESC');
+        await click('.form-apply-btn');
+        for (let i = 0; i < 24; i++) {
+          if ((await chipNames()).some((chip) => /Sort · region \+1/.test(chip))) break;
+          await f.waitForTimeout(250);
+        }
+        const chips = await chipNames();
+        if (!chips.some((chip) => /Sort · region \+1/.test(chip)))
+          throw new Error('sort chip: ' + chips.join('|'));
+        const afterSort = await stepCount();
+
+        // Drop two columns at once.
+        await openOperation('Drop Columns');
+        await f.locator('.column-check').first().waitFor({ timeout: 6000 });
+        await f.locator('.column-check:has-text("notes") input').check();
+        await f.locator('.column-check:has-text("units") input').check();
+        await click('.form-apply-btn');
+        await settle(afterSort + 1);
+        const headers = (await f.locator('.header-cell').allInnerTexts()).join(' ');
+        if (/notes|units/.test(headers)) throw new Error('columns still shown: ' + headers);
+
+        // Dropping needs at least one column: applying with none ticked is refused with a message.
+        await openOperation('Drop Columns');
+        await click('.form-apply-btn');
+        await f
+          .locator('.operation-form .form-validation-error')
+          .first()
+          .waitFor({ timeout: 4000 });
+        await f.page().keyboard.press('Escape');
+
+        // Whole-row duplicates: nothing ticked is allowed.
+        await openOperation('Remove Duplicates');
+        await f.locator('.column-check').first().waitFor({ timeout: 6000 });
+        await click('.form-apply-btn');
+        await settle(afterSort + 2);
+        return `${before} -> ${await stepCount()} steps`;
+      },
+    );
+
+    await step('undoing the new steps restores the dropped columns', async () => {
+      // Remove the dedupe and the drop (the two newest steps), leaving the sort.
+      for (let i = 0; i < 2; i++) {
+        await f.locator('.chip-remove').last().click();
+        await f.waitForTimeout(900);
+      }
+      const headers = (await f.locator('.header-cell').allInnerTexts()).join(' ');
+      if (!/notes/.test(headers) || !/units/.test(headers))
+        throw new Error('columns not restored: ' + headers);
+    });
+
     await step('Escape closes the Tools drawer', async () => {
       await f.page().keyboard.press('Escape');
       await f.waitForFunction(() => !document.querySelector('.operations-pane'), null, {

@@ -100,6 +100,19 @@ describe('Polars recipe generation', () => {
     ).toThrow('interpreted as a Polars selector');
   });
 
+  it('refuses a multi-column sort instead of exporting only its first column', () => {
+    expect(() =>
+      buildPolarsRecipe('/tmp/data.parquet', [
+        step('sort_rows', {
+          keys: [
+            { column: 'region', direction: 'ASC' },
+            { column: 'price', direction: 'DESC' },
+          ],
+        }),
+      ]),
+    ).toThrow(/several columns/);
+  });
+
   it('uses literal selectors for special names or rejects selector patterns', () => {
     expect(() =>
       buildPolarsRecipe('/tmp/data.parquet', [

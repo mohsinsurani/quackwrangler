@@ -119,6 +119,101 @@ describe('signed source links', () => {
   });
 });
 
+describe('multi-column operations execute in DuckDB', () => {
+  async function table(name: string, sql: string): Promise<WranglingSession> {
+    const connection = await database.connect();
+    await connection.run(`CREATE OR REPLACE TABLE ${name} AS ${sql}`);
+    connection.closeSync();
+    const session = new WranglingSession(createAdapter() as never, name);
+    session.load('/tmp/data.csv');
+    return session;
+  }
+  const rowsOf = async (session: WranglingSession): Promise<unknown[][]> =>
+    (await session.getPage(0, 50)).result.rows;
+
+  it('sorts by several columns, each with its own direction', async () => {
+    const session = await table(
+      'multi_sort',
+      "SELECT * FROM (VALUES ('b',1),('a',2),('b',3),('a',1)) v(k,n)",
+    );
+    await session.applyValidated('sort_rows', {
+      keys: [
+        { column: 'k', direction: 'ASC' },
+        { column: 'n', direction: 'DESC' },
+      ],
+    });
+    expect((await rowsOf(session)).map((row) => [row[0], String(row[1])])).toEqual([
+      ['a', '2'],
+      ['a', '1'],
+      ['b', '3'],
+      ['b', '1'],
+    ]);
+  });
+
+  it('drops several columns at once and refuses to drop all of them', async () => {
+    const session = await table('multi_drop', 'SELECT 1 AS a, 2 AS b, 3 AS c');
+    await session.applyValidated('drop_column', { columns: ['a', 'c'] });
+    expect((await session.getPage(0, 5)).schema.columns.map((column) => column.name)).toEqual([
+      'b',
+    ]);
+    await expect(session.applyValidated('drop_column', { columns: ['b'] })).rejects.toThrow();
+    expect(session.getHistory()).toHaveLength(1);
+  });
+
+  it('removes duplicates over a chosen set of columns, keeping the first row of each', async () => {
+    const session = await table(
+      'multi_dedupe',
+      "SELECT * FROM (VALUES (1,'x',10),(1,'x',20),(1,'y',30),(2,'x',40)) v(a,b,c)",
+    );
+    await session.applyValidated('deduplicate', { columns: ['a', 'b'] });
+    expect((await session.getPage(0, 50)).schema.rowCount).toBe(3);
+  });
+
+  it('removes fully identical rows when no columns are chosen, treating NULLs as equal', async () => {
+    const session = await table(
+      'whole_row_dedupe',
+      "SELECT * FROM (VALUES (1,'a'),(1,'a'),(NULL,'z'),(NULL,'z'),(2,'a')) v(id,k)",
+    );
+    await session.applyValidated('deduplicate', { columns: [] });
+    expect((await session.getPage(0, 50)).schema.rowCount).toBe(3);
+  });
+
+  it('remaps every sort key when a saved recipe is replayed after a rename', async () => {
+    const session = await table(
+      'remap_multi_sort',
+      "SELECT * FROM (VALUES ('b',1),('a',2)) v(region,amount)",
+    );
+    const asked: string[] = [];
+    const committed = await session.restoreValidated(
+      [
+        {
+          type: 'sort_rows',
+          params: {
+            keys: [
+              { column: 'old_region', direction: 'ASC' },
+              { column: 'amount', direction: 'DESC' },
+            ],
+          },
+        },
+      ],
+      {
+        assertCurrent: () => {},
+        chooseColumn: async (missing) => {
+          asked.push(missing);
+          return 'region';
+        },
+      },
+    );
+    expect(committed).toBe(true);
+    expect(asked).toEqual(['old_region']);
+    const [step] = session.getHistory();
+    expect((step.params.keys as Array<{ column: string }>).map((key) => key.column)).toEqual([
+      'region',
+      'amount',
+    ]);
+  });
+});
+
 describe('repeated sorting', () => {
   async function sortedSession(): Promise<WranglingSession> {
     const session = new WranglingSession(createAdapter() as never);

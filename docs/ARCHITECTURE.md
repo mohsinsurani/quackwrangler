@@ -78,6 +78,12 @@ SQLite lets one column hold text and numbers, which DuckDB cannot type. The exte
 
 The extension host remembers `PanelState.database` (tables and selection). `sessionUpdated` carries it as `database`, the webview's `selectTable` message switches tables, refresh reloads the selected table, and `.qw` recipes store `sourceTable` beside `sourceFile`. Exports, recipes, and dbt model names use the table name instead of the database file name. Join, union, and schema comparison reject database files because they address one file as one table.
 
+## Multi-column steps and database sources
+
+`sort_rows` stores `keys: [{ column, direction }]`; the older single `column` and `direction` form still builds the same SQL, so existing recipes load. Duplicate keys are rejected, `drop_column` and `deduplicate` remove repeated names, and `deduplicate` with no columns is `SELECT DISTINCT *`. Recipe replay remaps every key. The Polars recipe refuses a multi-key sort rather than exporting only its first column.
+
+A database can be the second source of `join_file` and `union_file`. `attachSecondaryDatabase` attaches the file read-only under an alias derived from its path (stable, so saved steps rebuild) and the step stores the chosen `table`. `getConnectionTableRef` resolves the alias at SQL build time, and the host attaches before applying a step or replaying a recipe. Database files still cannot be schema-compared, because that compares one file with one table.
+
 ## Cancelling
 
 Each panel owns one `DuckDBConnection`, and every statement runs on its own native connection. `DuckDBConnection` tracks the native connections that are running, and `cancel()` calls DuckDB's `interrupt()` on each. The webview sends `cancel` without a request ID, so the answer to the cancelled work still carries that work's own ID and is still accepted. Interrupted statements surface as `QueryCancelledError`, which the host reports as a `cancelled` message instead of an error, and loading restores the previous session as it does for any failed load. Staging objects are dropped by the existing rollback, so a cancelled load leaves the relation untouched. DuckDB checks for the interrupt between units of work, so a statement blocked on one long network read stops after that read (about 15 to 20 seconds for a 23 MB single-block Parquet file); many-request reads stop within a request.

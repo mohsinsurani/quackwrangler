@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { open } from 'node:fs/promises';
 import * as path from 'path';
 
@@ -8,7 +9,9 @@ import {
   ensureDuckDBExtension,
   LoadingMode,
   promoteRelation,
+  registerSecondaryDatabase,
   resolveLoadingMode,
+  secondaryDatabaseAlias,
 } from './parquet-loader.js';
 import { quoteIdentifier, quoteLiteral } from './sql.js';
 
@@ -156,4 +159,53 @@ export async function loadDatabaseTable(
     await connection.query(`DETACH ${quoteIdentifier(alias)}`).catch(() => undefined);
     throw error;
   }
+}
+
+/** The alias of a secondary database never changes for a path, so saved steps can be rebuilt. */
+function secondaryAliasFor(filePath: string): string {
+  return `qw_sec_${createHash('sha1').update(path.resolve(filePath)).digest('hex').slice(0, 12)}`;
+}
+
+/**
+ * Attaches a database file read-only as the second source of a join or union and lists its tables.
+ * It is safe to call again for the same file. The attachment stays until the editor closes, which
+ * keeps a DuckDB file locked against writers for that time, like a lazily loaded table.
+ */
+export async function attachSecondaryDatabase(
+  connection: DuckDBConnection,
+  filePath: string,
+): Promise<{ kind: DatabaseInfo['kind']; tables: DatabaseTable[] }> {
+  if (/^(https?|s3):\/\//i.test(filePath))
+    throw new Error('Database files must be on this computer. Download the file to open it.');
+  const kind = await detectDatabaseKind(filePath);
+  if (kind === 'sqlite') await ensureDuckDBExtension(connection, 'sqlite', 'SQLite databases');
+  const alias = secondaryAliasFor(filePath);
+  if (secondaryDatabaseAlias(connection, filePath) !== alias) {
+    try {
+      await connection.query(
+        `ATTACH IF NOT EXISTS ${quoteLiteral(filePath)} AS ${quoteIdentifier(alias)} (${kind === 'sqlite' ? 'TYPE sqlite, ' : ''}READ_ONLY)`,
+      );
+    } catch (error) {
+      throw new Error(`Could not open ${path.basename(filePath)}: ${error}`);
+    }
+    registerSecondaryDatabase(connection, filePath, alias);
+  }
+  const tables = await listTables(connection, alias, kind);
+  if (tables.length === 0)
+    throw new Error(`${path.basename(filePath)} contains no tables or views.`);
+  return { kind, tables };
+}
+
+/** Column names and types of one table of an attached secondary database. */
+export async function describeSecondaryTable(
+  connection: DuckDBConnection,
+  filePath: string,
+  table: Pick<DatabaseTable, 'schema' | 'name'>,
+): Promise<Array<{ name: string; type: string }>> {
+  const alias = secondaryDatabaseAlias(connection, filePath);
+  if (!alias) throw new Error('The database file has not been opened yet.');
+  const result = await connection.query(
+    `DESCRIBE SELECT * FROM ${tableRef(alias, { ...table, view: false })}`,
+  );
+  return result.rows.map((row) => ({ name: String(row[0]), type: String(row[1]) }));
 }

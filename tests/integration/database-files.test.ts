@@ -6,6 +6,8 @@ import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import {
+  attachSecondaryDatabase,
+  describeSecondaryTable,
   detectDatabaseKind,
   loadDatabaseTable,
   releaseDatabase,
@@ -349,5 +351,163 @@ describe.skipIf(skipSqlite)('opening a SQLite file', () => {
     expect(info.textColumns).toBe(false);
     const described = await connection.query('DESCRIBE SELECT * FROM qw_typed_again');
     expect(described.rows[0][1]).toBe('BIGINT');
+  });
+});
+
+describe('database tables as a join or union source', () => {
+  async function prepared(name: string): Promise<{
+    connection: ReturnType<typeof adapter>;
+    session: WranglingSession;
+  }> {
+    const main = join(directory, `${name}-main.duckdb`);
+    await createDuckDbFile(main);
+    const connection = adapter();
+    await loadDatabaseTable(
+      connection as never,
+      main,
+      { schema: 'main', name: 'orders' },
+      'eager',
+      64,
+      `qw_${name}`,
+    );
+    const session = new WranglingSession(connection as never, `qw_${name}`);
+    session.load(main);
+    return { connection, session };
+  }
+
+  it('lists the tables of a second DuckDB file and describes one of them', async () => {
+    const { connection } = await prepared('list');
+    const other = join(directory, 'list-other.duckdb');
+    await createDuckDbFile(other);
+    const { kind, tables } = await attachSecondaryDatabase(connection as never, other);
+    expect(kind).toBe('duckdb');
+    expect(tables.map((table) => table.name)).toContain('customers');
+    const columns = await describeSecondaryTable(connection as never, other, {
+      schema: 'main',
+      name: 'customers',
+    });
+    expect(columns).toEqual([
+      { name: 'id', type: 'INTEGER' },
+      { name: 'name', type: 'VARCHAR' },
+    ]);
+  });
+
+  it('joins the open table with a table from another database file', async () => {
+    const { connection, session } = await prepared('join');
+    const other = join(directory, 'join-other.duckdb');
+    await createDuckDbFile(other);
+    await attachSecondaryDatabase(connection as never, other);
+
+    await session.applyValidated('join_file', {
+      filePath: other,
+      table: { schema: 'main', name: 'customers' },
+      joinType: 'INNER',
+      leftColumn: 'id',
+      rightColumn: 'id',
+    });
+    const page = await session.getPage(0, 10);
+    // orders ids 1,2,3 match customers ids 1,2.
+    expect(page.schema.rowCount).toBe(2);
+    expect(page.schema.columns.map((column) => column.name)).toEqual(
+      expect.arrayContaining(['region', 'name']),
+    );
+  });
+
+  it('appends a table from another database file by column name', async () => {
+    const { connection, session } = await prepared('union');
+    const other = join(directory, 'union-other.duckdb');
+    await createDuckDbFile(other);
+    await attachSecondaryDatabase(connection as never, other);
+
+    await session.applyValidated('union_file', {
+      filePath: other,
+      table: { schema: 'main', name: 'orders' },
+    });
+    expect((await session.getPage(0, 10)).schema.rowCount).toBe(6);
+  });
+
+  it('can use another table of the same database file that is already open', async () => {
+    const { connection, session } = await prepared('same');
+    const main = session.getFilePath();
+    await attachSecondaryDatabase(connection as never, main);
+    await session.applyValidated('join_file', {
+      filePath: main,
+      table: { schema: 'main', name: 'customers' },
+      joinType: 'LEFT',
+      leftColumn: 'id',
+      rightColumn: 'id',
+    });
+    expect((await session.getPage(0, 10)).schema.rowCount).toBe(3);
+  });
+
+  it.skipIf(skipSqlite)('joins with a table from a SQLite file', async () => {
+    const { connection, session } = await prepared('sqlitejoin');
+    const sqlite = join(directory, 'sqlitejoin.sqlite');
+    await createSqliteFile(sqlite);
+    await attachSecondaryDatabase(connection as never, sqlite);
+    await session.applyValidated('join_file', {
+      filePath: sqlite,
+      table: { schema: 'main', name: 'items' },
+      joinType: 'INNER',
+      leftColumn: 'id',
+      rightColumn: 'id',
+    });
+    expect((await session.getPage(0, 10)).schema.rowCount).toBe(2);
+  });
+
+  it('rebuilds the step when a saved recipe is replayed in a fresh session', async () => {
+    const { connection, session } = await prepared('replay');
+    const other = join(directory, 'replay-other.duckdb');
+    await createDuckDbFile(other);
+    await attachSecondaryDatabase(connection as never, other);
+    const step = {
+      type: 'join_file',
+      params: {
+        filePath: other,
+        table: { schema: 'main', name: 'customers' },
+        joinType: 'INNER',
+        leftColumn: 'id',
+        rightColumn: 'id',
+      },
+    };
+    await session.applyValidated(step.type, step.params);
+    const saved = session.getHistory().map(({ type, params }) => ({ type, params }));
+
+    const second = await prepared('replay2');
+    await attachSecondaryDatabase(second.connection as never, other);
+    expect(await second.session.restoreValidated(saved)).toBe(true);
+    expect((await second.session.getPage(0, 10)).schema.rowCount).toBe(2);
+  });
+
+  it('explains what is wrong when the table is missing or the database was not opened', async () => {
+    const { connection, session } = await prepared('errors');
+    const other = join(directory, 'errors-other.duckdb');
+    await createDuckDbFile(other);
+    const params = {
+      filePath: other,
+      table: { schema: 'main', name: 'customers' },
+      joinType: 'INNER',
+      leftColumn: 'id',
+      rightColumn: 'id',
+    };
+    await expect(session.applyValidated('join_file', params)).rejects.toThrow(/not been opened/);
+    await attachSecondaryDatabase(connection as never, other);
+    await expect(
+      session.applyValidated('join_file', { ...params, table: { schema: 'main', name: 'nope' } }),
+    ).rejects.toThrow();
+    await expect(
+      session.applyValidated('join_file', { ...params, table: { schema: 'main' } }),
+    ).rejects.toThrow(/not valid/);
+    const noTable: Record<string, unknown> = { ...params };
+    delete noTable.table;
+    await expect(session.applyValidated('join_file', noTable)).rejects.toThrow(/Choose a table/);
+    expect(session.getHistory()).toHaveLength(0);
+  });
+
+  it('refuses a database that is not on this computer', async () => {
+    const { connection } = await prepared('remote');
+    await expect(
+      attachSecondaryDatabase(connection as never, 'https://example.com/a.duckdb'),
+    ).rejects.toThrow(/must be on this computer/);
   });
 });
