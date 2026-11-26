@@ -1,0 +1,44 @@
+name: Remote sources
+
+# Loads real public files over HTTPS and from anonymous S3 buckets through QuackWrangler's own
+# loader. No account, secret, or credential is used. It runs weekly and on demand rather than on
+# every change, because public servers can be slow or briefly unavailable.
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 6 * * 1'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/duckdb/**'
+      - 'src/utils/remoteProgress.ts'
+      - 'tests/remote/**'
+      - '.github/workflows/remote-sources.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  public:
+    name: public HTTPS and S3 (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025, macos-15]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --include=optional
+
+      - name: Load public remote files
+        run: npm run test:remote

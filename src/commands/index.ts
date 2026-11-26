@@ -12,6 +12,7 @@ import { DuckDBConnection } from '../duckdb/connection.js';
 import { describeTable, loadDatabaseTable, releaseDatabase } from '../duckdb/database-source.js';
 import { getFileMetadata, loadFile, prepareDataFileReader } from '../duckdb/parquet-loader.js';
 import { exportResults, normalizeReadOnlyQuery } from '../duckdb/query-engine.js';
+import { describeRemoteError } from '../duckdb/remote-errors.js';
 import { buildPolarsRecipe } from '../polars/recipe.js';
 import { schemaComparisonMarkdown } from '../schema/compare.js';
 import { WranglingSession } from '../transforms/pipeline.js';
@@ -908,11 +909,11 @@ async function loadDataIntoPanel(
   let stage = 'initializing';
   outputChannel?.appendLine(`[Load] Opening ${filePath}`);
 
+  const progress = createRemoteProgressReporter(filePath, (update) =>
+    panel.postMessage({ type: 'loadingProgress', ...update, requestId }),
+  );
   try {
     const remote = isRemoteDataSource(filePath);
-    const progress = createRemoteProgressReporter(filePath, (stage) =>
-      panel.postMessage({ type: 'loadingProgress', ...stage, requestId }),
-    );
     progress(REMOTE_LOAD_STAGES.connecting);
     stage = 'connecting to DuckDB';
     const conn = await getPanelConnection(panel);
@@ -978,7 +979,8 @@ async function loadDataIntoPanel(
     if (previousSession) {
       await postSession(panel, 0, getConfig().pageSize, requestId).catch(() => undefined);
     }
-    const message = error instanceof Error ? error.message : String(error);
+    // Remote failures get one clear sentence; the log below keeps DuckDB's full text.
+    const message = describeRemoteError(error, filePath);
     const details = error instanceof Error ? (error.stack ?? error.message) : String(error);
     outputChannel?.appendLine(`[Load ERROR] Failed while ${stage}: ${filePath}\n${details}`);
     outputChannel?.appendLine(
@@ -1024,6 +1026,9 @@ async function loadDataIntoPanel(
       );
     }
     panel.postMessage({ type: 'error', message, requestId });
+  } finally {
+    // Stop the slow-load reminder however loading ended, so it never posts after the result.
+    progress.stop();
   }
 }
 
