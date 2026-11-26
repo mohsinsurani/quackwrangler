@@ -30,6 +30,21 @@ ReactDOM.createRoot(rootElement).render(
 if (isDevelopment) {
   const sessionId = 'preview-session';
   const revision = 1;
+  // The preview shows a DuckDB file with three tables, so the header's table switcher is visible.
+  const previewFile = '/preview/world_cup.duckdb';
+  const previewTables = [
+    { schema: 'main', name: 'matches', view: false },
+    { schema: 'main', name: 'stadiums', view: false },
+    { schema: 'main', name: 'teams', view: false },
+    { schema: 'main', name: 'finals', view: true },
+  ];
+  let selectedTable = previewTables[0];
+  const databaseInfo = () => ({
+    kind: 'duckdb' as const,
+    tables: previewTables,
+    selected: selectedTable,
+    textColumns: false,
+  });
   const columns = [
     { name: 'country', type: 'VARCHAR', nullable: false },
     { name: 'year', type: 'INTEGER', nullable: false },
@@ -54,7 +69,7 @@ if (isDevelopment) {
         protocolVersion: 3,
         sessionId,
         revision,
-        schema: { columns, rowCount: 12_450, filePath: '/preview/world_cup.csv' },
+        schema: { columns, rowCount: 12_450, filePath: previewFile },
         result: { rows },
         history: [
           {
@@ -79,6 +94,7 @@ if (isDevelopment) {
           },
         ],
         page: { offset: 0, limit: 100, totalRows: 12_450 },
+        database: databaseInfo(),
       },
       window.location.origin,
     );
@@ -99,12 +115,13 @@ if (isDevelopment) {
           requestId,
           sessionId,
           revision,
-          schema: { columns, rowCount: 12_450, filePath: '/preview/world_cup.csv' },
+          schema: { columns, rowCount: 12_450, filePath: previewFile },
           result: { rows: rows.slice(0, 100) },
           history: [],
           page: { offset: 0, limit: 100, totalRows: 12_450 },
           canUndo: false,
           canRedo: false,
+          database: databaseInfo(),
         },
         window.location.origin,
       );
@@ -120,13 +137,17 @@ if (isDevelopment) {
       ].includes(type)
     ) {
       setTimeout(replySession, 80);
+    } else if (type === 'selectTable') {
+      selectedTable =
+        previewTables.find((table) => table.name === event.data.name) ?? selectedTable;
+      setTimeout(replySession, 80);
     } else if (type === 'searchRows') {
       setTimeout(
         () =>
           window.postMessage(
             {
               type: 'searchResult',
-              schema: { columns, rowCount: 0, filePath: '/preview/world_cup.csv' },
+              schema: { columns, rowCount: 0, filePath: previewFile },
               result: { rows: [] },
               page: { offset: 0, limit: 100, totalRows: 0 },
               query: event.data.query,
@@ -144,7 +165,7 @@ if (isDevelopment) {
           window.postMessage(
             {
               type: 'customQueryResult',
-              schema: { columns, rowCount: 0, filePath: '/preview/world_cup.csv' },
+              schema: { columns, rowCount: 0, filePath: previewFile },
               result: { rows: [] },
               page: { offset: 0, limit: 100, totalRows: 0 },
               requestId,
