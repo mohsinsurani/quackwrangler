@@ -37,6 +37,9 @@ import {
 import {
   createRemoteProgressReporter,
   isRemoteDataSource,
+  redactRemoteSource,
+  redactRemoteText,
+  remoteSourceHasSecrets,
   REMOTE_LOAD_STAGES,
 } from '../utils/remoteProgress.js';
 import { createManagedTempDirectory, ManagedTempDirectory } from '../utils/tempStorage.js';
@@ -133,6 +136,9 @@ export function getRecentFiles(): string[] {
 
 async function rememberRecentFile(filePath: string): Promise<void> {
   if (!extensionContext || filePath.endsWith('.qw')) return;
+  // A signed link carries its credential in the address and expires, so saving it would only store
+  // a secret that cannot be reopened.
+  if (remoteSourceHasSecrets(filePath)) return;
   const recent = [filePath, ...getRecentFiles().filter((item) => item !== filePath)].slice(0, 10);
   await extensionContext.globalState.update(RECENT_FILES_KEY, recent);
   recentFilesChanged?.();
@@ -274,7 +280,7 @@ async function postCustomQuery(
         nullable: String(row[2]).toUpperCase() === 'YES',
       })),
       rowCount: totalRows,
-      filePath: session.getFilePath(),
+      filePath: redactRemoteSource(session.getFilePath()),
     },
     result,
     page: { offset, limit, totalRows },
@@ -319,7 +325,7 @@ async function queryCustomSql(
         nullable: String(row[2]).toUpperCase() === 'YES',
       })),
       rowCount: Number(count.rows[0]?.[0] ?? 0),
-      filePath: session.getFilePath(),
+      filePath: redactRemoteSource(session.getFilePath()),
     },
     result,
     page: { offset, limit, totalRows: Number(count.rows[0]?.[0] ?? 0) },
@@ -907,7 +913,7 @@ async function loadDataIntoPanel(
   state.searchQuery = '';
   await vscode.commands.executeCommand('setContext', 'quackwrangler.dbtDetected', false);
   let stage = 'initializing';
-  outputChannel?.appendLine(`[Load] Opening ${filePath}`);
+  outputChannel?.appendLine(`[Load] Opening ${redactRemoteSource(filePath)}`);
 
   const progress = createRemoteProgressReporter(filePath, (update) =>
     panel.postMessage({ type: 'loadingProgress', ...update, requestId }),
@@ -970,7 +976,7 @@ async function loadDataIntoPanel(
     await rememberRecentFile(filePath);
     progress(REMOTE_LOAD_STAGES.ready);
     await postSession(panel, 0, config.pageSize, requestId);
-    outputChannel?.appendLine(`[Load] Ready: ${filePath}`);
+    outputChannel?.appendLine(`[Load] Ready: ${redactRemoteSource(filePath)}`);
   } catch (error) {
     // Restore the previous session so an already-loaded panel remains usable.
     state.session = previousSession;
@@ -982,7 +988,9 @@ async function loadDataIntoPanel(
     // Remote failures get one clear sentence; the log below keeps DuckDB's full text.
     const message = describeRemoteError(error, filePath);
     const details = error instanceof Error ? (error.stack ?? error.message) : String(error);
-    outputChannel?.appendLine(`[Load ERROR] Failed while ${stage}: ${filePath}\n${details}`);
+    outputChannel?.appendLine(
+      `[Load ERROR] Failed while ${stage}: ${redactRemoteSource(filePath)}\n${redactRemoteText(details)}`,
+    );
     outputChannel?.appendLine(
       `[Diagnostic] ${JSON.stringify({ stage, ...redactedDiagnostic(error, filePath) })}`,
     );
@@ -1097,14 +1105,21 @@ export async function saveWorkspaceCommand(targetPanel?: DataWranglerPanel): Pro
   });
   if (!target) return;
   const selected = state.database?.selected;
+  // A recipe file is meant to be shared, so credentials in a source address are removed from it.
+  const source = session.getFilePath();
+  const savedSource = redactRemoteSource(source);
   const workspace: SavedWorkspace = {
     version: 1,
-    sourceFile: session.getFilePath(),
+    sourceFile: savedSource,
     ...(selected ? { sourceTable: { schema: selected.schema, name: selected.name } } : {}),
     transforms: session.getHistory().map(({ type, params }) => ({ type, params })),
   };
   await writeFile(target.fsPath, `${JSON.stringify(workspace, null, 2)}\n`, 'utf8');
-  vscode.window.showInformationMessage(`Saved QuackWrangler workspace to ${target.fsPath}`);
+  vscode.window.showInformationMessage(
+    savedSource === source
+      ? `Saved QuackWrangler workspace to ${target.fsPath}`
+      : `Saved QuackWrangler workspace to ${target.fsPath}. The source link held credentials, which were removed; open the file with a fresh link.`,
+  );
 }
 
 async function replayWorkspaceCommand(

@@ -286,6 +286,14 @@ describe('remote failures', () => {
 });
 
 describe('remote failure wording', () => {
+  it('also hides credentials in errors it does not translate', () => {
+    const message = describeRemoteError(
+      new Error("Something odd happened reading 'https://x.com/a.csv?token=hidden-value'"),
+      'https://x.com/a.csv?token=hidden-value',
+    );
+    expect(message).not.toContain('hidden-value');
+  });
+
   const url = 'https://example.com/data.parquet?X-Amz-Signature=hidden';
 
   it.each([

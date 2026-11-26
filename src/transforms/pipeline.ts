@@ -13,6 +13,7 @@ import {
   TableSchema,
   TransformOperation,
 } from '../types/index.js';
+import { redactRemoteSource } from '../utils/remoteProgress.js';
 
 function requiredString(params: Record<string, unknown>, name: string): string {
   const value = params[name];
@@ -880,7 +881,7 @@ export class WranglingSession {
       this.getColumns(sql),
     ]);
     return {
-      schema: { columns, rowCount: totalRows, filePath: this.filePath },
+      schema: { columns, rowCount: totalRows, filePath: redactRemoteSource(this.filePath) },
       result,
       page: { offset, limit, totalRows },
     };
@@ -922,7 +923,7 @@ export class WranglingSession {
       totalRows = Number(count.rows[0]?.[0] ?? 0);
     }
     return {
-      schema: { columns, rowCount: totalRows, filePath: this.filePath },
+      schema: { columns, rowCount: totalRows, filePath: redactRemoteSource(this.filePath) },
       result,
       page: { offset, limit, totalRows },
     };

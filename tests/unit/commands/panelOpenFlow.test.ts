@@ -290,6 +290,41 @@ describe('custom-editor file opening flow', () => {
     expect(mocks.appendLine).toHaveBeenCalledWith(expect.stringContaining('HTTP HEAD error on'));
   });
 
+  it('does not store or log a signed link', async () => {
+    const update = vi.fn();
+    const signed = 'https://b.s3.amazonaws.com/a.parquet?X-Amz-Signature=topsecret';
+    configureCommands(
+      { fsPath: '/extension' } as never,
+      { appendLine: mocks.appendLine } as never,
+      {
+        globalStorageUri: { fsPath: '/writable/global-storage' },
+        globalState: { get: vi.fn(() => []), update },
+      } as never,
+    );
+    await openDataWranglerCustomEditor({ fsPath: signed } as never, {} as never);
+
+    expect(update).not.toHaveBeenCalled();
+    for (const [line] of mocks.appendLine.mock.calls)
+      expect(String(line)).not.toContain('topsecret');
+  });
+
+  it('remembers an unsigned remote link and a local file as recent files', async () => {
+    const update = vi.fn();
+    configureCommands(
+      { fsPath: '/extension' } as never,
+      { appendLine: mocks.appendLine } as never,
+      {
+        globalStorageUri: { fsPath: '/writable/global-storage' },
+        globalState: { get: vi.fn(() => []), update },
+      } as never,
+    );
+    await openDataWranglerCustomEditor(
+      { fsPath: 'https://example.com/a.csv' } as never,
+      {} as never,
+    );
+    expect(update).toHaveBeenCalledWith('quackwrangler.recentFiles', ['https://example.com/a.csv']);
+  });
+
   it('stops the slow-load reminder after a remote load fails', async () => {
     vi.useFakeTimers();
     try {

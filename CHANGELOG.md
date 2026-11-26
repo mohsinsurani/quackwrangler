@@ -20,10 +20,11 @@ All notable changes to QuackWrangler are documented here using [Keep a Changelog
 - **QuackWrangler: Export Data** and **QuackWrangler: Summarize File** commands. Export is in the editor's Export menu, which checks the result has not changed and confirms the row count; the command's fallback query no longer matched the editor's tables and it could propose overwriting the source file. Column profiles already load automatically.
 - The `duckdb.autoLoadExtensions` setting (it only ever acted on `httpfs`, which remote files load on demand) and the `display.maxRows` setting (it did not limit the rows shown).
 - The cell menu's "Show null values" entry, which repeated "Is null".
-- Unused code: an unreachable Polars handoff branch, two webview messages that nothing used, unused grid properties, placeholder column fields, and logging-only helpers.
+- Unused code: an unreachable Polars handoff branch, two webview messages that nothing used, unused grid properties, placeholder column fields, two background listeners that only wrote to the log, and `onCommand` activation entries that VS Code generates itself.
 
 ### Fixed
 
+- Signed remote links (such as pre-signed S3 or Azure SAS URLs) are no longer saved in the recent files list, written to the output log, or sent to the editor, and credentials are removed from the source address in saved `.qw` recipes.
 - The editor-title **Open Data Wrangler** button now opens the file you are viewing instead of asking for a file.
 - Clicking a column header repeatedly no longer adds a new step each time; a sort that directly follows another sort replaces it.
 - **Open Workspace** now replays steps the same way as **Run recipe**, including choosing a replacement for renamed columns, and applies no steps if the source file cannot be opened.
