@@ -313,6 +313,15 @@ describe('webview layout contracts', () => {
     expect(rule('.table-select')).toContain('max-width: 220px');
   });
 
+  it('offers a Cancel button while work is running and handles the cancelled reply', () => {
+    expect(headerSource).toContain('isLoading && onCancel');
+    expect(headerSource).toContain('className="cancel-btn"');
+    expect(headerSource).toContain('aria-label="Cancel the current operation"');
+    expect(appSource).toContain("postMessage({ type: 'cancel' })");
+    expect(appSource).toContain("message.type === 'cancelled'");
+    expect(rule('.cancel-btn')).toContain('cursor: pointer');
+  });
+
   it('shows a transient success toast after a transform is applied', () => {
     expect(appSource).toContain('className="success-toast"');
     expect(appSource).toContain('role="status"');

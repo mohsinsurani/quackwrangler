@@ -11,8 +11,27 @@ function quoteSetting(value: string): string {
   return `'${value.replace(/'/g, "''")}'`;
 }
 
+type NativeConnection = Awaited<ReturnType<DuckDBInstance['connect']>>;
+
+/** Thrown when the user cancels work that DuckDB was running. */
+export class QueryCancelledError extends Error {
+  constructor() {
+    super('Cancelled');
+    this.name = 'QueryCancelledError';
+  }
+}
+
+export function isCancellation(error: unknown): boolean {
+  if (error instanceof QueryCancelledError) return true;
+  const message = error instanceof Error ? error.message : String(error);
+  return /INTERRUPT Error|Interrupted!/i.test(message);
+}
+
 export class DuckDBConnection {
   private instance: DuckDBInstance | null = null;
+  // Native connections that are running a statement right now, so Cancel can reach them.
+  private readonly running = new Set<NativeConnection>();
+  private cancelGeneration = 0;
   private config: DataWranglerConfig;
   private channel: vscode.OutputChannel | undefined;
 
@@ -126,16 +145,49 @@ export class DuckDBConnection {
 
     const startTime = Date.now();
     try {
+      const generation = this.cancelGeneration;
       const conn = await this.instance.connect();
+      this.running.add(conn);
       try {
+        // Cancel arrived while this connection was being opened: do not start the statement.
+        if (generation !== this.cancelGeneration) throw new QueryCancelledError();
         return await this.runQuery(conn, sql, startTime);
       } finally {
+        this.running.delete(conn);
         conn.closeSync();
       }
     } catch (error) {
-      this.logError('Query execution failed', error);
-      throw error;
+      if (isCancellation(error)) this.log('Query cancelled');
+      else this.logError('Query execution failed', error);
+      throw isCancellation(error) && !(error instanceof QueryCancelledError)
+        ? new QueryCancelledError()
+        : error;
     }
+  }
+
+  /**
+   * Stops whatever statements are running on this instance. DuckDB checks for the signal between
+   * units of work, so a statement waiting on one long network read can take a while to stop (about
+   * 15 to 20 seconds on a 23 MB single-block Parquet file), but it does stop. Statements started
+   * after the call are not affected, except the ones that were still opening their connection.
+   */
+  cancel(): boolean {
+    this.cancelGeneration += 1;
+    let signalled = false;
+    for (const conn of this.running) {
+      try {
+        conn.interrupt();
+        signalled = true;
+      } catch (error) {
+        this.logError('Could not interrupt a running statement', error);
+      }
+    }
+    return signalled;
+  }
+
+  /** True while any statement is running. */
+  isBusy(): boolean {
+    return this.running.size > 0;
   }
 
   async transaction<T>(callback: (transaction: DuckDBTransaction) => Promise<T>): Promise<T> {
@@ -143,6 +195,7 @@ export class DuckDBConnection {
       throw new Error('DuckDB not connected. Call connect() first.');
     }
     const conn = await this.instance.connect();
+    this.running.add(conn);
     try {
       await conn.run('BEGIN TRANSACTION');
       const value = await callback({
@@ -156,8 +209,11 @@ export class DuckDBConnection {
       } catch (rollbackError) {
         this.logError('Transaction rollback failed', rollbackError);
       }
-      throw error;
+      throw isCancellation(error) && !(error instanceof QueryCancelledError)
+        ? new QueryCancelledError()
+        : error;
     } finally {
+      this.running.delete(conn);
       conn.closeSync();
     }
   }

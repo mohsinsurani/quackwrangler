@@ -11,6 +11,7 @@ interface HeaderProps {
   isLoading: boolean;
   aiLoading?: boolean;
   onRefresh: () => void;
+  onCancel?: () => void;
   onGenerateAI: () => void;
 }
 
@@ -24,6 +25,7 @@ export const Header: React.FC<HeaderProps> = React.memo(
     isLoading,
     aiLoading = false,
     onRefresh,
+    onCancel,
     onGenerateAI,
   }) => {
     const tableKey = (table: DatabaseTable): string => `${table.schema}\u0000${table.name}`;
@@ -83,6 +85,18 @@ export const Header: React.FC<HeaderProps> = React.memo(
           </div>
           <div className="header-actions">
             {isLoading && <div className="loading-spinner" aria-label="Loading" />}
+            {isLoading && onCancel && (
+              <button
+                type="button"
+                className="cancel-btn"
+                onClick={onCancel}
+                title="Stop what is running. Your data and steps stay as they were."
+                aria-label="Cancel the current operation"
+              >
+                <span className="codicon codicon-debug-stop" aria-hidden="true" />
+                <span>Cancel</span>
+              </button>
+            )}
             {fileName && (
               <button
                 className="ai-plan-btn"

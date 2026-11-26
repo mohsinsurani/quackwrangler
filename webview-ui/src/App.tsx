@@ -382,6 +382,17 @@ export const App: React.FC = () => {
           setAiLoading(false);
         }
         if (message.requestId === latestRequests.current.export) setLoading(false);
+      } else if (message.type === 'cancelled') {
+        // The host stopped the work the user cancelled. Whatever was showing before is still valid,
+        // so just leave the busy state; nothing here is an error.
+        if (message.requestId && !Object.values(latestRequests.current).includes(message.requestId))
+          return;
+        pendingTransform.current = null;
+        setLoading(false);
+        setLoadingProgress(undefined);
+        setChartLoading(false);
+        setStatsLoading(false);
+        showToast('Cancelled');
       } else if (message.type === 'loadingProgress') {
         if (message.requestId && message.requestId !== latestRequests.current.grid) return;
         setLoading(true);
@@ -481,6 +492,11 @@ export const App: React.FC = () => {
         rowCount={page.totalRows}
         columnCount={columns.length}
         isLoading={loading}
+        onCancel={() => {
+          // Sent outside request tracking on purpose: the answer to the cancelled work still
+          // carries that work's own request ID, which must remain the latest one to be accepted.
+          postMessage({ type: 'cancel' });
+        }}
         aiLoading={aiLoading}
         onRefresh={() => {
           setLoading(true);
