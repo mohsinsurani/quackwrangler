@@ -6,6 +6,7 @@ All notable changes to QuackWrangler are documented here using [Keep a Changelog
 
 ### Added
 
+- `scripts/capture-readme-assets.cjs` regenerates the README image and GIF from the standalone preview, which now shows a database file so the table switcher appears. The assets were refreshed.
 - **Sort** now takes several columns, each with its own direction. **Drop Column** became **Drop Columns** and removes several at once, and **Remove Duplicates** compares any set of columns, or whole rows when none are chosen. Saved recipes with the earlier single-column form still load, and renamed columns in a multi-column sort are remapped when a recipe is replayed.
 - A table from a DuckDB or SQLite file can be the second source of a **Join** or **Append**: pick the database file, then the table.
 - Schema comparison states when files were left out because of its 100-file limit and lists files it could not read instead of stopping, and no longer counts the rows of every file.

@@ -21,7 +21,7 @@ QuackWrangler ships with DuckDB built in. Open CSV, Parquet, JSON, Excel, and OD
 
 <figure>
 
-![QuackWrangler demo: profile tabular data, inspect nested values, and visualize correlations](docs/assets/quackwrangler-demo.gif)
+![QuackWrangler demo: switch tables in a database file, inspect nested values, sort by several columns, and visualize correlations](docs/assets/quackwrangler-demo.gif)
 
 <figcaption>Open world_cup.csv → inspect column profiles → browse nested structs → visualize correlations — all without leaving VS Code.</figcaption>
 

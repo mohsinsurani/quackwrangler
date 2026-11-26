@@ -287,6 +287,9 @@ describe('webview layout contracts', () => {
     expect(previewSource).toContain("{ source: 'preview'");
     expect(previewSource).toContain("kind: 'nulls'");
     expect(previewSource).toContain("kind: 'outliers'");
+    // The preview is a database, so the table switcher shows in the captures.
+    expect(previewSource).toContain('database: databaseInfo()');
+    expect(previewSource).toContain("type === 'selectTable'");
   });
 
   it('disables undo and redo based on the reported session state', () => {
