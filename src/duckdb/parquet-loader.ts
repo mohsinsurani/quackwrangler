@@ -404,10 +404,26 @@ export async function ensureDuckDBExtension(
     await connection.query(`LOAD ${extension}`);
     loaded.add(extension);
   } catch (error) {
+    // A 404 means DuckDB does not publish this extension for this operating system and CPU (for
+    // example Arrow and ORC on Windows ARM64). Retrying or checking the connection will not help.
+    if (/\(HTTP 404\)|HTTP 404/i.test(String(error)))
+      throw new Error(
+        `DuckDB does not publish the ${extension} extension for ${platformName()}, so ${purpose} cannot be opened on this system. Convert the file to Parquet or CSV on another computer, or open it from a different platform.`,
+      );
     throw new Error(
       `Opening ${purpose} requires DuckDB's signed ${extension} extension. Check your internet connection and try again. ${error}`,
     );
   }
+}
+
+/** Operating system and CPU as users know them, for messages. */
+export function platformName(
+  platform: NodeJS.Platform = process.platform,
+  arch: string = process.arch,
+): string {
+  const system = platform === 'win32' ? 'Windows' : platform === 'darwin' ? 'macOS' : 'Linux';
+  const cpu = arch === 'arm64' ? 'ARM64' : arch === 'x64' ? 'x64' : arch;
+  return `${system} ${cpu}`;
 }
 
 async function prepareFileReader(connection: DuckDBConnection, fileType: FileType): Promise<void> {

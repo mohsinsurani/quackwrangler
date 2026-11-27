@@ -5,6 +5,7 @@ import {
   getFileMetadata,
   getTableRef,
   loadFile,
+  platformName,
   prepareDataFileReader,
   prepareSourceSchema,
   resolveLoadingMode,
@@ -150,6 +151,45 @@ describe('data file readers', () => {
     const query = vi.fn().mockResolvedValue({ rows: [] });
     await prepareDataFileReader({ query } as never, '/tmp/shop.duckdb');
     expect(query).not.toHaveBeenCalled();
+  });
+
+  it('says an extension is not published for this platform instead of blaming the connection', async () => {
+    const query = vi.fn().mockImplementation(async (sql: string) => {
+      if (sql.startsWith('LOAD')) throw new Error('not installed');
+      if (sql.startsWith('INSTALL'))
+        throw new Error(
+          'HTTP Error: Failed to download extension "orc" at URL "http://community-extensions.duckdb.org/v2.0.1/windows_arm64/orc.duckdb_extension.gz" (HTTP 404)',
+        );
+      return { rows: [] };
+    });
+    const message = await prepareDataFileReader({ query } as never, '/tmp/events.orc').then(
+      () => '',
+      (error: Error) => error.message,
+    );
+    expect(message).toMatch(/does not publish the orc extension for /);
+    expect(message).toMatch(/Parquet or CSV/);
+    expect(message).not.toMatch(/internet connection/i);
+  });
+
+  it('still blames the connection for other install failures', async () => {
+    const query = vi.fn().mockImplementation(async (sql: string) => {
+      if (sql.startsWith('LOAD')) throw new Error('not installed');
+      if (sql.startsWith('INSTALL'))
+        throw new Error('Could not resolve hostname error for HTTP GET');
+      return { rows: [] };
+    });
+    await expect(prepareDataFileReader({ query } as never, '/tmp/events.orc')).rejects.toThrow(
+      /Check your internet connection/,
+    );
+  });
+
+  it.each([
+    ['win32', 'arm64', 'Windows ARM64'],
+    ['win32', 'x64', 'Windows x64'],
+    ['darwin', 'arm64', 'macOS ARM64'],
+    ['linux', 'x64', 'Linux x64'],
+  ])('names %s %s as %s', (platform, arch, expected) => {
+    expect(platformName(platform as NodeJS.Platform, arch)).toBe(expected);
   });
 
   it('prepares the spatial extension before opening ODS sources', async () => {
