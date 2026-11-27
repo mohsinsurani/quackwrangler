@@ -13,7 +13,7 @@ These project rules adapt the Karpathy-inspired coding-agent guidelines: think b
 
 ## Release policy
 
-- The latest published Marketplace version is `0.1.5`.
+- The latest published Marketplace version is `0.6.0`, tagged `v0.6.0` on GitHub.
 - The next release version has not been selected; do not select or prepare another version without explicit maintainer approval.
 - Record normal work under `Unreleased`.
 - Do not bump versions, create a release VSIX, tag, or publish without explicit owner confirmation.
