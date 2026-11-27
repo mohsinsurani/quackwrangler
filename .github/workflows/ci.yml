@@ -5,6 +5,7 @@ on:
     branches: [main, develop]
   pull_request:
     branches: [main]
+  workflow_dispatch:
 
 jobs:
   build:
@@ -78,3 +79,39 @@ jobs:
           name: extension-build
           path: dist/
           retention-days: 7
+
+  # The same unit and integration tests on Windows, which differs from Linux and macOS in line
+  # endings (CRLF), path separators, file locking, and error wording. Releases are packaged on
+  # Windows, so a Windows-only failure should surface on the pull request, not at release time.
+  windows:
+    name: windows (${{ matrix.runner }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [windows-2025, windows-11-arm]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci --include=optional
+
+      - name: Install webview dependencies
+        working-directory: webview-ui
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Test
+        run: npm test -- --exclude tests/unit/polars/**
