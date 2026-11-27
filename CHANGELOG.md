@@ -4,6 +4,14 @@ All notable changes to QuackWrangler are documented here using [Keep a Changelog
 
 ## [Unreleased]
 
+### Fixed
+
+- On Windows ARM64, opening an Arrow IPC or ORC file told you to check your internet connection. DuckDB does not publish those two extensions for Windows ARM64, so the message now says that and suggests converting the file to Parquet or CSV. They are unaffected on every other platform.
+
+### Development
+
+- The unit and integration tests now run on Windows x64 and ARM64 in the regular CI, so Windows-only failures show up on the pull request and not during release packaging.
+
 ## [0.6.0] - 2026-11-26
 
 ### Highlights

@@ -400,6 +400,9 @@ describe('transactional file promotion', () => {
 
 describe('supported file formats', () => {
   const skipOptionalExtensionTests = process.env.QW_SKIP_OPTIONAL_EXTENSION_TESTS === 'true';
+  // DuckDB publishes no Arrow or ORC community extension for Windows on ARM (the download is a
+  // 404), so those two formats cannot load there. Everywhere else they must load.
+  const communityExtensionsUnavailable = process.platform === 'win32' && process.arch === 'arm64';
 
   it('converts legacy XLS files to a temporary XLSX before loading', async () => {
     const source = join(privateDirectory, `quackwrangler-legacy-${randomUUID()}.xls`);
@@ -454,31 +457,30 @@ describe('supported file formats', () => {
     expect(result.rows).toEqual([[1, 'duck']]);
   });
 
-  it.skipIf(skipOptionalExtensionTests).each(['arrow', 'arrows', 'ipc'])(
-    'loads .%s Arrow IPC files',
-    async (extension) => {
-      const source = join(privateDirectory, `quackwrangler-format-${randomUUID()}.${extension}`);
-      const writer = await database.connect();
-      try {
-        await writer.run('LOAD nanoarrow');
-      } catch {
-        await writer.run('INSTALL nanoarrow FROM community');
-        await writer.run('LOAD nanoarrow');
-      }
-      const ipc = await writer.run("SELECT * FROM to_arrow_ipc((SELECT 1 AS id, 'duck' AS name))");
-      const chunks = (await ipc.getRows()).map((row) => (row[0] as { bytes: Buffer }).bytes);
-      writer.closeSync();
-      await writeFile(source, Buffer.concat(chunks));
+  it
+    .skipIf(skipOptionalExtensionTests || communityExtensionsUnavailable)
+    .each(['arrow', 'arrows', 'ipc'])('loads .%s Arrow IPC files', async (extension) => {
+    const source = join(privateDirectory, `quackwrangler-format-${randomUUID()}.${extension}`);
+    const writer = await database.connect();
+    try {
+      await writer.run('LOAD nanoarrow');
+    } catch {
+      await writer.run('INSTALL nanoarrow FROM community');
+      await writer.run('LOAD nanoarrow');
+    }
+    const ipc = await writer.run("SELECT * FROM to_arrow_ipc((SELECT 1 AS id, 'duck' AS name))");
+    const chunks = (await ipc.getRows()).map((row) => (row[0] as { bytes: Buffer }).bytes);
+    writer.closeSync();
+    await writeFile(source, Buffer.concat(chunks));
 
-      const adapter = createAdapter();
-      await prepareDataFileReader(adapter as never, source);
-      await loadFile(adapter as never, source, 'eager', 64, `format_${extension}_data`);
-      const result = await adapter.query(`SELECT * FROM format_${extension}_data`);
-      expect(result.rows).toEqual([[1, 'duck']]);
-    },
-  );
+    const adapter = createAdapter();
+    await prepareDataFileReader(adapter as never, source);
+    await loadFile(adapter as never, source, 'eager', 64, `format_${extension}_data`);
+    const result = await adapter.query(`SELECT * FROM format_${extension}_data`);
+    expect(result.rows).toEqual([[1, 'duck']]);
+  });
 
-  it.skipIf(skipOptionalExtensionTests)(
+  it.skipIf(skipOptionalExtensionTests || communityExtensionsUnavailable)(
     'loads ORC through the signed community extension',
     async () => {
       const source = join(privateDirectory, `quackwrangler-format-${randomUUID()}.orc`);
